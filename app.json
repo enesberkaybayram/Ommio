@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Ommio",
+    "slug": "ommio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seninadin.ommio"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.seninadin.ommio"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "display": "standalone",
+      "backgroundColor": "#ffffff",
+      "description": "Ommio: Zaman Yönetimi ve Görev Takibi"
+    },
+    "plugins": [
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "OmmioWidget",
+              "label": "Ommio Günlük",
+              "minWidth": "280dp",
+              "minHeight": "140dp"
+            }
+          ]
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7832bf0f-431f-4ea0-a0ed-5cb9f87d70d5"
+      }
+    }
+  }
+}
