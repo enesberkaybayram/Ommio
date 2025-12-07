@@ -1,4 +1,3 @@
-// scripts/generate-sitemap.ts
 import * as fs from 'fs';
 import * as path from 'path';
 import { allBlogPosts, SupportedLangs } from '../data/blog';
@@ -6,19 +5,18 @@ import { allBlogPosts, SupportedLangs } from '../data/blog';
 const BASE_URL = 'https://www.ommio.app';
 
 function generateSitemap() {
-  console.log('🗺️  Sitemap ve Robots.txt public klasörüne hazırlanıyor...');
+  console.log('🗺️  Sitemap dist klasörüne yazılıyor...');
 
   const languages = Object.keys(allBlogPosts) as SupportedLangs[];
   let urls: string[] = [];
 
-  // 1. Statik Sayfalar
+  // Linkleri Hazırla
   urls.push(`${BASE_URL}`); 
   languages.forEach(lang => {
     urls.push(`${BASE_URL}/${lang}/blog`);
     urls.push(`${BASE_URL}/${lang}/privacy`);
   });
 
-  // 2. Blog Yazıları
   languages.forEach((lang) => {
     const posts = allBlogPosts[lang];
     if (posts) {
@@ -28,7 +26,7 @@ function generateSitemap() {
     }
   });
 
-  // 3. İçerik Oluşturma
+  // XML İçeriği
   const sitemapContent = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((url) => `  <url>
@@ -45,17 +43,20 @@ Allow: /
 Sitemap: ${BASE_URL}/sitemap.xml
 `;
 
-  // 4. 'public' KLASÖRÜNE YAZMA (Expo burayı otomatik kopyalar)
-  const publicDir = path.resolve(__dirname, '../public');
+  // --- KRİTİK KISIM: DIST KLASÖRÜNE YAZMA ---
+  // Expo export işlemi bittiğinde 'dist' klasörü oluşmuş olur.
+  // Biz de dosyayı oraya, index.html'in yanına koyarız.
+  const distDir = path.resolve(__dirname, '../dist');
 
-  if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir, { recursive: true });
+  // Eğer dist klasörü yoksa (hata durumunda) oluştur
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
   }
 
-  fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), sitemapContent);
-  fs.writeFileSync(path.join(publicDir, 'robots.txt'), robotsTxtContent);
+  fs.writeFileSync(path.join(distDir, 'sitemap.xml'), sitemapContent);
+  fs.writeFileSync(path.join(distDir, 'robots.txt'), robotsTxtContent);
 
-  console.log(`✅ Dosyalar 'public' klasörüne yazıldı! Expo export sırasında kopyalanacak.`);
+  console.log(`✅ İŞLEM TAMAM: Sitemap ve Robots.txt 'dist' klasörüne eklendi.`);
 }
 
 generateSitemap();
