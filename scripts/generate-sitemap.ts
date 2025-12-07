@@ -5,12 +5,12 @@ import { allBlogPosts, SupportedLangs } from '../data/blog';
 const BASE_URL = 'https://www.ommio.app';
 
 function generateSitemap() {
-  console.log('🗺️  Sitemap dist klasörüne yazılıyor...');
+  console.log('🚀 Sitemap scripti başladı...');
 
   const languages = Object.keys(allBlogPosts) as SupportedLangs[];
   let urls: string[] = [];
 
-  // Linkleri Hazırla
+  // 1. Linkleri Hazırla
   urls.push(`${BASE_URL}`); 
   languages.forEach(lang => {
     urls.push(`${BASE_URL}/${lang}/blog`);
@@ -26,7 +26,7 @@ function generateSitemap() {
     }
   });
 
-  // XML İçeriği
+  // 2. XML İçeriği
   const sitemapContent = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((url) => `  <url>
@@ -43,20 +43,31 @@ Allow: /
 Sitemap: ${BASE_URL}/sitemap.xml
 `;
 
-  // --- KRİTİK KISIM: DIST KLASÖRÜNE YAZMA ---
-  // Expo export işlemi bittiğinde 'dist' klasörü oluşmuş olur.
-  // Biz de dosyayı oraya, index.html'in yanına koyarız.
-  const distDir = path.resolve(__dirname, '../dist');
+  // 3. DOĞRUDAN 'dist' KLASÖRÜNE YAZMA
+  // process.cwd() projenin ana klasörünü verir.
+  const distDir = path.join(process.cwd(), 'dist');
 
-  // Eğer dist klasörü yoksa (hata durumunda) oluştur
+  console.log(`📂 Hedef Klasör: ${distDir}`);
+
+  // Eğer dist klasörü yoksa (Expo build başarısız olduysa) hata verip duralım
   if (!fs.existsSync(distDir)) {
-    fs.mkdirSync(distDir, { recursive: true });
+    console.error("❌ HATA: 'dist' klasörü bulunamadı! Önce 'expo export' çalışmalıydı.");
+    process.exit(1);
   }
 
-  fs.writeFileSync(path.join(distDir, 'sitemap.xml'), sitemapContent);
-  fs.writeFileSync(path.join(distDir, 'robots.txt'), robotsTxtContent);
-
-  console.log(`✅ İŞLEM TAMAM: Sitemap ve Robots.txt 'dist' klasörüne eklendi.`);
+  // Dosyaları yaz
+  try {
+    fs.writeFileSync(path.join(distDir, 'sitemap.xml'), sitemapContent);
+    console.log(`✅ sitemap.xml oluşturuldu.`);
+    
+    fs.writeFileSync(path.join(distDir, 'robots.txt'), robotsTxtContent);
+    console.log(`✅ robots.txt oluşturuldu.`);
+    
+    console.log(`🎉 SEO dosyaları başarıyla 'dist' içine enjekte edildi.`);
+  } catch (error) {
+    console.error("❌ Dosya yazma hatası:", error);
+    process.exit(1);
+  }
 }
 
 generateSitemap();

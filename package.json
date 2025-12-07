@@ -8,8 +8,7 @@
   "ios": "expo run:ios",
   "web": "expo start --web",
   
-  "build": "npx expo export -p web --output-dir dist && npx ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/generate-sitemap.ts"
-},
+"build": "npx expo export -p web --output-dir dist && npx ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/generate-sitemap.ts"},
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
