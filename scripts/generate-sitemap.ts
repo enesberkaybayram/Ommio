@@ -3,22 +3,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { allBlogPosts, SupportedLangs } from '../data/blog';
 
-const BASE_URL = 'https://www.ommio.app'; // www ekledim, canonical için daha iyidir
+const BASE_URL = 'https://www.ommio.app';
 
 function generateSitemap() {
-  console.log('🗺️  SEO dosyaları oluşturuluyor...');
+  console.log('🗺️  Sitemap ve Robots.txt public klasörüne hazırlanıyor...');
 
   const languages = Object.keys(allBlogPosts) as SupportedLangs[];
   let urls: string[] = [];
 
-  // --- 1. Linkleri Hazırla ---
+  // 1. Statik Sayfalar
   urls.push(`${BASE_URL}`); 
-
   languages.forEach(lang => {
     urls.push(`${BASE_URL}/${lang}/blog`);
     urls.push(`${BASE_URL}/${lang}/privacy`);
   });
 
+  // 2. Blog Yazıları
   languages.forEach((lang) => {
     const posts = allBlogPosts[lang];
     if (posts) {
@@ -28,7 +28,7 @@ function generateSitemap() {
     }
   });
 
-  // --- 2. İçerikleri Oluştur ---
+  // 3. İçerik Oluşturma
   const sitemapContent = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((url) => `  <url>
@@ -45,20 +45,17 @@ Allow: /
 Sitemap: ${BASE_URL}/sitemap.xml
 `;
 
-  // --- 3. KRİTİK DEĞİŞİKLİK: 'dist' KLASÖRÜNE YAZMA ---
-  // Expo export işlemi bittikten sonra 'dist' klasörü oluşmuş olacak.
-  // Biz de dosyaları direkt oraya atıyoruz.
-  const distDir = path.resolve(__dirname, '../dist');
+  // 4. 'public' KLASÖRÜNE YAZMA (Expo burayı otomatik kopyalar)
+  const publicDir = path.resolve(__dirname, '../public');
 
-  // Eğer dist klasörü yoksa (export hatası vs.) oluştur ki script patlamasın
-  if (!fs.existsSync(distDir)) {
-    fs.mkdirSync(distDir, { recursive: true });
+  if (!fs.existsSync(publicDir)) {
+    fs.mkdirSync(publicDir, { recursive: true });
   }
 
-  fs.writeFileSync(path.join(distDir, 'sitemap.xml'), sitemapContent);
-  fs.writeFileSync(path.join(distDir, 'robots.txt'), robotsTxtContent);
+  fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), sitemapContent);
+  fs.writeFileSync(path.join(publicDir, 'robots.txt'), robotsTxtContent);
 
-  console.log(`✅ Başarılı! Dosyalar 'dist' klasörüne yazıldı: ${urls.length} URL.`);
+  console.log(`✅ Dosyalar 'public' klasörüne yazıldı! Expo export sırasında kopyalanacak.`);
 }
 
 generateSitemap();
