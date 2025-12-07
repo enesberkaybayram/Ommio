@@ -1,85 +1,156 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as AuthSession from 'expo-auth-session';
+import { BlurView } from 'expo-blur';
+import * as Contacts from 'expo-contacts';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
+import { useRouter } from 'expo-router';
+import * as SMS from 'expo-sms';
+// AŞAĞIDAKİ GİBİ Prompt'u ekleyin:
+import { Prompt } from 'expo-auth-session';
+import * as Localization from 'expo-localization';
 import {
-  AlarmClock,
-  Bell,
-  Calendar,
-  Check,
-  ChevronLeft, ChevronRight,
-  Smartphone as GoogleIcon,
-  LayoutDashboard,
-  List,
-  Lock,
-  LogOut, Mail,
-  Moon,
-  MoreHorizontal,
-  Plus,
-  Settings,
-  Sun, Trophy,
-  User,
-  X
+    AlarmClock,
+    AlertCircle,
+    AlignLeft,
+    Bell,
+    CalendarClock,
+    CalendarDays,
+    CalendarIcon,
+    Check,
+    CheckCheck,
+    CheckCircle2,
+    ChevronDown,
+    ChevronLeft, ChevronRight,
+    ChevronUp,
+    Edit2,
+    Flame,
+    Globe,
+    Layers,
+    ListTodo,
+    Lock,
+    LogOut, Mail,
+    MessageCircle,
+    Monitor,
+    Moon,
+    Plus,
+    Repeat,
+    Search,
+    Send,
+    Share2, Sliders,
+    Sun,
+    Trash2,
+    Trophy,
+    User,
+    UserCheck,
+    UserMinus,
+    UserPlus,
+    Users,
+    X,
+    XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  LayoutAnimation,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView, StatusBar,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput, TouchableOpacity,
-  UIManager,
-  View
+    ActivityIndicator,
+    FlatList, Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    LayoutAnimation,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView, StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput, TouchableOpacity,
+    TouchableWithoutFeedback,
+    UIManager,
+    useColorScheme,
+    View
 } from 'react-native';
-
-// FIREBASE IMPORTS (DÜZELTİLDİ: Dosya yoluna ../../ eklendi)
-// Eğer bu hala hata verirse, firebaseConfig.js dosyasını app/(tabs) klasörüne taşıyıp tekrar ./ yapabilirsiniz.
-import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  OAuthProvider,
-  onAuthStateChanged,
-  signInAnonymously,
-  signInWithCredential,
-  signInWithEmailAndPassword,
-  signOut
-} from 'firebase/auth';
-import {
-  addDoc,
-  collection,
-  deleteDoc, doc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc
-} from 'firebase/firestore';
-import { auth, db } from '/Users/enesberkaybayram/Desktop/Ommio/scripts/firebaseConfig.js';
-// SOSYAL MEDYA GİRİŞ IMPORTS
+import { Calendar, LocaleConfig } from 'react-native-calendars';
+import OmmioAdBanner from '../../components/OmmioAdBanner';
+import { setupCalendarLocales } from '../../constants/calendarConfig';
+// --- FIREBASE ---
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
+import { initializeApp } from "firebase/app";
+import {
+    createUserWithEmailAndPassword,
+    EmailAuthProvider,
+    getAuth,
+    GoogleAuthProvider,
+    linkWithCredential,
+    OAuthProvider,
+    onAuthStateChanged,
+    sendPasswordResetEmail,
+    signInAnonymously,
+    signInWithCredential,
+    signInWithEmailAndPassword,
+    signOut,
+    updatePassword,
+    updateProfile,
+} from 'firebase/auth';
+import {
+    addDoc,
+    arrayRemove,
+    arrayUnion,
+    collection,
+    deleteDoc, doc,
+    getDoc,
+    getDocs,
+    initializeFirestore,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+    where
+} from 'firebase/firestore';
+import LandingPage from '../../components/LandingPage';
+import { TRANSLATIONS } from '../../constants/translations'; // YENİ IMPORT
+// Auth tipini güvenli hale getiriyoruz
+
 import * as WebBrowser from 'expo-web-browser';
 
-// Widget (Sadece Android)
+// Widget (Android)
+// @ts-ignore
 import { requestWidgetUpdate } from 'react-native-android-widget';
-import { widgetTaskHandler } from './widget-task-handler'; // Widget dosyasını da kök dizinden çekiyoruz
-
+// @ts-ignore
+import { widgetTaskHandler } from '@/widget-task-handler';
 WebBrowser.maybeCompleteAuthSession();
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-// --- MODERN RENK PALETİ ---
 const COLORS = {
-  primary: '#6366f1', secondary: '#a5b4fc', background: '#F1F5F9', surface: '#ffffff',
+  primary: '#6366f1', secondary: '#a5b4fc', background: '#F8FAFC', surface: '#ffffff',
   textDark: '#1e293b', textLight: '#64748b', textMuted: '#94a3b8',
-  success: '#10b981', danger: '#ef4444', darkBg: '#0f172a', darkSurface: '#1e293b',
+  success: '#10b981', danger: '#ef4444', warning: '#f59e0b', darkBg: '#0f172a', darkSurface: '#1e293b',
 };
+const firebaseConfig = {
+  apiKey: "AIzaSyCKClbJrNCzTgNPsy9JcAMgmGpP1hQ1Ts4",
+  authDomain: "ommio-30d72.firebaseapp.com",
+  projectId: "ommio-30d72",
+  storageBucket: "ommio-30d72.firebasestorage.app",
+  messagingSenderId: "677937409612",
+  appId: "1:677937409612:web:09e17f70f5e1a8904d0ee9",
+  measurementId: "G-V7WP221WRP"
+};
+const app = initializeApp(firebaseConfig);
 
+// YENİ KISIM (Standart Yöntem)
+const auth = getAuth(app);
+
+// Veritabanı başlatma
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true, // WEB İÇİN BU AYAR ŞART (Fetch hatasını çözer)
+});
 const CATEGORY_COLORS = [
   { id: 'blue', hex: '#3b82f6', bg: '#eff6ff' },
   { id: 'orange', hex: '#f97316', bg: '#fff7ed' },
@@ -92,8 +163,25 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }),
 });
 
-interface Task { id: string; text: string; completed: boolean; date: string; categoryId: string; notificationTime?: string | null; notificationId?: string | null; alarmTime?: string | null; alarmId?: string | null; }
+const LANGUAGES = [{ code: 'en', label: 'English', flag: '🇬🇧' }, { code: 'tr', label: 'Türkçe', flag: '🇹🇷' }, { code: 'nl', label: 'Dutch', flag: '🇳🇱' }, { code: 'de', label: 'German', flag: '🇩🇪' }, { code: 'es', label: 'Spanish', flag: '🇪🇸' }, { code: 'fr', label: 'French', flag: '🇫🇷' }, { code: 'ar', label: 'Arabic', flag: '🇸🇦' }, { code: 'id', label: 'Indonesian', flag: '🇮🇩' }, { code: 'pt', label: 'Portuguese', flag: '🇵🇹' }, { code: 'hi', label: 'Hindi', flag: '🇮🇳' }, { code: 'ko', label: 'Korean', flag: '🇰🇷' }, { code: 'ja', label: 'Japanese', flag: '🇯🇵' }, { code: 'ru', label: 'Russian', flag: '🇷🇺' }, { code: 'it', label: 'Italian', flag: '🇮🇹' }, { code: 'pl', label: 'Polish', flag: '🇵🇱' }, { code: 'uk', label: 'Ukrainian', flag: '🇺🇦' }];
+
+// --- TİP TANIMLAMALARI ---
+type ThemeMode = 'light' | 'dark' | 'system';
+type LangCode = 'en' | 'tr' | 'nl' | 'de' | 'es' | 'fr' | 'ar' | 'id' | 'pt' | 'hi' | 'ko' | 'ja' | 'ru' | 'it' | 'pl' | 'uk';
+
+interface Task { 
+  id: string; text: string; description?: string; completed: boolean; date: string; dueDate?: string; showEveryDayUntilDue?: boolean; categoryId: string; notificationTime?: string | null; alarmTime?: string | null; assignedBy?: string; assignedByName?: string; assignedTo?: string; 
+}
+
+interface Habit {
+  id: string; title: string; frequency: 'daily' | 'weekly'; selectedDays: number[]; endDate?: string | null; notificationTime?: string | null; notificationIds?: string[]; completedDates: string[]; categoryId: string; createdAt: any;
+}
+
 interface Category { id: string; name: string; color: string; }
+interface Contact { uid: string; username: string; email: string; phoneNumber?: string; canAssignToMe: boolean; defaultCategoryId?: string; photoURL?: string; displayName?: string; }
+interface FriendRequest { id: string; fromUid: string; fromUsername: string; fromEmail: string; status: 'pending'; }
+interface DeviceContact { id: string; name: string; phoneNumber: string; isAppUser?: boolean; uid?: string; }
+interface ChatMessage { id: string; text: string; senderId: string; timestamp: any; read?: boolean; }
 
 const getISODate = (date: Date): string => {
   const year = date.getFullYear();
@@ -102,299 +190,4804 @@ const getISODate = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Günaydın";
-  if (hour < 18) return "Tünaydın";
-  return "İyi Akşamlar";
+const formatDateDDMMYYYY = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}-${month}-${year}`;
 };
 
+const parseDueDate = (dateStr?: string) => {
+    if (!dateStr) return Infinity; 
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return Infinity;
+    return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).getTime();
+};
+
+const convertDDMMYYYYtoISO = (dateStr: string) => {
+    if (!dateStr) return ""; // Boş kontrolü
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    
+    // DÜZELTME: padStart(2, '0') ile tek haneli sayıların başına 0 ekliyoruz.
+    const day = parts[0].padStart(2, '0');
+    const month = parts[1].padStart(2, '0');
+    const year = parts[2];
+    
+    return `${year}-${month}-${day}`;
+};
+
+const maskDateInput = (text: string) => {
+  const cleaned = text.replace(/[^0-9]/g, '');
+  let formatted = cleaned;
+  if (cleaned.length > 2) formatted = cleaned.slice(0, 2) + '-' + cleaned.slice(2);
+  if (cleaned.length > 4) formatted = formatted.slice(0, 5) + '-' + cleaned.slice(4);
+  return formatted.slice(0, 10); 
+};
+
+const maskTimeInput = (text: string) => {
+  const cleaned = text.replace(/[^0-9]/g, '');
+  let formatted = cleaned;
+  if (cleaned.length > 2) formatted = cleaned.slice(0, 2) + ':' + cleaned.slice(2);
+  return formatted.slice(0, 5);
+};
+
+const GREETINGS = {
+  en:{morning:"Good morning",afternoon:"Good afternoon",evening:"Good evening"},
+  tr:{morning:"Günaydın",afternoon:"Tünaydın",evening:"İyi akşamlar"},
+  nl:{morning:"Goedemorgen",afternoon:"Goedemiddag",evening:"Goedenavond"},
+  de:{morning:"Guten Morgen",afternoon:"Guten Nachmittag",evening:"Guten Abend"},
+  es:{morning:"Buenos días",afternoon:"Buenas tardes",evening:"Buenas noches"},
+  fr:{morning:"Bonjour",afternoon:"Bon après-midi",evening:"Bonsoir"},
+  ar:{morning:"صباح الخير",afternoon:"مساء الخير",evening:"مساء الخير"},
+  id:{morning:"Selamat pagi",afternoon:"Selamat siang",evening:"Selamat malam"},
+  pt:{morning:"Bom dia",afternoon:"Boa tarde",evening:"Boa noite"},
+  hi:{morning:"सुप्रभात",afternoon:"नमस्कार",evening:"शुभ संध्या"},
+  ko:{morning:"좋은 아침",afternoon:"좋은 오후",evening:"좋은 저녁"},
+  ja:{morning:"おはようございます",afternoon:"こんにちは",evening:"こんばんは"},
+  ru:{morning:"Доброе утро",afternoon:"Добрый день",evening:"Добрый вечер"},
+  it:{morning:"Buongiorno",afternoon:"Buon pomeriggio",evening:"Buonasera"},
+  pl:{morning:"Dzień dobry",afternoon:"Dzień dobry",evening:"Dobry wieczór"},
+  uk:{morning:"Доброго ранку",afternoon:"Добрий день",evening:"Добрий вечір"}
+};
+const getGreeting = (lang:LangCode)=>{const hour=new Date().getHours();const g=GREETINGS[lang]||GREETINGS.en;return hour<12?g.morning:hour<18?g.afternoon:g.evening;};
+
+
+const DAYS_OF_WEEK_MAP = {
+  en:[{id:1,label:"Mon"},{id:2,label:"Tue"},{id:3,label:"Wed"},{id:4,label:"Thu"},{id:5,label:"Fri"},{id:6,label:"Sat"},{id:0,label:"Sun"}],
+  tr:[{id:1,label:"Pzt"},{id:2,label:"Sal"},{id:3,label:"Çar"},{id:4,label:"Per"},{id:5,label:"Cum"},{id:6,label:"Cmt"},{id:0,label:"Paz"}],
+  nl:[{id:1,label:"Ma"},{id:2,label:"Di"},{id:3,label:"Wo"},{id:4,label:"Do"},{id:5,label:"Vr"},{id:6,label:"Za"},{id:0,label:"Zo"}],
+  de:[{id:1,label:"Mo"},{id:2,label:"Di"},{id:3,label:"Mi"},{id:4,label:"Do"},{id:5,label:"Fr"},{id:6,label:"Sa"},{id:0,label:"So"}],
+  es:[{id:1,label:"Lun"},{id:2,label:"Mar"},{id:3,label:"Mié"},{id:4,label:"Jue"},{id:5,label:"Vie"},{id:6,label:"Sáb"},{id:0,label:"Dom"}],
+  fr:[{id:1,label:"Lun"},{id:2,label:"Mar"},{id:3,label:"Mer"},{id:4,label:"Jeu"},{id:5,label:"Ven"},{id:6,label:"Sam"},{id:0,label:"Dim"}],
+  ar:[{id:1,label:"الاثنين"},{id:2,label:"الثلاثاء"},{id:3,label:"الأربعاء"},{id:4,label:"الخميس"},{id:5,label:"الجمعة"},{id:6,label:"السبت"},{id:0,label:"الأحد"}],
+  id:[{id:1,label:"Sen"},{id:2,label:"Sel"},{id:3,label:"Rab"},{id:4,label:"Kam"},{id:5,label:"Jum"},{id:6,label:"Sab"},{id:0,label:"Min"}],
+  pt:[{id:1,label:"Seg"},{id:2,label:"Ter"},{id:3,label:"Qua"},{id:4,label:"Qui"},{id:5,label:"Sex"},{id:6,label:"Sáb"},{id:0,label:"Dom"}],
+  hi:[{id:1,label:"सोम"},{id:2,label:"मंगल"},{id:3,label:"बुध"},{id:4,label:"गुरु"},{id:5,label:"शुक्र"},{id:6,label:"शनि"},{id:0,label:"रवि"}],
+  ko:[{id:1,label:"월"},{id:2,label:"화"},{id:3,label:"수"},{id:4,label:"목"},{id:5,label:"금"},{id:6,label:"토"},{id:0,label:"일"}],
+  ja:[{id:1,label:"月"},{id:2,label:"火"},{id:3,label:"水"},{id:4,label:"木"},{id:5,label:"金"},{id:6,label:"土"},{id:0,label:"日"}],
+  ru:[{id:1,label:"Пн"},{id:2,label:"Вт"},{id:3,label:"Ср"},{id:4,label:"Чт"},{id:5,label:"Пт"},{id:6,label:"Сб"},{id:0,label:"Вс"}],
+  it:[{id:1,label:"Lun"},{id:2,label:"Mar"},{id:3,label:"Mer"},{id:4,label:"Gio"},{id:5,label:"Ven"},{id:6,label:"Sab"},{id:0,label:"Dom"}],
+  pl:[{id:1,label:"Pon"},{id:2,label:"Wto"},{id:3,label:"Śro"},{id:4,label:"Czw"},{id:5,label:"Pią"},{id:6,label:"Sob"},{id:0,label:"Nie"}],
+  uk:[{id:1,label:"Пн"},{id:2,label:"Вт"},{id:3,label:"Ср"},{id:4,label:"Чт"},{id:5,label:"Пт"},{id:6,label:"Сб"},{id:0,label:"Нд"}]
+};
+
+const getDaysOfWeek = (lang:LangCode)=>DAYS_OF_WEEK_MAP[lang]||DAYS_OF_WEEK_MAP.en;
+
+setupCalendarLocales();
+// lang prop'unu ekledik
 export default function OmmioApp() {
+  const [theme, setTheme] = useState<ThemeMode>("system");
+  const [rememberMe, setRememberMe] = useState(true);
+  const systemScheme = useColorScheme();
   const [user, setUser] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email'); 
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
+  const [username, setUsername] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(''); 
+  const [newCategoryColor, setNewCategoryColor] = useState('blue'); // Varsayılan renk
+  const CATEGORY_PALETTE = ['blue', 'orange', 'green', 'purple','pink']; // Seçenekler
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [inputValue, setInputValue] = useState<string>("");
-  const [isInputExpanded, setIsInputExpanded] = useState(false);
-  const [notifInput, setNotifInput] = useState<string>("");
-  const [isNotifOn, setIsNotifOn] = useState<boolean>(false);
-  const [alarmInput, setAlarmInput] = useState<string>("");
-  const [isAlarmOn, setIsAlarmOn] = useState<boolean>(false);
-  const [activeAlarmTask, setActiveAlarmTask] = useState<Task | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("list");
-  const [lang, setLang] = useState<"tr" | "en">("tr");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+
+  // Mevcut editUsernameInput'un hemen altına ekleyin:
+  const [editDisplayNameInput, setEditDisplayNameInput] = useState("");
+
+  const [taskComments, setTaskComments] = useState<any[]>([]); // Yorumları tutar
+  const [taskCommentInput, setTaskCommentInput] = useState(""); // Yorum yazma kutusu
+  const [taskModalTab, setTaskModalTab] = useState<'details' | 'chat'>('details'); // Modal içindeki sekme
+  
+  // Profil Düzenleme State'leri
+  const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [editUsernameInput, setEditUsernameInput] = useState("");
+
+  // ... diğer state'lerin yanına
+  // --- ŞİFRE SIFIRLAMA İÇİN STATE'LER ---
+  const [isResetModalVisible, setResetModalVisible] = useState(false); // Modalı açıp kapatır
+  const [resetInput, setResetInput] = useState(""); // Modal içindeki input
+  const [isResetLoading, setIsResetLoading] = useState(false); // Yükleniyor durumu
+  const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
+  const [resetEmailInput, setResetEmailInput] = useState("");
+
+  const [isCalendarExpanded, setIsCalendarExpanded] = useState(false); // Takvim açık/kapalı kontrolü
+
+  // --- REKLAM VE SAYAÇ STATE'LERİ ---
+  // Hangi eylemden kaç tane yapıldı?
+  
+  // --- REKLAM & PREMIUM MANTIĞI ---
+  const [adCounters, setAdCounters] = useState({ tasks: 0, habits: 0, assigned: 0, time: 0 });
+  const [isAdVisible, setIsAdVisible] = useState(false);
+  const [isUpsellVisible, setIsUpsellVisible] = useState(false);
+  
+  // YENİ: Reklam geri sayımı (Başlangıç 5 saniye)
+  const [adCountdown, setAdCountdown] = useState(5); 
+
+  const AD_THRESHOLDS = { tasks: 4, habits: 4, assigned: 3, time: 300 };
+
+
+
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+
+// Landing Page mi gösterilsin yoksa Auth ekranı mı?
+// Web değilse (Android/iOS) direkt true başlasın.
+const [showAuth, setShowAuth] = useState(Platform.OS !== 'web');
+  // --- YENİ STATE TANIMLARI ---
+  
+  // 1. Gelişmiş Toast (Bildirim) State'i
+const [customToast, setCustomToast] = useState<{visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';}>({     visible: false, 
+    title: '', 
+    message: '', 
+    type: 'success' });
+
+  // 2. Özel Onay Kutusu (Confirm Modal) State'i
+  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: () => {}, // Onaylanınca çalışacak fonksiyon
+      isDestructive: false // Silme işlemiyse kırmızı buton olsun mu?
+  });
+
+  const [friendTasksModal, setFriendTasksModal] = useState<{visible: boolean; tasks: any[]; // veya Task[] yazabilirsin ama any[] şimdilik hataları çözer
+    friendName: string;}>({ visible: false, tasks: [], friendName: '' });
+
+  // Toast Bildirim State'i
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'success' }); // type: 'success' | 'error' | 'info'
+
+  // Her arkadaşın son mesajını ve okunmamış sayısını tutar: { [uid]: { text, time, unread } }
+
+  const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
+  const [chatPreviews, setChatPreviews] = useState<any>({});
+
+  // Sosyal sekmesinde hangi kişinin detaylarının açık olduğunu tutar
+  const [expandedContactId, setExpandedContactId] = useState<string | null>(null);
+
+  // NAVIGATION STATE
+  const [activeTab, setActiveTab] = useState<'list' | 'habits' | 'messages' | 'social' | 'profile' | 'chat_room'>('list');
+  const [chatTarget, setChatTarget] = useState<Contact | null>(null); 
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+
+  const [isPremium, setIsPremium] = useState(false);  
+
+  const [isTyping, setIsTyping] = useState(false); // Karşı taraf yazıyor mu?
+  const [lastVisibleMsg, setLastVisibleMsg] = useState<any>(null); // Pagination için
+  const [loadingMoreMsg, setLoadingMoreMsg] = useState(false);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  
+  const [msgLimit, setMsgLimit] = useState(125); // Başlangıçta 125 mesaj göster
+
+  const getDeviceLang = () => {
+    const loc = Localization.getLocales()[0]; // Cihazın birincil dili
+    const code = loc ? loc.languageCode : 'en'; 
+    // LANGUAGES dizisinde bu kod var mı kontrol et, yoksa 'en' döndür
+    return LANGUAGES.some(l => l.code === code) ? code : 'en';
+};
+
+
+
+// State tanımlarken varsayılan değeri buna eşitle
+const [lang, setLang] = useState<LangCode>(getDeviceLang() as LangCode);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isLangModalOpen, setIsLangModalOpen] = useState(false);
+  const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
+  const [isOverdueExpanded, setIsOverdueExpanded] = useState(true);
+  const [taskViewMode, setTaskViewMode] = useState<'list' | 'category'>('list');
+
+  // ADD MODAL STATE (Eksik olanlar eklendi)
   
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false); 
+  const [addMode, setAddMode] = useState<'task' | 'habit'>('task'); 
+  
+  const router = useRouter();
+
+  const [inputValue, setInputValue] = useState("");
+  const [inputDesc, setInputDesc] = useState("");
+  const [inputDueDate, setInputDueDate] = useState(""); 
+  const [inputStartDate, setInputStartDate] = useState(""); 
+  const [notifInput, setNotifInput] = useState("");
+  const [alarmInput, setAlarmInput] = useState("");
+  const [isNotifOn, setIsNotifOn] = useState(false);
+  const [isAlarmOn, setIsAlarmOn] = useState(false);
+  const [isEveryDayOn, setIsEveryDayOn] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<Contact | null>(null);
+
+  const [newHabitTitle, setNewHabitTitle] = useState("");
+  const [newHabitFreq, setNewHabitFreq] = useState<'daily' | 'weekly'>('daily');
+  const [newHabitDays, setNewHabitDays] = useState<number[]>([]);
+  const [newHabitEndDate, setNewHabitEndDate] = useState("");
+  const [habitNotifInput, setHabitNotifInput] = useState(""); 
+  const [isHabitModalOpen, setIsHabitModalOpen] = useState(false);
+  // ... diğer state tanımları
+  const [newCategoryName, setNewCategoryName] = useState("");
+
   const [categories, setCategories] = useState<Category[]>([
       { id: 'work', name: 'İş', color: 'blue' }, 
       { id: 'home', name: 'Ev', color: 'orange' },
       { id: 'personal', name: 'Kişisel', color: 'green' }
   ]);
   const [selectedCategory, setSelectedCategory] = useState<Category>(categories[0]);
-  const [isCatModalOpen, setIsCatModalOpen] = useState(false);
-  const [newCatName, setNewCatName] = useState("");
-  const [newCatColor, setNewCatColor] = useState(CATEGORY_COLORS[0].id);
 
-  // --- GOOGLE AUTH ---
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: 'WEB_CLIENT_ID.apps.googleusercontent.com',
-    iosClientId: 'IOS_CLIENT_ID.apps.googleusercontent.com',
-    androidClientId: 'ANDROID_CLIENT_ID.apps.googleusercontent.com',
-  });
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [activeAlarmTask, setActiveAlarmTask] = useState<Task | null>(null);
+  const [detailText, setDetailText] = useState("");
+  const [detailDesc, setDetailDesc] = useState("");
+  const [detailDueDate, setDetailDueDate] = useState("");
 
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential);
-    }
-  }, [response]);
+  // DATE PICKERS
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDetailDatePicker, setShowDetailDatePicker] = useState(false); 
+  const [showHabitDatePicker, setShowHabitDatePicker] = useState(false);
+  const [datePickerTarget, setDatePickerTarget] = useState<'start' | 'due' | 'habitEnd' | 'detail'>('start');
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAuthLoading(false);
+  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([]); 
+  const [assignSearchText, setAssignSearchText] = useState("");
+  const [searchUsername, setSearchUsername] = useState("");
+  const [isNetworkModalOpen, setIsNetworkModalOpen] = useState(false);
+  const [networkTab, setNetworkTab] = useState<'ommio' | 'contacts'>('ommio'); 
+  const [isInputExpanded, setIsInputExpanded] = useState(false);
+
+    // Google Auth Kısmını Böyle Güncelle:
+    // Bu kısmı Google.useIdTokenAuthRequest'in hemen üzerine yazın
+const currentRedirectUri = React.useMemo(() => {
+    return AuthSession.makeRedirectUri({
+        scheme: 'ommioapp',
+        path: 'auth' // Bunu eklemek bazen sorunu çözer
     });
-    return unsubscribe;
+}, []);
+
+// Mevcut hook'unuzu bu yeni değişkeni kullanacak şekilde güncelleyin:
+const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: '677937409612-ijhg8dbhknb24hs53t9r8gvse397pvrh.apps.googleusercontent.com',
+    iosClientId: '677937409612-sats3t36t7mko7i2lds7m45sc52aofq2.apps.googleusercontent.com',
+    androidClientId: '677937409612-prdicaptu9fn46vmbp4o1c05nrhg2asb.apps.googleusercontent.com',
+    redirectUri: currentRedirectUri, // BURAYI GÜNCELLEDİK
+    prompt: Prompt.SelectAccount,
+    extraParams: { access_type: 'offline' },
+});
+
+  useEffect(() => {
+   if (response?.type === 'success') {
+        const { id_token } = response.params;
+        const credential = GoogleAuthProvider.credential(id_token);
+        
+        // Loading başlat
+        setIsAuthLoading(true);
+
+        signInWithCredential(auth, credential)
+            .then(async (userCredential) => {
+          // Google girişi başarılı oldu.
+          // Şimdi bu kullanıcıyı veritabanına da kaydedelim (Eğer yoksa)
+          const user = userCredential.user;
+          const userRef = doc(db, "users", user.uid);
+          const docSnap = await getDoc(userRef);
+
+          if (!docSnap.exists()) {
+                  
+                  // Google'dan gelen isimden kullanıcı adı türetelim
+                  // Örn: "Enes Berkay" -> "enesberkay_4821"
+                  const randomSuffix = Math.floor(Math.random() * 10000);
+                  const baseName = (user.displayName || "user").toLowerCase()
+                      .replace(/\s+/g, '')
+                      .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+                      .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+                  
+                  const autoUsername = `${baseName}_${randomSuffix}`;
+
+                  // Veritabanına yaz
+                  await setDoc(userRef, {
+                      uid: user.uid,
+                      email: user.email,
+                      username: autoUsername, // OTOMATİK OLUŞTURDUK
+                      displayName: user.displayName || "Google User",
+                      createdAt: serverTimestamp(),
+                      photoURL: user.photoURL,
+                      categories: [
+                          { id: 'work', name: 'İş', color: 'blue' },
+                          { id: 'home', name: 'Ev', color: 'orange' },
+                          { id: 'personal', name: 'Kişisel', color: 'green' }
+                      ]
+                  });
+                  
+                  // Public profil
+                  await setDoc(doc(db, "public_users", user.uid), {
+                      uid: user.uid,
+                      username: autoUsername,
+                      email: user.email,
+                      photoURL: user.photoURL
+                  });
+              }
+      })
+            .catch((error) => {
+                console.log("Google Sign-In Error:", error);
+                showToast("Giriş Hatası", "Google ile giriş yapılamadı: " + error.message, 'error');
+            })
+            .finally(() => {
+                setIsAuthLoading(false);
+            });
+    } else if (response?.type === 'error') {
+        showToast("Hata", "Google bağlantı hatası.", 'error');
+    }
+}, [response]);
+// --- GÖREV İÇİ YORUMLARI DİNLEME ---
+  // --- GÖREV İÇİ YORUMLARI DİNLEME (GÜNCELLENDİ) ---
+  useEffect(() => {
+    // 1. Güvenlik Kontrolü
+    if (!selectedTask || !user) return;
+
+    // 2. ID Belirleme (Çok Önemli)
+    // Eğer 'assignedTo' varsa onu kullan, yoksa 'assignedBy' (görevi oluşturan), o da yoksa kendi ID'n.
+    // Veritabanı yapınıza göre görevler "users/{USER_ID}/tasks" altında durur.
+    // addTask fonksiyonunuza baktığımda:
+    // - Başkasına atadıysanız: users/{friendID}/tasks içine kaydettiniz.
+    // - Kendinize atadıysanız: users/{myID}/tasks içine kaydettiniz.
+    // Yani: Görevin durduğu yer = assignedTo (eğer varsa) yoksa user.uid
+    
+    let targetDbId = user.uid;
+    
+    if (selectedTask.assignedTo) {
+        targetDbId = selectedTask.assignedTo;
+    } else if (selectedTask.assignedBy === user.uid) {
+        // Eğer ben oluşturduysam ve kime atandığı belli değilse (eski veri) bendedir.
+        targetDbId = user.uid;
+    }
+
+    // Konsola yazdırıp kontrol edelim (Hata ayıklama için)
+    console.log("Sohbet Baglantisi Kuruluyor:", `users/${targetDbId}/tasks/${selectedTask.id}/comments`);
+
+    try {
+        const q = query(
+          collection(db, "users", targetDbId, "tasks", selectedTask.id, "comments"),
+          orderBy("createdAt", "asc")
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setTaskComments(msgs);
+        }, (error) => {
+            console.error("Snapshot Hatasi:", error);
+            // İzin hatası olursa kullanıcıya bildirim göstermeyelim, sadece konsola yazsın.
+        });
+
+        return () => unsubscribe();
+    } catch (err) {
+        console.log("Query Hatasi:", err);
+    }
+  }, [selectedTask]);
+
+  // --- GÖREV YORUMU GÖNDERME (GÜNCELLENDİ) ---
+  const sendTaskComment = async () => {
+    if (!taskCommentInput.trim() || !selectedTask || !user) return;
+
+    // Yukarıdaki mantığın aynısı
+    let targetDbId = user.uid;
+    if (selectedTask.assignedTo) {
+        targetDbId = selectedTask.assignedTo;
+    }
+
+    try {
+      await addDoc(collection(db, "users", targetDbId, "tasks", selectedTask.id, "comments"), {
+        text: taskCommentInput.trim(),
+        senderId: user.uid,
+        senderName: user.displayName || user.username,
+        photoURL: user.photoURL || null,
+        createdAt: serverTimestamp()
+      });
+      setTaskCommentInput(""); 
+    } catch (e: any) {
+      console.error("Yorum Gönderme Hatası:", e);
+      showToast("Hata", "Yorum gönderilemedi: " + e.message, 'error');
+    }
+  };
+  
+  useEffect(() => {
+    const checkFirstLaunch = async () => {
+        const hasLaunched = await AsyncStorage.getItem("hasLaunched");
+        if (hasLaunched === null) {
+            setShowOnboarding(true);
+            await AsyncStorage.setItem("hasLaunched", "true");
+        }
+    };
+    checkFirstLaunch();
+}, []);
+  // --- APPLE LOGIN ---
+  // --- APPLE LOGIN (GÜNCELLENMİŞ) ---
+  const handleAppleLogin = async () => {
+    try {
+      // 1. İşlem başladığını kullanıcıya hissettir
+      setIsAuthLoading(true);
+
+      // 2. Apple Native Penceresini Aç
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      console.log("Apple Credential Alındı:", credential); // Konsoldan takip et
+
+      const { identityToken } = credential;
+      
+      if (identityToken) {
+        // 3. Firebase ile Bağlantı Kur
+        const provider = new OAuthProvider('apple.com');
+        const oAuthCredential = provider.credential({ idToken: identityToken });
+        
+        // Bu işlem başarılı olursa, useEffect'teki onAuthStateChanged tetiklenir ve sayfayı yönlendirir.
+        await signInWithCredential(auth, oAuthCredential);
+        console.log("Firebase Apple Girişi Başarılı!");
+      } else {
+        throw new Error("Apple Identity Token alınamadı.");
+      }
+
+    } catch (e: any) {
+      setIsAuthLoading(false); // Hata olursa loading'i kapat
+      console.error("Apple Login Hatası:", e);
+
+      // Kullanıcı vazgeçtiyse hata gösterme
+      if (e.code === 'ERR_CANCELED') {
+          console.log("Kullanıcı girişi iptal etti.");
+      } else {
+          // Gerçek hatayı ekrana bas
+          showToast("Hata", "Apple girişi başarısız: " + e.message, 'error');
+      }
+    }
+  };
+  // --- MİSAFİR UYARISI ---
+  const checkGuest = (actionName: string) => {
+  if (user && user.isAnonymous) {
+    askConfirmation(
+      t('auth_guest_title') || "Misafir Modu",
+      `${actionName} özelliğini kullanmak için lütfen ücretsiz kayıt olun veya giriş yapın.`,
+      handleLogout // Onayla'ya basınca çıkış yapar (Kayıt ekranına döner)
+    );
+    return true; // İşlemi durdurur
+  }
+  return false;
+};
+
+  // --- MİSAFİR GİRİŞİ ---
+  // --- MİSAFİR GİRİŞİ ---
+  const handleGuestLogin = async () => {
+    // 1. Loading başlat
+    setIsAuthLoading(true);
+    console.log("Misafir girişi başlatılıyor...");
+
+    try {
+      // 2. Firebase Anonim Giriş İsteği
+      const userCredential = await signInAnonymously(auth);
+      const guestUser = userCredential.user;
+      
+      console.log("Misafir girişi başarılı, ID:", guestUser.uid);
+
+      // 3. Veritabanına kayıt (Hata alsa bile giriş başarılı sayılsın diye try-catch içinde)
+      try {
+          await setDoc(doc(db, "users", guestUser.uid), {
+            uid: guestUser.uid,
+            username: "misafir_" + Math.floor(Math.random() * 100000),
+            displayName: "Misafir Kullanıcı",
+            createdAt: serverTimestamp(),
+            categories: [
+              { id: 'work', name: 'İş', color: 'blue' },
+              { id: 'home', name: 'Ev', color: 'orange' },
+              { id: 'personal', name: 'Kişisel', color: 'green' }
+            ],
+            isGuest: true
+          });
+      } catch (dbError) {
+          console.log("Veritabanı oluşturma hatası (Önemli değil, giriş yapıldı):", dbError);
+      }
+
+      // Başarılı olduğunda useEffect'teki onAuthStateChanged tetiklenecek ve sayfayı açacaktır.
+
+    } catch (error: any) {
+      console.error("Misafir Giriş Hatası:", error);
+      
+      let errorMsg = error.message;
+      if (error.code === 'auth/operation-not-allowed') {
+          errorMsg = "Firebase konsolundan 'Anonymous' girişi açılmamış.";
+      } else if (error.code === 'auth/network-request-failed') {
+          errorMsg = "İnternet bağlantınızı kontrol edin.";
+      }
+
+      showToast("Giriş Hatası", errorMsg, 'error');
+    } finally {
+      // 4. İşlem bitti, loading'i kapat
+      setIsAuthLoading(false);
+    }
+  };
+    // --- MEVCUT useEffect'LERİN ALTINA EKLE ---
+
+  // Dil değiştiğinde Takvim dilini de otomatik güncelle
+  useEffect(() => {
+      // Eğer seçilen dil (örn: 'ja', 'uk') config dosyasında tanımlıysa onu yap
+      if (LocaleConfig.locales[lang]) {
+          LocaleConfig.defaultLocale = lang;
+      } else {
+          // Tanımlı değilse (garanti olsun diye) İngilizce yap
+          LocaleConfig.defaultLocale = 'en';
+      }
+  }, [lang]); // 'lang' değiştiğinde bu kod çalışır
+
+  // -------------------------------------------
+  // --- EFFECT: AUTH & DATA ---
+// --- GÜNCELLENMİŞ AUTH & VERİ ÇEKME KODU ---
+  // --- AUTH & USER DATA LISTENER (DÜZELTİLMİŞ HALİ) ---
+  useEffect(() => {
+    const checkPersistence = async () => {
+        // Kullanıcı daha önce "Beni Hatırla"yı kapattıysa, açılışta çıkış yap
+        const shouldRemember = await AsyncStorage.getItem("ommio_remember_me");
+        if (shouldRemember === "false") {
+            await signOut(auth);
+        }
+    };
+    checkPersistence();
+    const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        // 1. Auth objesini başlangıç olarak ayarla
+        // Not: user.delete() gibi fonksiyonların çalışması için currentUser'ı yayıyoruz.
+        setUser(currentUser); 
+        setIsAuthLoading(false);
+
+        try {
+          const userDocRef = doc(db, "users", currentUser.uid);
+
+          // 2. Veritabanını Canlı Dinle (onSnapshot)
+          const unsubDb = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+              const userData = docSnap.data();
+              
+              // BURASI ÖNEMLİ: Veritabanından gelen TÜM verileri (username, photoURL, categories vb.)
+              // mevcut user state'inin üzerine yazıyoruz.
+              setUser((prev: any) => ({
+                ...prev,       // Auth'dan gelen temel bilgiler ve metotlar korunsun
+                ...userData    // Firestore'dan gelen güncel username, photoURL, vb. üzerine yazılsın
+              }));
+              if (userData.hasSeenOnboarding === false || userData.hasSeenOnboarding === undefined) {
+                    setShowOnboarding(true);
+                } else {
+                    setShowOnboarding(false);
+                }
+
+              // Premium bilgisini ayrıca state'e at
+              setIsPremium(userData.isPremium || false);
+            }
+          });
+          
+          // Cleanup (Component kapanırsa dinlemeyi durdur) için array'e atılabilir 
+          // ama şimdilik basit tutuyoruz.
+          
+        } catch (e) {
+          console.log("Veri çekme hatası", e);
+        }
+      } else {
+        setUser(null);
+        setIsAuthLoading(false);
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
+  
+  useEffect(() => { setInputStartDate(formatDateDDMMYYYY(selectedDate)); }, [selectedDate]);
+  useEffect(() => {
+    const loadSettings = async () => {
+        try {
+            const savedLang = await AsyncStorage.getItem("ommio_lang");
+            const savedTheme = await AsyncStorage.getItem("ommio_theme");
+            if (savedLang) setLang(savedLang as LangCode);
+            if (savedTheme) setTheme(savedTheme as ThemeMode);
+        } catch (e) {}
+    };
+    loadSettings();
   }, []);
 
-  // --- VERİ SENKRONİZASYONU ---
+  useEffect(() => {
+    const saveSettings = async () => {
+        try {
+            await AsyncStorage.setItem("ommio_lang", lang);
+            await AsyncStorage.setItem("ommio_theme", theme);
+        } catch (e) {}
+    };
+    saveSettings();
+  }, [lang, theme]);
+
+  // --- REKLAM TETİKLEYİCİ FONKSİYON ---
+  // --- REKLAM TETİKLEYİCİ ---
+  const checkAdTrigger = (type: 'tasks' | 'habits' | 'assigned') => {
+    if (isPremium) return; // Premium ise hiç uğraşma
+
+    setAdCounters(prev => {
+      const newVal = prev[type] + 1;
+      if (newVal >= AD_THRESHOLDS[type]) {
+        // Reklamı açmadan önce sayacı 5'e sıfırla
+        setAdCountdown(5);
+        setIsAdVisible(true);
+        return { ...prev, [type]: 0 };
+      }
+      return { ...prev, [type]: newVal };
+    });
+  };
+
+  // --- REKLAM GERİ SAYIM MANTIĞI ---
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isAdVisible && adCountdown > 0) {
+      interval = setInterval(() => {
+        setAdCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isAdVisible, adCountdown]);
+
+  // --- ARKA PLAN ZAMANLAYICI (10 Dk) ---
+  useEffect(() => {
+    if (!user || isPremium || isAdVisible) return; 
+    const timer = setInterval(() => {
+      setAdCounters(prev => {
+        const newTime = prev.time + 1;
+        if (newTime >= AD_THRESHOLDS.time) {
+          setAdCountdown(5); // Süreyi resetle
+          setIsAdVisible(true);
+          return { ...prev, time: 0 };
+        }
+        return { ...prev, time: newTime };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [user, isPremium, isAdVisible]);
+
+  // --- EKSİK OLAN PARÇA: GELEN ARKADAŞLIK İSTEKLERİNİ DİNLEME ---
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "users", user.uid, "tasks"));
+
+    // Kullanıcının "friend_requests" koleksiyonunu dinle
+    const q = query(
+      collection(db, "users", user.uid, "friend_requests"),
+      orderBy("createdAt", "desc") // En yeni istek en üstte görünsün
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const cloudTasks: Task[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
-      cloudTasks.sort((a, b) => b.id.localeCompare(a.id));
-      setTasks(cloudTasks);
+      const requests = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as FriendRequest[];
+      
+      console.log("Gelen İstekler:", requests); // Konsoldan kontrol etmek için
+      setFriendRequests(requests);
     });
+
     return () => unsubscribe();
   }, [user]);
 
-  // --- WIDGET ---
+  // 1. GÖREVLERİ DİNLEME (Tasks Listener) // --- CONTACTS GÜNCELLEME MANTIĞI (FOTOĞRAFLARI CANLI TUTAR) ---
+  // --- EKSİK OLAN KISIM BAŞLANGICI ---
+  useEffect(() => {
+    if (!user) return;
+
+    // Kullanıcının "tasks" koleksiyonunu oluşturulma tarihine göre dinle
+    const q = query(
+      collection(db, "users", user.uid, "tasks"),
+      orderBy("createdAt", "desc") 
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedTasks = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))as Task[];
+      setTasks(fetchedTasks);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // 2. ALIŞKANLIKLARI DİNLEME (Habits Listener)
+  useEffect(() => {
+    if (!user) return;
+
+    // Kullanıcının "habits" koleksiyonunu dinle
+    const q = query(
+      collection(db, "users", user.uid, "habits"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedHabits = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))as Habit[];
+      setHabits(fetchedHabits);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- CONTACTS GÜNCELLEME MANTIĞI (İSİM, GÖRÜNEN İSİM VE FOTOĞRAF SENKRONİZASYONU) ---
+  useEffect(() => {
+    if (!user) return;
+
+    const qContacts = query(collection(db, "users", user.uid, "contacts"));
+    
+    const unsubC = onSnapshot(qContacts, async (snap) => {
+        const localContacts = snap.docs.map(d => d.data() as Contact);
+        
+        // Her arkadaşın GÜNCEL bilgilerini Public tablodan çekiyoruz
+        const syncedContacts = await Promise.all(localContacts.map(async (contact) => {
+            try {
+                const publicDoc = await getDoc(doc(db, "public_users", contact.uid));
+                
+                if (publicDoc.exists()) {
+                    const pData = publicDoc.data();
+                    return { 
+                        ...contact, 
+                        // Eğer arkadaşın displayName'i varsa onu al, yoksa username'i kullan
+                        displayName: pData.displayName || pData.username, 
+                        username: pData.username || contact.username, 
+                        photoURL: pData.photoURL || null 
+                    }; 
+                }
+                // Public veri yoksa, mevcut veride displayName yoksa username'i ata
+                return { ...contact, displayName: contact.displayName || contact.username }; 
+            } catch (e) {
+                return contact;
+            }
+        }));
+
+        setContacts(syncedContacts);
+    });
+
+    return () => unsubC();
+  }, [user]);
+  // --- CHAT ÖNİZLEMELERİNİ DİNLEME ---
+  useEffect(() => {
+    if (!user || contacts.length === 0) return;
+
+    const unsubscribers: any[] = [];
+
+    contacts.forEach(contact => {
+        const chatId = [user.uid, contact.uid].sort().join('_');
+        const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp", "desc"));
+
+        // Her sohbet odasını dinle
+        const unsub = onSnapshot(q, (snapshot) => {
+            if (!snapshot.empty) {
+                const docs = snapshot.docs;
+                const lastMsg = docs[0].data();
+                
+                // Okunmamış mesajları say (Gönderen ben değilsem ve read=false ise)
+                const unreadCount = docs.filter(d => d.data().senderId !== user.uid && !d.data().read).length;
+
+                setChatPreviews((prev: any) => ({
+                    ...prev,
+                    [contact.uid]: {
+                        text: lastMsg.text,
+                        timestamp: lastMsg.timestamp,
+                        unread: unreadCount
+                    }
+                }));
+            } else {
+                // Hiç mesaj yoksa
+                setChatPreviews((prev: any) => ({
+                    ...prev,
+                    [contact.uid]: { text: t('no_message'), timestamp: null, unread: 0 }
+                }));
+            }
+        });
+        unsubscribers.push(unsub);
+    });
+
+    return () => {
+        unsubscribers.forEach(u => u());
+    };
+  }, [contacts, user]); // Contacts değişirse (yeni arkadaş gelirse) tekrar çalışır
+
+  // --- EFFECT: CHAT ---
+  // --- EFFECT: CHAT (GÜNCELLENDİ: Sekme Kontrolü Eklendi) ---
+  useEffect(() => {
+    // Eğer kullanıcı yoksa veya kimseyle konuşmuyorsak dur.
+    if (!user || !chatTarget) return;
+
+    const chatId = [user.uid, chatTarget.uid].sort().join('_');
+    
+    const qMsgs = query(
+        collection(db, "chats", chatId, "messages"), 
+        orderBy("timestamp", "desc"), 
+        limit(msgLimit)
+    );
+    
+    const unsubMsg = onSnapshot(qMsgs, (snap) => {
+        const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
+        
+        // *** DÜZELTME BURADA ***
+        // Mesajları okundu işaretlemeden önce, kullanıcının
+        // GERÇEKTEN sohbet ekranında (chat_room) olup olmadığını kontrol ediyoruz.
+        if (activeTab === 'chat_room') {
+            msgs.forEach(async (msg) => {
+                // Mesaj bana ait değilse ve okunmamışsa
+                if (msg.senderId !== user.uid && !msg.read) {
+                    try {
+                       await updateDoc(doc(db, "chats", chatId, "messages", msg.id), { read: true });
+                    } catch (e) {
+                       console.log("Okundu işaretlenemedi", e);
+                    }
+                }
+            });
+        }
+
+        setChatMessages(msgs);
+    });
+
+    return () => unsubMsg();
+    
+    // DİKKAT: En sona 'activeTab' eklendi. Böylece sekme değişince burası tetiklenir.
+  }, [user, chatTarget, msgLimit, activeTab]);
+
   useEffect(() => {
     if (Platform.OS === 'android') {
         const todayISO = getISODate(new Date());
         const todaysTasks = tasks.filter(t => t.date === todayISO);
         const comp = todaysTasks.filter(t => t.completed).length;
-        try { requestWidgetUpdate({ widgetName: 'OmmioWidget', renderWidget: () => widgetTaskHandler({ completedCount: comp, totalCount: todaysTasks.length, topTasks: todaysTasks.slice(0, 3).map(t => ({ text: t.text, completed: t.completed })) }), widgetNotFound: () => { } }); } catch (e) {}
+        try { 
+          // @ts-ignore
+          requestWidgetUpdate({ 
+            widgetName: 'OmmioWidget', 
+            // @ts-ignore
+            renderWidget: () => widgetTaskHandler({ 
+              completedCount: comp, totalCount: todaysTasks.length, 
+              topTasks: todaysTasks.slice(0, 3).map(t => ({ text: t.text, completed: t.completed })) 
+            }), widgetNotFound: () => { } 
+          }); 
+        } catch (e) {}
     }
   }, [tasks]);
 
-  const handleAuth = async () => {
-    if (!email || !password) { Alert.alert("Hata", "Lütfen alanları doldurun."); return; }
-    try {
-      if (authMode === 'login') await signInWithEmailAndPassword(auth, email, password);
-      else await createUserWithEmailAndPassword(auth, email, password);
-    } catch (error: any) { Alert.alert("Hata", error.message); }
+  const t = (key: string) => {
+    // @ts-ignore
+    return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
   };
 
-  const handleGuestLogin = async () => {
-    try { await signInAnonymously(auth); } catch (error: any) { Alert.alert("Hata", "Misafir girişi yapılamadı."); }
-  };
+  // --- FONKSİYONLAR ---
+  // --- ARKADAŞ SİLME ---
+  const handleRemoveFriend = async (targetUid: string, targetName: string) => {
+    // Önce kullanıcıdan onay alalım
+    askConfirmation(
+        t('remove_friend'),
+        `${targetName} kişisini çıkarmak istediğine emin misin?`,
+        async () => {
+             try {
+                 // Promise.all ile İKİ TARAFTAN DA aynı anda siliyoruz
+                 await Promise.all([
+                     // 1. Benim listemden sil
+                     deleteDoc(doc(db, "users", user.uid, "contacts", targetUid)),
+                     
+                     // 2. Karşı tarafın listesinden beni sil
+                     deleteDoc(doc(db, "users", targetUid, "contacts", user.uid))
+                 ]);
 
-  const handleAppleLogin = async () => {
+                 showToast("Başarılı", `${targetName} arkadaşlıktan çıkarıldı.`, 'success');
+                 
+                 // State'i (Ekranı) güncellememiz lazım ki hemen kaybolsun
+                 // (Firestore listener'ı bazen gecikebilir, bu satır anlık tepki verir)
+                 setContacts(prev => prev.filter(c => c.uid !== targetUid));
+
+             } catch(e: any) { 
+                 console.log(e);
+                 showToast("Hata", "Silme işlemi tam yapılamadı: " + e.message, 'error');
+             }
+        },
+        true // Kırmızı buton (Tehlikeli işlem)
+    );
+};
+// --- MİSAFİR HESABINI KALICI HESABA ÇEVİRME ---
+const handleConvertGuest = async () => {
+    // 1. Validasyonlar
+    if (!username.trim()) {
+        showToast(t('missing_info'), t('auth_username_required'), 'warning');
+        return;
+    }
+    if (!email.includes('@') || !email.includes('.')) {
+        showToast(t('missing_info'), "Geçerli bir e-posta girin.", 'warning');
+        return;
+    }
+    if (password.length < 6) {
+        showToast(t('missing_info'), "Şifre en az 6 karakter olmalı.", 'warning');
+        return;
+    }
+
+    // --- HATA ÇÖZÜMÜ: KULLANICI KONTROLÜ ---
+    if (!auth.currentUser) {
+        showToast("Hata", "Oturum bulunamadı.", 'error');
+        return;
+    }
+    // ---------------------------------------
+
+    setIsAuthLoading(true);
+
     try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
-      });
-      const { identityToken } = credential;
-      if (identityToken) {
-        const provider = new OAuthProvider('apple.com');
-        const oAuthCredential = provider.credential({ idToken: identityToken });
-        await signInWithCredential(auth, oAuthCredential);
+        // 2. Kullanıcı Adı Kontrolü
+        const cleanUsername = username.trim().toLowerCase()
+            .replace(/\s+/g, '')
+            .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+            .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+
+        const q = query(collection(db, "public_users"), where("username", "==", cleanUsername));
+        const checkUser = await getDocs(q);
+        
+        if (!checkUser.empty) {
+            setIsAuthLoading(false);
+            showToast("Hata", "Bu kullanıcı adı zaten kullanılıyor.", 'warning');
+            return;
+        }
+
+        // 3. HESAP BAĞLAMA İŞLEMİ
+        const credential = EmailAuthProvider.credential(email, password);
+        
+        // HATA ÇÖZÜMÜ: Artık auth.currentUser'ın null olmadığını garanti ettiğimiz için hata vermez.
+        const userCredential = await linkWithCredential(auth.currentUser, credential);
+        const linkedUser = userCredential.user;
+
+        // 4. Firestore Verilerini Güncelleme
+        const updates = {
+            username: cleanUsername,
+            displayName: username,
+            email: email,
+            isGuest: false,
+            categories: categories 
+        };
+
+        await setDoc(doc(db, "users", linkedUser.uid), updates, { merge: true });
+
+        await setDoc(doc(db, "public_users", linkedUser.uid), {
+            uid: linkedUser.uid,
+            username: cleanUsername,
+            displayName: username,
+            photoURL: null 
+        });
+
+        await setDoc(doc(db, "usernames", cleanUsername), {
+            email: email
+        });
+
+        // 5. Başarılı
+        setIsAuthLoading(false);
+        // Modalı kapatmak için state'i false yapın (isGuestModalOpen varsa)
+        setIsGuestModalOpen(false); 
+        showToast("Başarılı", "Hesabınız başarıyla oluşturuldu ve verileriniz korundu!", 'success');
+
+    } catch (error: any) {
+        setIsAuthLoading(false);
+        console.error("Link Error:", error);
+        
+        let msg = "İşlem başarısız.";
+        if (error.code === 'auth/email-already-in-use') {
+            msg = "Bu e-posta adresi zaten kullanımda.";
+        } else if (error.code === 'auth/credential-already-linked') {
+            msg = "Bu hesap zaten bağlanmış.";
+        } else if (error.code === 'auth/invalid-email') {
+            msg = "Geçersiz e-posta formatı.";
+        } else if (error.code === 'auth/weak-password') {
+            msg = "Şifre çok zayıf.";
+        }
+
+        showToast("Hata", msg, 'error');
+    }
+};
+  // --- ENGELLEME (Basitçe siliyoruz ama farklı mesaj veriyoruz, istersen 'blocked' koleksiyonu yapabilirsin) ---
+const handleBlockFriend = async (targetUid: string, targetName: string) => {
+      askConfirmation(
+          t('friend_block_title'),
+          `${targetName} {t('block_user_confirm')}`,
+          async () => {
+                try {
+                    // 1. Arkadaşlıktan çıkar (Her iki taraftan)
+                    await deleteDoc(doc(db, "users", user.uid, "contacts", targetUid));
+                    await deleteDoc(doc(db, "users", targetUid, "contacts", user.uid));
+
+                    // 2. Engellenenler listesine ekle (arrayUnion kullanıyoruz)
+                    await updateDoc(doc(db, "users", user.uid), {
+                        blockedUsers: arrayUnion(targetUid)
+                    });
+
+                    showToast(t('friend_block_title'), `${targetName} ${t('friend_blocked_success')}`, 'success');
+                } catch (e) {
+                    // Eğer blockedUsers alanı henüz yoksa hata verebilir, setDoc ile merge yapalım
+                    try {
+                        await setDoc(doc(db, "users", user.uid), { blockedUsers: [targetUid] }, { merge: true });
+                        // Tekrar silmeyi dene
+                        await deleteDoc(doc(db, "users", user.uid, "contacts", targetUid));
+                        await deleteDoc(doc(db, "users", targetUid, "contacts", user.uid));
+                        showToast(t('friend_block_title'), `${targetName} ${t('friend_blocked_success')}`, 'success');
+                    } catch (err) {
+                        showToast("Hata", "İşlem başarısız.", 'error');
+                    }
+                }
+          },
+          true // Kırmızı buton
+      );
+  };
+  const formatChatTime = (timestamp: any) => {
+      if (!timestamp) return "";
+      const date = new Date(timestamp.seconds * 1000);
+      const now = new Date();
+      
+      // Bugün ise sadece saat
+      if (date.toDateString() === now.toDateString()) {
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
-    } catch (e: any) { if (e.code !== 'ERR_CANCELED') Alert.alert('Hata', 'Apple girişi başarısız.'); }
+      // Dün veya daha eski ise tarih
+      return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
   };
+  const sendMessage = async () => {
+      if (!chatInput.trim() || !chatTarget || !user) return;
+      const chatId = [user.uid, chatTarget.uid].sort().join('_');
+      await addDoc(collection(db, "chats", chatId, "messages"), {
+          text: chatInput,
+          senderId: user.uid,
+          timestamp: serverTimestamp()
+      });
+      setChatInput("");
+  };
+  const handleDeleteChat = async () => {
+   askConfirmation(
+        "Sohbeti Sil",
+        "Bu sohbeti ve tüm mesajları silmek istediğine emin misin? Bu işlem geri alınamaz.", 
+         async () => {
+            if (!user || !chatTarget) return;
+            const chatId = [user.uid, chatTarget.uid].sort().join('_');
+            try {
+              // Mesajları tek tek sil (Firestore'da koleksiyonu tek seferde silemezsin)
+              const q = query(collection(db, "chats", chatId, "messages"));
+              const snapshot = await getDocs(q);
+              const batchPromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(batchPromises);
+              
+              setActiveTab('messages'); // Mesajlar sekmesine dön
+              setChatTarget(null);
+              showToast("Başarılı", "Sohbet silindi.", 'success');
+            } catch (e) {
+              showToast("Hata", "Sohbet silinemedi.", 'error');
+            }
+          },
+          true // Kırmızı buton (isDestructive)
+    );
+  };
+  // 1. "Şifremi Unuttum" butonuna basınca sadece Modalı açar
+  const openResetModal = () => {
+    setResetInput(""); // İçini temizle
+    setResetModalVisible(true); // Modalı aç
+  };
+
+  // 2. Modal içindeki "Gönder" butonuna basınca çalışır
+  const handleSendPasswordReset = async () => {
+    if (!resetInput.trim()) {
+      showToast("Uyarı", "Lütfen e-posta veya kullanıcı adı girin.", 'warning');
+      return;
+    }
+
+    setIsResetLoading(true);
+    let targetEmail = resetInput.trim();
+
+    try {
+      // EĞER GİRİLEN DEĞER BİR E-POSTA DEĞİLSE (İçinde @ yoksa), KULLANICI ADIDIR
+      if (!targetEmail.includes('@')) {
+        // Kullanıcı adını temizle (küçük harf, boşluksuz vs.)
+        const cleanUsername = targetEmail.toLowerCase()
+            .replace(/\s+/g, '')
+            .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+            .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+
+        // Firestore'dan bu kullanıcı adının e-postasını bul
+        const usernameRef = doc(db, "usernames", cleanUsername);
+        const docSnap = await getDoc(usernameRef);
+
+        if (docSnap.exists()) {
+          targetEmail = docSnap.data().email;
+        } else {
+          throw new Error("USER_NOT_FOUND");
+        }
+      }
+
+      // Firebase'e sıfırlama e-postası gönder
+      await sendPasswordResetEmail(auth, targetEmail);
+      
+      showToast("Başarılı", "Sıfırlama bağlantısı e-posta adresinize gönderildi.", 'success');
+      setResetModalVisible(false); // Modalı kapat
+      setResetInput(""); 
+
+    } catch (e: any) {
+      console.log(e);
+      let errorMsg = "İşlem başarısız.";
+      if (e.message === "USER_NOT_FOUND") errorMsg = "Bu kullanıcı adı ile kayıtlı üye bulunamadı.";
+      else if (e.code === 'auth/user-not-found') errorMsg = "Bu e-posta ile kayıtlı kullanıcı bulunamadı.";
+      else if (e.code === 'auth/invalid-email') errorMsg = "Geçersiz e-posta formatı.";
+      
+      showToast("Hata", errorMsg, 'error');
+    } finally {
+      setIsResetLoading(false);
+    }
+  };
+// --- ŞİFRE DEĞİŞTİRME FONKSİYONU ---
+  // --- ŞİFRE DEĞİŞTİRME / OLUŞTURMA FONKSİYONU ---
+  const handlePasswordChange = async () => {
+      // 1. Validasyon
+      if (!newPasswordInput.trim() || newPasswordInput.length < 6) {
+          showToast(t('warning_title'), "Şifre en az 6 karakter olmalıdır.", 'warning');
+          return;
+      }
+
+      if (!user) return;
+
+      try {
+          // 2. Firebase Şifre Güncelleme (Google hesabı olsa bile bu fonksiyon şifre ekler)
+          await updatePassword(user, newPasswordInput);
+          
+          showToast(t('success'), "Şifreniz başarıyla ayarlandı.", 'success');
+          setIsPasswordModalOpen(false);
+          setNewPasswordInput("");
+
+      } catch (error: any) {
+          console.log(error);
+          
+          // Önemli Hata Yönetimi:
+          if (error.code === 'auth/requires-recent-login') {
+                askConfirmation(
+                    t('security_warning_title') || "Güvenlik Uyarısı",
+                    "Bu işlemi yapabilmek için oturumunuzun taze olması gerekiyor. Lütfen çıkış yapıp tekrar giriş yapın.",
+                    handleLogout, // Onayla basınca çıkış yapar
+                    false 
+                );
+            } else {
+              showToast(t('error_title'), "İşlem başarısız: " + error.message, 'error');
+          }
+      }
+  };
+     // Bu fonksiyonu mevcut handleAuth yerine yapıştırın
+const handleAuth = async () => {
+    // 1. Girdileri Temizle
+    const inputVal = email.trim(); // Hem e-posta hem kullanıcı adı olabilir
+    const cleanPassword = password.trim();
+
+    // --- LOGIN İŞLEMİ ---
+    if (authMode === 'login') {
+        if (!inputVal || !cleanPassword) {
+            showToast(t('warning_title'), "Lütfen tüm alanları doldurun.", 'warning');
+            return;
+        }
+
+        setIsAuthLoading(true);
+
+        try {
+            let emailToLogin = inputVal;
+
+            // EĞER GİRİLEN DEĞER BİR E-POSTA DEĞİLSE (İçinde @ yoksa), KULLANICI ADIDIR
+            if (!inputVal.includes('@')) {
+                // Kullanıcı adını temizle (küçük harf, boşluksuz)
+                const cleanUsername = inputVal.toLowerCase()
+                    .replace(/\s+/g, '')
+                    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+                    .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+
+                // --- GÜVENLİ YÖNTEM ---
+                // Query yerine doğrudan GET yapıyoruz.
+                // 'usernames' koleksiyonunda ID'si bu kullanıcı adı olan belgeyi çek
+                const usernameRef = doc(db, "usernames", cleanUsername);
+                const docSnap = await getDoc(usernameRef);
+
+                if (!docSnap.exists()) {
+                    throw new Error("USER_NOT_FOUND"); // Böyle bir kullanıcı adı yok
+                }
+
+                // E-postasını al
+                emailToLogin = docSnap.data().email;
+            }
+
+            // Beni Hatırla Kontrolü
+            if (rememberMe) {
+                await AsyncStorage.setItem("ommio_remember_me", "true");
+            } else {
+                await AsyncStorage.setItem("ommio_remember_me", "false");
+            }
+
+            // Bulunan veya girilen E-posta ile giriş yap
+            await signInWithEmailAndPassword(auth, emailToLogin, cleanPassword);
+            
+            // Başarılı olursa useEffect'teki auth listener otomatik yönlendirir, loading kapatmaya gerek yok.
+
+        } catch (e: any) {
+            setIsAuthLoading(false);
+            console.error("Login Error:", e);
+            
+            let errorMsg = "Giriş başarısız.";
+            if (e.message === "USER_NOT_FOUND") errorMsg = "Bu kullanıcı adı ile kayıtlı üye bulunamadı.";
+            else if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') errorMsg = "Şifre veya kullanıcı bilgisi hatalı.";
+            else if (e.code === 'auth/user-not-found') errorMsg = "Kullanıcı bulunamadı.";
+            else if (e.code === 'auth/too-many-requests') errorMsg = "Çok fazla deneme yaptınız, lütfen bekleyin.";
+            
+            showToast(t('error_title'), errorMsg, 'error');
+        }
+    } 
+    // --- KAYIT OLMA (SIGNUP) İŞLEMİ ---
+    else {
+        // Kayıt olurken mutlaka gerçek bir e-posta zorunlu
+        if (!username.trim()) {
+            showToast(t('missing_info'), t('auth_username_required'), 'warning');
+            return;
+        }
+        // Basit e-posta doğrulama
+        if (!inputVal.includes('@') || !inputVal.includes('.')) {
+             showToast(t('missing_info'), "Lütfen geçerli bir e-posta adresi girin.", 'warning');
+             return;
+        }
+        if (!cleanPassword) {
+            showToast(t('missing_info'), "Lütfen bir şifre belirleyin.", 'warning');
+            return;
+        }
+
+        setIsAuthLoading(true);
+
+        try {
+            const cleanUsername = username.trim().toLowerCase()
+                .replace(/\s+/g, '')
+                .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+                .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+
+            // Kullanıcı adı daha önce alınmış mı kontrol et
+            const q = query(collection(db, "public_users"), where("username", "==", cleanUsername));
+            const checkUser = await getDocs(q);
+            if(!checkUser.empty) {
+                setIsAuthLoading(false);
+                showToast("Hata", "Bu kullanıcı adı zaten kullanılıyor.", 'warning');
+                return;
+            }
+
+            // Kayıt İşlemi
+            const cred = await createUserWithEmailAndPassword(auth, inputVal, cleanPassword);
+            await updateProfile(cred.user, { displayName: username });
+
+            const userData = {
+                uid: cred.user.uid,
+                username: cleanUsername,
+                displayName: username,
+                email: inputVal,
+                createdAt: serverTimestamp(),
+                hasSeenOnboarding: false,
+                categories: [
+                    { id: 'work', name: 'İş', color: 'blue' },
+                    { id: 'home', name: 'Ev', color: 'orange' },
+                    { id: 'personal', name: 'Kişisel', color: 'green' }
+                ]
+            };
+
+            await setDoc(doc(db, "users", cred.user.uid), userData);
+            
+            // Public users koleksiyonuna e-posta bilgisini de kaydediyoruz ki
+            // ileride kullanıcı adı ile giriş yaparken e-postayı buradan bulalım.
+            await setDoc(doc(db, "public_users", cred.user.uid), {
+                uid: cred.user.uid,
+                username: cleanUsername,
+                originalUsername: username,
+                // email: inputVal,  <-- BUNU KALDIRIN VEYA SİLİN (Güvenlik Riski)
+                photoURL: null
+            });
+
+            // --- YENİ EKLENECEK KISIM ---
+            // E-posta adresini güvenli bir "lookup" (arama) koleksiyonuna kaydediyoruz.
+            // Belge ID'si = kullanıcı adı
+            await setDoc(doc(db, "usernames", cleanUsername), {
+                email: inputVal
+            });
+            
+            setIsAuthLoading(false);
+
+        } catch (e: any) {
+            setIsAuthLoading(false);
+            console.error("Signup Error:", e);
+            let errorMsg = t('auth_process_failed');
+            if (e.code === 'auth/email-already-in-use') errorMsg = "Bu e-posta zaten kullanımda.";
+            else if (e.code === 'auth/invalid-email') errorMsg = "Geçersiz e-posta formatı.";
+            else if (e.code === 'auth/weak-password') errorMsg = "Şifre çok zayıf (en az 6 karakter).";
+            
+            showToast(t('error_title'), errorMsg, 'error');
+        }
+    }
+};
 
   const handleLogout = async () => { await signOut(auth); setTasks([]); };
+  
+const pickImage = async () => {
+    try {
+        console.log("Resim seçme işlemi başladı...");
 
-  // --- DÜZELTME BURADA: title parametresi eklendi ---
+        // 1. İzin İste
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (permissionResult.granted === false) {
+            showToast(t('permission_required'), t('profile_gallery_perm'), 'warning');
+            return;
+        }
+
+        // 2. Resmi Seç
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 1, // Buradaki kalite önemli değil, aşağıda manipulator ile ayarlayacağız
+        });
+
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            const asset = result.assets[0];
+            
+            console.log("Resim seçildi, yeniden boyutlandırılıyor...");
+
+            // --- 3. RESMİ KÜÇÜLTME (RESIZE) İŞLEMİ ---
+            // Genişliği 500px yapıyoruz, yükseklik otomatik ayarlanıyor.
+            // Bu işlem boyutu 50KB - 150KB arasına düşürür.
+            const manipResult = await ImageManipulator.manipulateAsync(
+                asset.uri,
+                [{ resize: { width: 500 } }], // Genişliği 500px'e sabitle
+                { 
+                    compress: 0.7, // Kalite %70 (Gayet yeterli)
+                    format: ImageManipulator.SaveFormat.JPEG, 
+                    base64: true // Base64 verisini istiyoruz
+                }
+            );
+
+            const finalBase64 = `data:image/jpeg;base64,${manipResult.base64}`;
+
+            // Boyut Kontrolü (Artık buraya takılması imkansıza yakın)
+            if (finalBase64.length > 1048487) {
+                showToast(t('file_too_large'), t('image_size_limit'), 'error');
+                return;
+            }
+
+            // 4. Kaydetme İşlemleri
+          
+
+            await setDoc(doc(db, "users", user.uid), { photoURL: finalBase64 }, { merge: true });
+            
+            try {
+                await setDoc(doc(db, "public_users", user.uid), { photoURL: finalBase64 }, { merge: true });
+            } catch (e) {}
+
+            setUser({ ...user, photoURL: finalBase64 });
+            
+            showToast(t('premium_congrats'), t('profile_photo_updated'), 'success');
+        }
+    } catch (e: any) {
+        showToast(t('error'), "t('image_upload_failed')" + e.message, 'error');
+    }
+  };
+  // --- PROFİL GÜNCELLEME FONKSİYONU ---
+const handleUpdateProfile = async () => {
+    // 1. Girdileri Temizle
+    const cleanDisplayName = editDisplayNameInput.trim();
+    
+    // Username değiştiyse temizle, değişmediyse eskisini tut
+    const cleanUsername = editUsernameInput.trim().toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+        .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+
+    // 2. Validasyon (Kontrol)
+    if (!cleanDisplayName) {
+        showToast("Uyarı", "Görünen isim boş bırakılamaz.", 'warning');
+        return;
+    }
+
+    if (cleanUsername.length < 3) {
+        showToast("Uyarı", "Kullanıcı adı en az 3 karakter olmalı.", 'warning');
+        return;
+    }
+
+    // Değişiklik var mı kontrolü? (Gereksiz yere veritabanını yormayalım)
+    const isNameChanged = cleanDisplayName !== user.displayName;
+    const isUsernameChanged = cleanUsername !== user.username;
+
+    if (!isNameChanged && !isUsernameChanged) {
+        setIsEditProfileVisible(false); // Değişiklik yoksa kapat
+        return;
+    }
+
+    try {
+        // --- SENARYO A: Sadece Görünen İsim Değişiyor (En kolayı) ---
+        if (isNameChanged && !isUsernameChanged) {
+             // 1. Firebase Auth Profilini Güncelle
+             if (auth.currentUser) {
+                await updateProfile(auth.currentUser, { displayName: cleanDisplayName });
+            }
+
+            // 2. Veritabanlarını Güncelle
+            await updateDoc(doc(db, "users", user.uid), { displayName: cleanDisplayName });
+            await updateDoc(doc(db, "public_users", user.uid), { displayName: cleanDisplayName });
+
+            // 3. State'i Güncelle (Anlık değişim için)
+            setUser((prev: any) => ({ ...prev, displayName: cleanDisplayName }));
+            showToast("Başarılı", "İsminiz güncellendi.", 'success');
+        }
+
+        // --- SENARYO B: Kullanıcı Adı Değişiyor (Zor olan) ---
+        else if (isUsernameChanged) {
+            // Başkası almış mı kontrol et
+            const q = query(collection(db, "public_users"), where("username", "==", cleanUsername));
+            const check = await getDocs(q);
+            
+            if (!check.empty) {
+                showToast("Hata", "Bu kullanıcı adı alınmış.", 'error');
+                return;
+            }
+
+            // Müsaitse güncelle (Hem isim hem username)
+            const updates = { username: cleanUsername, displayName: cleanDisplayName };
+            
+            if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: cleanDisplayName });
+            
+            await updateDoc(doc(db, "users", user.uid), updates);
+            // Public tablosunda eski username ile olan kaydı silip yenisini yaratmak daha güvenlidir ama update de çalışır
+            // Biz burada merge ile update yapıyoruz
+            await setDoc(doc(db, "public_users", user.uid), updates, { merge: true });
+
+            // State Güncelle
+            setUser((prev: any) => ({ ...prev, ...updates }));
+            showToast("Başarılı", "Profiliniz tamamen güncellendi.", 'success');
+        }
+
+        setIsEditProfileVisible(false); // Modalı kapat
+
+    } catch (e: any) {
+        console.error(e);
+        showToast("Hata", "Güncelleme yapılamadı.", 'error');
+    }
+};
+
   const scheduleLocalNotification = async (title: string, body: string, timeString: string, type: 'notification' | 'alarm') => {
       if (Platform.OS === 'web') return null;
       try {
         const [hours, minutes] = timeString.split(':').map(Number);
         const triggerDate = new Date(selectedDate); triggerDate.setHours(hours, minutes, 0, 0);
         const id = await Notifications.scheduleNotificationAsync({ 
-            content: { 
-                title: title, // Başlık artık parametreden geliyor
-                body: body, 
-                sound: true, 
-                priority: Notifications.AndroidNotificationPriority.HIGH, 
-                data: { type: type } 
-            }, 
+            content: { title: title, body: body, sound: true, priority: Notifications.AndroidNotificationPriority.HIGH, data: { type: type } }, 
             trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate }, 
         });
         return id;
       } catch (e) { return null; }
   };
 
-  const cancelNotif = async (id?: string | null) => { if(id && Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id); };
-
   const addTask = async () => {
-    if (!inputValue.trim()) return;
-    let notifId = null, alarmId = null;
-    // Artık 4 argüman gönderiyoruz ve fonksiyon 4 argüman bekliyor (Sorun çözüldü)
-    if (isNotifOn && notifInput.length === 5) notifId = await scheduleLocalNotification("Hatırlatma", inputValue, notifInput, 'notification');
-    if (isAlarmOn && alarmInput.length === 5) alarmId = await scheduleLocalNotification("ALARM!", inputValue, alarmInput, 'alarm');
-    
-    if (user) {
-      await addDoc(collection(db, "users", user.uid, "tasks"), { text: inputValue, completed: false, date: getISODate(selectedDate), categoryId: selectedCategory?.id || categories[0].id, notificationTime: (isNotifOn && notifInput.length === 5) ? notifInput : null, notificationId: notifId, alarmTime: (isAlarmOn && alarmInput.length === 5) ? alarmInput : null, alarmId: alarmId, createdAt: serverTimestamp() });
-    }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setInputValue(""); setNotifInput(""); setAlarmInput(""); setIsNotifOn(false); setIsAlarmOn(false); setIsInputExpanded(false);
+      // 1. BOŞ KONTROLÜ
+      if (!inputValue.trim()) {
+          showToast(t('warning_title'), t('missing_info'), 'warning');
+          return;
+      }
+
+      // 2. GİRİŞ KONTROLÜ
+      if (!user) {
+          showToast(t('error_title'), "Oturum hatası. Lütfen uygulamayı kapatıp açın.", 'error');
+          return;
+      }
+
+      setIsAuthLoading(true); // İşlem uzun sürebilir, loading gösterelim (isteğe bağlı)
+
+      try {
+          // 3. TARİH KONTROLÜ
+          let finalStartDate = inputStartDate;
+          if (!finalStartDate || finalStartDate.length < 10) {
+              finalStartDate = formatDateDDMMYYYY(selectedDate); 
+          }
+          const formattedStart = convertDDMMYYYYtoISO(finalStartDate);
+
+          // 4. KATEGORİ VE İZİN KONTROLÜ (YENİ EKLENEN KISIM)
+          let finalCategoryId = selectedCategory.id; // Varsayılan: Kendime atıyorsam seçtiğim kategori
+
+          if (assignTarget) {
+              if (checkGuest("Görev Atama")) return;
+              // A. Karşı tarafın "users" dokümanını çek (Kategorilerini öğrenmek için)
+              const targetUserDoc = await getDoc(doc(db, "users", assignTarget.uid));
+              if (!targetUserDoc.exists()) throw new Error("Kullanıcı bulunamadı.");
+              const targetUserData = targetUserDoc.data();
+
+              // B. Karşı tarafın "contacts" listesinde BENİM ayarlarımı çek
+              const targetContactRef = doc(db, "users", assignTarget.uid, "contacts", user.uid);
+              const targetContactDoc = await getDoc(targetContactRef);
+
+              if (!targetContactDoc.exists()) {
+                  throw new Error("Bu kullanıcı ile bağlantınız kopmuş.");
+              }
+
+              const targetSettings = targetContactDoc.data();
+
+              // KONTROL 1: İZİN (canAssignToMe)
+              // Karşı taraf "Bana görev atayabilir mi?" ayarını kapattıysa hata ver.
+              if (targetSettings.canAssignToMe === false) {
+                  throw new Error(`${assignTarget.username} ona görev atamanıza izin vermiyor.`);
+              }
+
+              // KONTROL 2: KATEGORİ (defaultCategoryId)
+              // Karşı taraf benim için özel bir kategori belirlemiş mi?
+              if (targetSettings.defaultCategoryId) {
+                  finalCategoryId = targetSettings.defaultCategoryId;
+              } else {
+                  // Belirlememişse, onun ilk kategorisine (genelde 'İş') at
+                  if (targetUserData.categories && targetUserData.categories.length > 0) {
+                      finalCategoryId = targetUserData.categories[0].id;
+                  } else {
+                      finalCategoryId = 'work'; // Hiçbir şey yoksa fallback
+                  }
+              }
+          }
+
+          // 5. BİLDİRİM & ALARM (Kendime atıyorsam çalışır)
+          let notifId = null, alarmId = null;
+          // Başkasına atıyorsak yerel bildirim kurmayız, sadece kendimiz için kurarız.
+          if (!assignTarget) {
+              if (isNotifOn && notifInput.length === 5) {
+                  notifId = await scheduleLocalNotification(t('notification'), inputValue, notifInput, 'notification');
+              }
+              if (isAlarmOn && alarmInput.length === 5) {
+                  alarmId = await scheduleLocalNotification(t('alarm'), inputValue, alarmInput, t('alarm'));
+              }
+          }
+
+          // 6. GÖREV OBJESİ
+          const newTask = {
+              text: inputValue,
+              description: inputDesc,
+              completed: false,
+              date: formattedStart,
+              dueDate: inputDueDate.length >= 10 ? inputDueDate : null,
+              showEveryDayUntilDue: isEveryDayOn,
+              categoryId: finalCategoryId, // Hesaplanan kategori ID'si
+              notificationTime: isNotifOn ? notifInput : null,
+              alarmTime: isAlarmOn ? alarmInput : null,
+              notificationId: notifId,
+              alarmId: alarmId,
+              createdAt: serverTimestamp(),
+              assignedBy: user.uid,
+              assignedByName: user.displayName || user.username || "Kullanıcı", 
+              assignedTo: assignTarget ? assignTarget.uid : user.uid
+          };
+          
+          // 7. KAYIT İŞLEMİ
+          if (assignTarget) {
+              await addDoc(collection(db, "users", assignTarget.uid, "tasks"), newTask);
+              showToast(t('task_assigned_title'), `${t('task_assigned_msg')} ${assignTarget.username}`, 'success');
+              checkAdTrigger('assigned');
+          } else {
+              await addDoc(collection(db, "users", user.uid, "tasks"), newTask);
+          }
+
+          // 8. TEMİZLİK
+          setIsAddModalOpen(false); 
+          setInputValue(""); 
+          setInputDesc(""); 
+          setInputDueDate(""); 
+          setNotifInput(""); 
+          setAlarmInput(""); 
+          setIsNotifOn(false); 
+          setIsAlarmOn(false); 
+          setIsEveryDayOn(false); 
+          setAssignTarget(null);
+          
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setIsInputExpanded(false);
+          Keyboard.dismiss();
+
+      } catch (error: any) {
+          console.error("HATA:", error);
+          showToast(t('error_title'), error.message, 'error');
+      } finally {
+          setIsAuthLoading(false);
+      }
   };
 
-  const toggleTask = async (task: Task) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
-    const newStatus = !task.completed;
-    if (newStatus) { cancelNotif(task.notificationId); cancelNotif(task.alarmId); }
-    if (user) { const taskRef = doc(db, "users", user.uid, "tasks", task.id); await updateDoc(taskRef, { completed: newStatus }); }
+ const addHabit = async () => {
+      // 1. GİRİŞ KONTROLÜ
+      if (!user) {
+          showToast(t('error_title'), "Oturum açık değil.", 'error');
+          return;
+      }
+
+      // 2. BOŞ KONTROLÜ
+      if (!newHabitTitle.trim()) {
+          showToast(t('warning_title'), t('missing_info'), 'warning');
+          return;
+      }
+
+      try {
+          const endDateISO = newHabitEndDate ? convertDDMMYYYYtoISO(newHabitEndDate) : null;
+          let notificationIds: string[] = [];
+          
+          // Bildirim Kurma
+          if (habitNotifInput.length === 5 && Platform.OS !== 'web') {
+              const [hours, minutes] = habitNotifInput.split(':').map(Number);
+              try {
+                  if (newHabitFreq === 'daily') {
+                      // @ts-ignore
+                      const id = await Notifications.scheduleNotificationAsync({ 
+                          content: { title: t('habits'), body: newHabitTitle, sound: true }, 
+                          trigger: { hour: hours, minute: minutes, repeats: true, type: Notifications.SchedulableTriggerInputTypes.CALENDAR } 
+                      });
+                      notificationIds.push(id);
+                  } else if (newHabitFreq === 'weekly') {
+                      for (const dayIndex of newHabitDays) {
+                          const expoWeekday = dayIndex + 1; 
+                          // @ts-ignore
+                          const id = await Notifications.scheduleNotificationAsync({ 
+                              content: { title: t('habits'), body: newHabitTitle, sound: true }, 
+                              trigger: { weekday: expoWeekday, hour: hours, minute: minutes, repeats: true, type: Notifications.SchedulableTriggerInputTypes.CALENDAR } 
+                          });
+                          notificationIds.push(id);
+                      }
+                  }
+              } catch(e) { console.log("Bildirim hatası:", e); }
+          }
+
+          // 3. KAYIT
+          await addDoc(collection(db, "users", user.uid, "habits"), { 
+              title: newHabitTitle, 
+              frequency: newHabitFreq, 
+              selectedDays: newHabitDays, 
+              endDate: endDateISO, 
+              completedDates: [], 
+              notificationTime: habitNotifInput, 
+              notificationIds: notificationIds, 
+              categoryId: selectedCategory.id, 
+              createdAt: serverTimestamp() 
+          });
+
+          // 4. TEMİZLİK
+          showToast(t('success'), t('all_good'), 'success');
+          setIsAddModalOpen(false);
+          setNewHabitTitle(""); 
+          setNewHabitFreq('daily'); 
+          setNewHabitDays([]); 
+          setNewHabitEndDate(""); 
+          setHabitNotifInput("");
+
+      } catch (error: any) {
+          console.error("ADD HABIT ERROR:", error);
+          showToast(t('error_title'), error.message, 'error');
+      }
   };
 
-  const deleteTask = async (task: Task) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    cancelNotif(task.notificationId); cancelNotif(task.alarmId);
-    if (user) { await deleteDoc(doc(db, "users", user.uid, "tasks", task.id)); }
+    const toggleTask = async (task: Task) => { 
+            if(user) {
+                // Eğer görev tamamlanıyorsa (false -> true oluyorsa) sayacı artır
+                if (!task.completed) {
+                    checkAdTrigger('tasks'); 
+                }
+                await updateDoc(doc(db, "users", user.uid, "tasks", task.id), { completed: !task.completed }); 
+            }};  
+  
+  const deleteTask = async (task: Task) => { if (user) { await deleteDoc(doc(db, "users", user.uid, "tasks", task.id)); } };
+  
+  const toggleHabitCompletion = async (habit: Habit, date: string) => {
+      const ref = doc(db, "users", user.uid, "habits", habit.id);
+      
+      // Eğer bu tarih daha önce işaretlenmemişse (yani yeni tamamlanıyorsa)
+      if (!habit.completedDates.includes(date)) {
+           checkAdTrigger('habits');
+      }
+
+      if (habit.completedDates.includes(date)) await updateDoc(ref, { completedDates: arrayRemove(date) });
+      else await updateDoc(ref, { completedDates: arrayUnion(date) });
   };
   
-  const saveNewCategory = () => { if (!newCatName.trim()) return; const newCat: Category = { id: Date.now().toString(), name: newCatName, color: newCatColor }; setCategories([...categories, newCat]); setSelectedCategory(newCat); setNewCatName(""); setIsCatModalOpen(false); };
-  const changeDate = (days: number) => { const newDate = new Date(selectedDate); newDate.setDate(selectedDate.getDate() + days); setSelectedDate(newDate); };
+  const deleteHabit = async (habit: Habit) => { 
+      if (habit.notificationIds) {
+          for(const id of habit.notificationIds) { if (Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id); }
+      }
+      if (user) await deleteDoc(doc(db, "users", user.uid, "habits", habit.id)); 
+  };
 
-  const isDark = theme === 'dark';
+  const toggleExpand = (taskId: string) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedTaskId(expandedTaskId === taskId ? null : taskId); };
+  const openEditModal = (task: Task) => { if (task.assignedBy !== user.uid && task.assignedTo !== user.uid) { showToast(t('error_title'), t('task_unauth_edit'), 'error'); return; } setSelectedTask(task); setDetailText(task.text); setDetailDesc(task.description || ""); setDetailDueDate(task.dueDate || ""); };
+  const saveTaskDetail = async () => { if (!selectedTask) return; try { const targetUid = selectedTask.assignedTo || user.uid; const taskRef = doc(db, "users", targetUid, "tasks", selectedTask.id); await updateDoc(taskRef, { text: detailText, description: detailDesc, dueDate: detailDueDate }); setSelectedTask(null); showToast(t('success'), t('task_updated'), 'success'); } catch (e) { showToast("Hata", "Güncelleme başarısız.", 'error'); } };
+  
+  const onDateChange = (event: any, selected: Date | undefined) => { 
+      // Sadece Android'de seçim yapınca otomatik kapat (Web ve iOS'ta butonla kapatacağız)
+      if (Platform.OS === 'android') {
+          setShowDatePicker(false); 
+      }
+      
+      if (selected) { 
+          const formatted = formatDateDDMMYYYY(selected);
+          // Hangi input için açıldıysa onu güncelle
+          if (datePickerTarget === 'start') setInputStartDate(formatted);
+          if (datePickerTarget === 'due') setInputDueDate(formatted);
+          if (datePickerTarget === 'habitEnd') setNewHabitEndDate(formatted);
+          if (datePickerTarget === 'detail') setDetailDueDate(formatted);
+      } 
+  };
+  
+  const onDetailDateChange = (event: any, selected: Date | undefined) => { 
+      setShowDetailDatePicker(false); 
+      if (selected) setDetailDueDate(formatDateDDMMYYYY(selected));
+  };
+  const onHabitDateChange = (event: any, selected: Date | undefined) => {
+      setShowHabitDatePicker(false);
+      if (selected) setNewHabitEndDate(formatDateDDMMYYYY(selected));
+  };
+
+  const openDatePicker = (target: 'start' | 'due' | 'habitEnd' | 'detail') => {
+      setDatePickerTarget(target);
+      setShowDatePicker(true);
+  };
+
+  const handleInputStartDateChange = (text: string) => { setInputStartDate(maskDateInput(text)); };
+  const handleInputDueDateChange = (text: string) => { setInputDueDate(maskDateInput(text)); };
+  const handleDetailDueDateChange = (text: string) => { setDetailDueDate(maskDateInput(text)); };
+  const handleHabitEndDateChange = (text: string) => setNewHabitEndDate(maskDateInput(text));
+  const handleNotifInputChange = (text: string) => { setNotifInput(maskTimeInput(text)); };
+  const handleAlarmInputChange = (text: string) => { setAlarmInput(maskTimeInput(text)); };
+  const handleHabitNotifInputChange = (text: string) => { setHabitNotifInput(maskTimeInput(text)); };
+  const changeDate = (days: number) => { const newDate = new Date(selectedDate); newDate.setDate(selectedDate.getDate() + days); setSelectedDate(newDate); };
+  const toggleHabitDay = (dayId: number) => { if (newHabitDays.includes(dayId)) setNewHabitDays(newHabitDays.filter(d => d !== dayId)); else setNewHabitDays([...newHabitDays, dayId]); };
+  // ... mevcut fonksiyonların arasına ekleyin
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    const newId = Math.random().toString(36).substr(2, 9);
+    
+    const newCategory = { id: newId, name: newCategoryName, color: newCategoryColor };
+    const updatedCategories = [...categories, newCategory];
+    
+    setCategories(updatedCategories);
+    setNewCategoryName("");
+    
+    // FIREBASE KAYDI (ÖNEMLİ)
+    if (user) {
+        try {
+            // 'users' koleksiyonunda kullanıcının dökümanına 'categories' alanını güncelliyoruz
+            await setDoc(doc(db, "users", user.uid), { categories: updatedCategories }, { merge: true });
+        } catch (e) {
+            console.log("Kategori kaydedilemedi", e);
+        }
+    }
+};
+
+// Kategori silerken de updateDoc yapmalısınız:
+const handleDeleteCategory = async (catId: string) => {
+    if (categories.length <= 1) {
+    showToast(t('warning_label'), t('at_least_one_category'), 'warning');
+    return;
+}
+    const updatedCategories = categories.filter(c => c.id !== catId);
+    setCategories(updatedCategories);
+    
+    if (user) {
+         await updateDoc(doc(db, "users", user.uid), { categories: updatedCategories });
+    }
+};
+
+  const sendFriendRequest = async () => {
+    // 1. Boş kontrolü
+    if (!searchUsername.trim()) {
+        showToast("Uyarı", "Lütfen bir kullanıcı adı girin.", 'warning');
+        return;
+    }
+
+    // Küçük harfe çevir ve boşlukları sil (Instagram mantığı: username her zaman küçük harftir)
+    const targetUsername = searchUsername.trim().toLowerCase().replace(/\s/g, '');
+
+    try {
+        // 2. Kullanıcıyı "public_users" içinde unique username ile ara
+        const q = query(collection(db, "public_users"), where("username", "==", targetUsername));
+        const querySnapshot = await getDocs(q);
+
+        // A. KULLANICI BULUNAMADI
+        if (querySnapshot.empty) { 
+            showToast("Hata", `@${targetUsername} kullanıcısı bulunamadı.`, 'error'); 
+            return; 
+        }
+
+        // Hedef kullanıcının verisini al
+        const targetUser = querySnapshot.docs[0].data();
+        const targetUid = targetUser.uid;
+        // Görünen ismi al (Yoksa username kullan)
+        const targetDisplayName = targetUser.displayName || targetUser.username;
+
+        // B. KENDİNE İSTEK ATMA
+        if (targetUid === user.uid) { 
+            showToast("Uyarı", "Kendinizi arkadaş olarak ekleyemezsiniz.", 'warning'); 
+            return; 
+        }
+
+        // C. ZATEN ARKADAŞ MI?
+        const contactRef = doc(db, "users", user.uid, "contacts", targetUid);
+        const contactSnap = await getDoc(contactRef);
+        if (contactSnap.exists()) { 
+            showToast("Bilgi", `${targetDisplayName} zaten listenizde ekli.`, 'info'); 
+            setSearchUsername(""); 
+            return; 
+        }
+
+        // 3. İsteği Gönder
+        const requestRef = doc(db, "users", targetUid, "friend_requests", user.uid);
+        
+        await setDoc(requestRef, { 
+            id: user.uid,
+            fromUid: user.uid, 
+            // Gönderen olarak BİZİM username ve display name'imizi ekliyoruz
+            fromUsername: user.username, 
+            fromDisplayName: user.displayName || user.username, // <-- YENİ: Display name de gidiyor
+            fromEmail: user.email, 
+            status: 'pending', 
+            createdAt: serverTimestamp() 
+        });
+        
+        // D. BAŞARILI (Kullanıcıya Display Name ile geri bildirim veriyoruz)
+        setSearchUsername(""); 
+        showToast("İstek Gönderildi", `${targetDisplayName} (@${targetUsername}) kişisine istek gitti.`, 'success');
+
+    } catch (e: any) { 
+        console.error("İstek gönderme hatası:", e);
+        showToast("Hata", "İstek gönderilemedi.", 'error');
+    }
+};
+// --- ŞİFRE SIFIRLAMA MODALINI AÇ ---
+  const openForgotPasswordModal = () => {
+    // Eğer giriş kutusunda halihazırda '@' içeren bir yazı varsa onu alalım
+    if (email.includes('@')) {
+        setResetEmailInput(email);
+    } else {
+        setResetEmailInput("");
+    }
+    setIsForgotPasswordModalOpen(true);
+  };
+
+  // --- ŞİFRE SIFIRLAMA LİNKİ GÖNDER ---
+  const handleSendResetEmail = async () => {
+    const emailToSend = resetEmailInput.trim();
+
+    if (!emailToSend || !emailToSend.includes('@')) {
+        showToast(t('warning_title'), "Lütfen geçerli bir e-posta adresi girin.", 'warning');
+        return;
+    }
+
+    try {
+        await sendPasswordResetEmail(auth, emailToSend);
+        showToast(t('success'), t('auth_reset_sent'), 'success'); // "Bağlantı gönderildi"
+        setIsForgotPasswordModalOpen(false); // Modalı kapat
+        setResetEmailInput(""); // Temizle
+    } catch (e: any) {
+        console.log(e);
+        let errMsg = e.message;
+        if (e.code === 'auth/user-not-found') errMsg = "Bu e-posta ile kayıtlı kullanıcı bulunamadı.";
+        if (e.code === 'auth/invalid-email') errMsg = "Geçersiz e-posta formatı.";
+        
+        showToast(t('error_title'), errMsg, 'error');
+    }
+  };
+
+  const acceptRequest = async (req: FriendRequest) => {
+    if (!user) return;
+    
+    try {
+        // 1. İsteği gönderen kişinin GÜNCEL verisini al
+        const senderDoc = await getDoc(doc(db, "public_users", req.fromUid));
+        
+        // Eğer veri yoksa istekteki eski verileri kullan (Fallback)
+        // req nesnesine any diyerek tip hatasını geçici çözüyoruz çünkü friendRequest interface'ini güncellemedik
+        const reqData = req as any; 
+        
+        const senderData = senderDoc.exists() ? senderDoc.data() : { 
+            username: reqData.fromUsername, 
+            displayName: reqData.fromDisplayName || reqData.fromUsername,
+            photoURL: null 
+        };
+        
+        // 2. Kaydedilecek Veriler
+        const senderUsername = senderData.username;
+        const senderDisplayName = senderData.displayName || senderUsername; // Öncelik Display Name
+        const senderPhoto = senderData.photoURL || null;
+
+        const myUsername = user.username; 
+        const myDisplayName = user.displayName || user.username;
+        const myPhoto = user.photoURL;
+
+        // 3. Çift Taraflı Kayıt
+        await Promise.all([
+            // A. Benim listeme ekle (Display Name öncelikli kaydediyoruz)
+            setDoc(doc(db, "users", user.uid, "contacts", req.fromUid), { 
+                uid: req.fromUid, 
+                username: senderUsername,      // Arama ve @ etiketi için
+                displayName: senderDisplayName, // Listede göstermek için
+                email: reqData.fromEmail || "", 
+                photoURL: senderPhoto, 
+                canAssignToMe: true,
+                createdAt: serverTimestamp()
+            }),
+
+            // B. Karşı tarafa beni ekle
+            setDoc(doc(db, "users", req.fromUid, "contacts", user.uid), { 
+                uid: user.uid, 
+                username: myUsername, 
+                displayName: myDisplayName,
+                email: user.email, 
+                photoURL: myPhoto, 
+                canAssignToMe: false,
+                createdAt: serverTimestamp()
+            }),
+
+            // C. İsteği sil
+            deleteDoc(doc(db, "users", user.uid, "friend_requests", req.id || req.fromUid))
+        ]);
+        
+        showToast("Başarılı", `${senderDisplayName} ile artık arkadaşsınız!`, 'success');
+        
+    } catch (e: any) { 
+        console.error("Kabul hatası:", e);
+        showToast("Hata", "Bağlantı kurulamadı.", 'error'); 
+    }
+};
+  const showTasksAssignedToFriend = async (friendUid: string, friendName: string) => {
+    if (!user) return;
+    try {
+        // Arkadaşın "tasks" koleksiyonunda, "assignedBy" benim ID'm olanları çek
+        const q = query(
+            collection(db, "users", friendUid, "tasks"), 
+            where("assignedBy", "==", user.uid)
+        );
+        
+        const snapshot = await getDocs(q);
+        const sentTasks = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+        
+        setFriendTasksModal({ visible: true, tasks: sentTasks, friendName });
+    } catch (e) {
+        showToast(t('error_title'), "Görevler alınamadı.", 'error');
+    }
+  };
+  const rejectRequest = async (reqId: string) => { try { await deleteDoc(doc(db, "users", user.uid, "friend_requests", reqId)); } catch (e) { } };
+  const togglePermission = async (contact: Contact) => { await updateDoc(doc(db, "users", user.uid, "contacts", contact.uid), { canAssignToMe: !contact.canAssignToMe }); };
+  const setContactCategory = async (contact: Contact, categoryId: string) => { await updateDoc(doc(db, "users", user.uid, "contacts", contact.uid), { defaultCategoryId: categoryId }); };
+  const fetchDeviceContacts = async () => {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status === 'granted') {
+          const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name] });
+          if (data.length > 0) {
+              const formattedContacts: DeviceContact[] = [];
+              for (const contact of data) {
+                  if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+                      let number = contact.phoneNumbers[0].number || "";
+                      number = number.replace(/\s/g, '').replace(/-/g, '').replace(/\(/g, '').replace(/\)/g, '');
+                      formattedContacts.push({ id: contact.id || Math.random().toString(), name: contact.name || "İsimsiz", phoneNumber: number, isAppUser: false });
+                  }
+              }
+              setDeviceContacts(formattedContacts);
+          }
+        } else { showToast("İzin Gerekli", "Rehberinize erişmek için izin vermelisiniz.", 'warning'); }  };
+  
+  const inviteContact = async (phoneNumber: string) => {
+      const isAvailable = await SMS.isAvailableAsync();
+      if (isAvailable) { await SMS.sendSMSAsync([phoneNumber], "Merhaba, ben Ommio kullanıyorum! https://ommio.app"); } else { showToast("Hata", "SMS servisi kullanılamıyor.", 'error'); }
+  };
+const handleDeleteAccount = async () => {
+    // Silme Mantığı
+    const performDelete = async () => {
+        try {
+            if (!user) return;
+            await deleteDoc(doc(db, "users", user.uid));
+            try { await deleteDoc(doc(db, "public_users", user.uid)); } catch (e) {}
+            await user.delete();
+            setTasks([]);
+            
+            // Başarılı Mesajı
+            showToast("Hoşçakal", "Hesabın başarıyla silindi.", 'success');
+
+        } catch (error: any) {
+            console.log("Silme hatası:", error);
+            // Hata Mesajı
+            showToast("Hata", "Hesap silinirken hata oluştu. Lütfen çıkış yapıp tekrar girdikten sonra deneyin.", 'error');
+        }
+    };
+
+    // Onay Kutusu
+    askConfirmation(
+        t('delete_account'), // "Hesabı Sil"
+        t('account_delete_confirm'), // "Emin misin?..."
+        performDelete,
+        true // Kırmızı buton
+    );
+};
+  // --- UI HELPERS ---
+  const isSystemDark = systemScheme === 'dark';
+  // --- YENİ BİLDİRİM FONKSİYONU ---
+  // type kısmına 'warning' ekledik
+const showToast = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
+    setCustomToast({ visible: true, title, message, type });
+    setTimeout(() => setCustomToast(prev => ({ ...prev, visible: false })), 4000);
+};
+
+  // --- YENİ ONAY KUTUSU FONKSİYONU ---
+  const askConfirmation = (title: string, message: string, onConfirm: () => void, isDestructive = false) => {
+      setConfirmModal({
+          visible: true,
+          title,
+          message,
+          onConfirm,
+          isDestructive
+      });
+  };
+  // --- CHAT ODASI RENDER FONKSİYONU ---
+  const renderChatRoom = () => {
+    return (
+      <View style={{ flex: 1, backgroundColor: currentColors.bg }}> 
+        
+        {/* --- CHAT HEADER (LOGO YOK, GERİ BUTONU ve SİLME BUTONU VAR) --- */}
+        <View style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            paddingTop: Platform.OS === 'ios' ? 0 : 10, paddingBottom: 10, paddingHorizontal: 15,
+            backgroundColor: currentColors.surface, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9',
+            height: 60, zIndex: 10
+        }}>
+            <View style={{flexDirection:'row', alignItems:'center'}}>
+                <TouchableOpacity onPress={() => setActiveTab('messages')} style={{ marginRight: 10 }}>
+                    <ChevronLeft size={28} color={COLORS.primary} />
+                </TouchableOpacity>
+
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', marginRight: 10, overflow:'hidden' }}>
+                    {chatTarget?.photoURL ? (
+                        <Image source={{ uri: chatTarget.photoURL }} style={{ width: 36, height: 36 }} />
+                    ) : (
+                        <Text style={{ color: '#fff', fontWeight: 'bold' }}>{chatTarget?.username?.[0]?.toUpperCase()}</Text>
+                    )}
+                </View>
+
+              <View>
+              {/* Üstte Büyük Display Name */}
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>
+                    {chatTarget?.displayName || chatTarget?.username}
+                </Text>
+                
+                {/* Altta Küçük @username */}
+                <Text style={{ fontSize: 11, color: currentColors.subText }}>
+                    @{chatTarget?.username}
+                </Text>
+
+                {isTyping && <Text style={{ fontSize: 10, color: COLORS.primary }}>yazıyor...</Text>}
+            </View>
+            </View>
+
+            {/* SİLME BUTONU */}
+            <TouchableOpacity onPress={handleDeleteChat} style={{padding: 5}}>
+                <Trash2 size={20} color={COLORS.danger} />
+            </TouchableOpacity>
+        </View>
+
+        {/* --- MESAJ LİSTESİ --- */}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <FlatList
+                data={chatMessages}
+                keyExtractor={(item) => item.id}
+                inverted={true} 
+                contentContainerStyle={{ paddingHorizontal: 15, paddingVertical: 20 }}
+                showsVerticalScrollIndicator={false}
+                onEndReached={() => setMsgLimit((prev) => prev + 25)}
+                renderItem={({ item: msg }) => {
+                    const isMe = msg.senderId === user.uid;
+                    const timeString = msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+                    return (
+                        <View style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', marginBottom: 8, maxWidth: '75%' }}>
+                            <View style={{
+                                backgroundColor: isMe ? COLORS.primary : (isDark ? '#334155' : '#fff'),
+                                borderRadius: 12, borderBottomRightRadius: isMe ? 2 : 12, borderBottomLeftRadius: isMe ? 12 : 2,
+                                padding: 8, paddingHorizontal: 12,
+                                shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 2, elevation: 1
+                            }}>
+                                <Text style={{ color: isMe ? '#fff' : currentColors.text, fontSize: 15 }}>{msg.text}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 2, gap: 4 }}>
+                                <Text style={{ fontSize: 9, color: isMe ? 'rgba(255,255,255,0.7)' : currentColors.subText }}>{timeString}</Text>
+                                
+                                {/* TİK MANTIĞI */}
+                                {isMe && (
+                                    msg.read ? (
+                                        // Görüldü (Mavimsi/Yeşilimsi Çift Tik)
+                                        <CheckCheck size={14} color="#a5f3fc" /> 
+                                    ) : (
+                                        // İletildi (Gri/Beyazımsı Çift Tik)
+                                        <CheckCheck size={14} color="rgba(255,255,255,0.6)" />
+                                    )
+                                )}
+                            </View>
+                            </View>
+                        </View>
+                    );
+                }}
+            />
+
+            {/* --- DAHA KOMPAKT INPUT ALANI --- */}
+            <View style={{ padding: 10, backgroundColor: currentColors.surface, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', paddingBottom: Platform.OS === 'ios' ? 30 : 10 }}>
+                <View style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', // Ortala
+                    backgroundColor: isDark ? COLORS.darkBg : '#f1f5f9', 
+                    borderRadius: 24, // Tam yuvarlak köşeler (Pill shape)
+                    paddingHorizontal: 15, 
+                    borderWidth: 1, 
+                    borderColor: isDark ? '#475569' : '#e2e8f0', 
+                    minHeight: 40, // Minimum yükseklik (tek satır için ideal)
+                    maxHeight: 100 // Çok yazınca uzasın ama ekranı kaplamasın
+                }}>
+                   <TextInput
+                    value={chatInput}
+                    onChangeText={setChatInput}
+                    placeholder="Mesaj..."
+                    placeholderTextColor={currentColors.subText}
+                    multiline={true} 
+                    blurOnSubmit={false} 
+                    onSubmitEditing={sendMessage} // Mobilde klavyeden gönder tuşu
+                    onKeyPress={(e) => {
+                        // HATA ÇÖZÜMÜ: (e as any) kullanarak TypeScript'i susturuyoruz.
+                        // Web'de Shift+Enter yeni satır, Sadece Enter mesaj gönderir.
+                        if (e.nativeEvent.key === 'Enter' && !(e as any).nativeEvent.shiftKey) {
+                            // Sadece Web'de preventDefault çalışır, mobilde hata vermemesi için kontrol
+                            if (Platform.OS === 'web') {
+                                e.preventDefault();
+                            }
+                            sendMessage();
+                        }
+                    }}
+                    style={{ 
+                        flex: 1, 
+                        color: currentColors.text, 
+                        fontSize: 15,
+                        paddingVertical: 8,
+                        paddingTop: 8,
+                        paddingBottom: 8
+                    }}
+                />
+                    <TouchableOpacity onPress={sendMessage} disabled={!chatInput.trim()} style={{ marginLeft: 10 }}>
+                        <View style={{width: 32, height: 32, borderRadius: 16, backgroundColor: chatInput.trim() ? COLORS.primary : 'transparent', alignItems:'center', justifyContent:'center'}}>
+                            <Send size={18} color={chatInput.trim() ? '#fff' : currentColors.subText} />
+                        </View>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </KeyboardAvoidingView>
+      </View>
+    );
+  };
+  const isDark = theme === 'system' ? isSystemDark : theme === 'dark';
   const currentColors = isDark ? { bg: COLORS.darkBg, surface: COLORS.darkSurface, text: '#fff', subText: '#94a3b8' } : { bg: COLORS.background, surface: COLORS.surface, text: COLORS.textDark, subText: COLORS.textLight };
-  const currentDayTasks = tasks.filter(t => t.date === getISODate(selectedDate));
-  const getCategoryColor = (catColorId: string) => CATEGORY_COLORS.find(c => c.id === catColorId) || CATEGORY_COLORS[0];
+    const getCategoryColor = (catId: string) => {
+        // Kategorinin rengini bul, eğer bulamazsan varsayılan 'blue' al
+        const cat = categories.find(c => c.id === catId);
+        const colorKey = cat?.color || 'blue';
+        // Rengin HEX kodunu ve arka planını bul
+        return CATEGORY_COLORS.find(c => c.id === colorKey) || CATEGORY_COLORS[0];
+    };
+  const currentISODate = getISODate(selectedDate);
+  const todaysTasks = tasks.filter(t => {
+      if (t.date === currentISODate) return true;
+      if (t.showEveryDayUntilDue && t.dueDate) return currentISODate >= t.date && currentISODate <= convertDDMMYYYYtoISO(t.dueDate);
+      return false;
+  });
+
+  const activeTasks = todaysTasks.filter(t => !t.completed).sort((a,b) => parseDueDate(a.dueDate) - parseDueDate(b.dueDate));
+  const completedTasks = todaysTasks.filter(t => t.completed);
+  const overdueTasks = tasks.filter(t => !t.completed && !t.showEveryDayUntilDue && t.date < getISODate(new Date()));
+  // --- BURAYI KOPYALA VE overdueTasks TANIMININ ALTINA YAPIŞTIR ---
+  
+  const getUpcomingTasks = () => {
+    const today = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(today.getDate() + 7);
+
+    const todayISO = getISODate(today);
+    const nextWeekISO = getISODate(nextWeek);
+
+    // Tarihi yarın ve sonraki 7 gün içinde olan, tamamlanmamış görevler
+    return tasks.filter((t: Task) => { // 't: Task' diyerek tip hatasını da çözüyoruz
+      return !t.completed && t.date > todayISO && t.date <= nextWeekISO;
+    }).sort((a, b) => a.date.localeCompare(b.date));
+  };
+  
+  const upcomingTasks = getUpcomingTasks();
+  
+  // ----------------------------------------------------------------
+  
+  const todaysHabits = habits.filter(h => {
+      if (h.endDate && h.endDate < currentISODate) return false;
+      if (h.frequency === 'daily') return true;
+      if (h.frequency === 'weekly') return h.selectedDays.includes(selectedDate.getDay());
+      return false;
+  }).sort((a,b) => (a.notificationTime || "24:00").localeCompare(b.notificationTime || "24:00"));
+  // --- PROGRESS BAR HESAPLAMASI ---
+  const totalTodaysHabits = todaysHabits.length;
+  const completedTodaysHabits = todaysHabits.filter(h => h.completedDates.includes(currentISODate)).length;
+  const habitProgress = totalTodaysHabits > 0 ? (completedTodaysHabits / totalTodaysHabits) * 100 : 0;
+  const filteredContacts = contacts.filter(c => c.username.toLowerCase().includes(assignSearchText.toLowerCase()));
+  // --- GÖREVLER PROGRESS BAR HESAPLAMASI ---
+  const totalTodaysTasks = todaysTasks.length;
+  const completedTodaysTasks = todaysTasks.filter(t => t.completed).length;
+  const taskProgress = totalTodaysTasks > 0 ? (completedTodaysTasks / totalTodaysTasks) * 100 : 0;
+   // --- TAKVİM İŞARETLEME MANTIĞI (BUGÜN ve SEÇİLİ GÜN) ---
+  const todayStr = getISODate(new Date());
+  const selectedStr = getISODate(selectedDate || new Date());
+
+  const calendarMarks: any = {};
+
+  // 1. Önce Bugünü İşaretle (Varsayılan Stil)
+  calendarMarks[todayStr] = {
+    customStyles: {
+      text: { color: COLORS.primary, fontWeight: '900' }
+    }
+  };
+
+  // 2. Seçili Günü İşaretle (Eğer bugün seçiliyse, üstteki stilin üzerine yazar)
+  calendarMarks[selectedStr] = {
+    selected: true,
+    customStyles: {
+      container: {
+        backgroundColor: COLORS.primary, // MOR KUTU
+        borderRadius: 8,
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+        elevation: 4,
+        shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 3
+      },
+      text: {
+        color: '#ffffff', // BEYAZ YAZI
+        fontWeight: 'bold'
+      }
+    }
+  };
+
+  const renderTask = (task: Task) => {
+    const catInfo = categories.find(c => c.id === task.categoryId) || categories[0];
+    const catColor = CATEGORY_COLORS.find(c => c.id === catInfo.color) || CATEGORY_COLORS[0];
+    const isAssignedByOther = task.assignedBy && task.assignedBy !== user.uid;
+    const isExpanded = expandedTaskId === task.id;
+    const isMultiDay = task.showEveryDayUntilDue;
+    // ... diğer kodlar ...
+
+ 
+
+
+    return (
+        <View key={task.id} style={[styles.taskCard, { backgroundColor: currentColors.surface, opacity: task.completed ? 0.6 : 1, borderLeftWidth: isAssignedByOther ? 4 : 0, borderLeftColor: COLORS.warning }]}>
+            <TouchableOpacity onPress={() => toggleExpand(task.id)} style={{flexDirection:'row', alignItems:'center'}}>
+                <TouchableOpacity onPress={() => toggleTask(task)} style={[styles.checkBox, task.completed ? { backgroundColor: COLORS.success, borderColor: COLORS.success } : { borderColor: '#cbd5e1' }]}>
+                    {task.completed && <Check size={14} color="#fff" />}
+                </TouchableOpacity>
+                <View style={{flex:1}}>
+                    <Text style={[styles.taskText, { color: currentColors.text, textDecorationLine: task.completed ? 'line-through' : 'none' }]}>{task.text}</Text>
+                    <View style={styles.taskMeta}>
+                        <View style={[styles.miniBadge, { backgroundColor: isDark ? '#334155' : catColor.bg }]}><View style={{width:6, height:6, borderRadius:3, backgroundColor: catColor.hex}} /><Text style={{fontSize:10, color: isDark ? '#fff' : catColor.hex, fontWeight:'bold'}}>{catInfo.name}</Text></View>
+                        {isAssignedByOther && <View style={[styles.miniBadge, { backgroundColor: '#fef3c7' }]}><User size={10} color={COLORS.warning} /><Text style={{fontSize:10, color: COLORS.warning, fontWeight:'bold'}}>{task.assignedByName || 'Patron'}</Text></View>}
+                        {task.dueDate && <View style={styles.metaItem}><CalendarClock size={10} color={COLORS.danger} /><Text style={{fontSize:10, color: COLORS.danger}}>{task.dueDate}</Text></View>}
+                        {isMultiDay && <View style={styles.metaItem}><Repeat size={10} color={COLORS.primary} /><Text style={{fontSize:10, color: COLORS.primary}}>{t('every_day')}</Text></View>}
+                        {task.notificationTime && (<View style={styles.metaItem}><Bell size={10} color={COLORS.primary} /><Text style={{fontSize:10, color: COLORS.primary}}>{task.notificationTime}</Text></View>)}
+                    </View>
+                </View>
+                <View style={{marginLeft:10}}>{isExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}</View>
+            </TouchableOpacity>
+            {isExpanded && (
+                <View style={{marginTop:15, paddingTop:15, borderTopWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}>
+                    {task.description ? (<View style={{flexDirection:'row', gap:5, marginBottom:10}}><AlignLeft size={14} color={currentColors.subText} style={{marginTop:2}} /><Text style={{color: currentColors.text, fontSize:14, flex:1}}>{task.description}</Text></View>) : (<Text style={{color: currentColors.subText, fontSize:12, fontStyle:'italic', marginBottom:10}}>Açıklama yok.</Text>)}
+                    <View style={{flexDirection:'row', justifyContent:'flex-end', gap:15, marginTop:5}}>
+                        <TouchableOpacity onPress={() => {askConfirmation( t('delete_btn'), t('task_delete_confirm'), () => deleteTask(task), true );
+}}><Trash2 size={16} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontSize:12, fontWeight:'bold'}}>{t('delete')}</Text></TouchableOpacity>
+                        {(task.assignedBy === user.uid || task.assignedTo === user.uid) && (<TouchableOpacity onPress={() => openEditModal(task)} style={{flexDirection:'row', alignItems:'center', gap:5, padding:5, backgroundColor: COLORS.primary + '20', borderRadius:8, paddingHorizontal:10}}><Edit2 size={16} color={COLORS.primary} /><Text style={{color: COLORS.primary, fontSize:12, fontWeight:'bold'}}>{t('edit')}</Text></TouchableOpacity>)}
+                    </View>
+                </View>
+            )}
+        </View>
+    );
+  };
 
   if (isAuthLoading) return <View style={[styles.container, { justifyContent:'center', alignItems:'center', backgroundColor: currentColors.bg }]}><ActivityIndicator size="large" color={COLORS.primary}/></View>;
 
   if (!user) {
+    if (!showAuth) {
+        // LandingPage'e artık rememberMe props'larını göndermiyoruz:
+        return <LandingPage lang={lang} isDark={isDark} onGetStarted={(mode) => {setShowAuth(true); setAuthMode(mode); }} onLanguageChange={(newLang) => setLang(newLang as LangCode)}/>;    
+    }
     return (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={[styles.container, { backgroundColor: currentColors.bg, justifyContent:'center', padding: 20 }]}>
         <View style={{alignItems:'center', marginBottom: 40}}>
-          <View style={{width:80, height:80, backgroundColor: COLORS.primary, borderRadius: 20, alignItems:'center', justifyContent:'center', marginBottom:20}}><Trophy size={40} color="#fff" /></View>
-          <Text style={{fontSize:32, fontWeight:'900', color: currentColors.text}}>Ommio</Text>
-          <Text style={{color: currentColors.subText}}>Hayatını düzenle, hedeflerine ulaş.</Text>
+            {/* LOGO GÖRSELİ */}
+            <Image 
+                source={require('../../assets/Logo/Icon.png')} 
+                style={{width: 100, height: 100, borderRadius: 20, marginBottom: 20}} 
+                resizeMode="contain"
+            />
+            {/* İsim zaten logoda yazıyorsa alttaki Text'i silebilirsin, yazmıyorsa kalsın */}
+            <Text style={{fontSize:32, fontWeight:'900', color: currentColors.text}}>Ommio</Text>
+            <Text style={{color: currentColors.subText}}>{t('get_things_done')}</Text>
         </View>
         <View style={[styles.card, { backgroundColor: currentColors.surface, padding: 20 }]}>
-           <View style={{flexDirection:'row', marginBottom: 20, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#e2e8f0'}}>
-              <TouchableOpacity onPress={()=>setAuthMode('login')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='login'?2:0, borderColor:COLORS.primary}}><Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='login'?COLORS.primary:currentColors.subText}}>Giriş Yap</Text></TouchableOpacity>
-              <TouchableOpacity onPress={()=>setAuthMode('signup')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='signup'?2:0, borderColor:COLORS.primary}}><Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='signup'?COLORS.primary:currentColors.subText}}>Kayıt Ol</Text></TouchableOpacity>
-           </View>
-           <View style={styles.authInputRow}><Mail size={20} color={currentColors.subText} /><TextInput value={email} onChangeText={setEmail} placeholder="E-posta" placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} autoCapitalize='none' /></View>
-           <View style={styles.authInputRow}><Lock size={20} color={currentColors.subText} /><TextInput value={password} onChangeText={setPassword} placeholder="Şifre" placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} secureTextEntry /></View>
-           <TouchableOpacity onPress={handleAuth} style={[styles.createBtn, {marginTop: 10}]}><Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>{authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}</Text></TouchableOpacity>
+            
+            {/* 1. ÜST MENÜ */}
+            <View style={{flexDirection:'row', marginBottom: 20, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#e2e8f0'}}>
+                <TouchableOpacity onPress={()=>setAuthMode('login')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='login'?2:0, borderColor:COLORS.primary}}>
+                    <Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='login'?COLORS.primary:currentColors.subText}}>Giriş Yap</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={()=>setAuthMode('signup')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='signup'?2:0, borderColor:COLORS.primary}}>
+                    <Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='signup'?COLORS.primary:currentColors.subText}}>Kayıt Ol</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* 2. INPUTLAR */}
+            {authMode === 'signup' && (
+                <View style={styles.authInputRow}>
+                    <User size={20} color={currentColors.subText} />
+                    <TextInput value={username} onChangeText={setUsername} placeholder="Kullanıcı Adı" placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} autoCapitalize='none' />
+                </View>
+            )}
+
+            <View style={styles.authInputRow}>
+                <Mail size={20} color={currentColors.subText} />
+                <TextInput 
+                    value={email} 
+                    onChangeText={setEmail} 
+                    // Placeholder'ı değiştirdik:
+                    placeholder={authMode === 'login' ? "E-posta veya Kullanıcı Adı" : "E-posta"} 
+                    placeholderTextColor={currentColors.subText} 
+                    style={[styles.authInput, {color: currentColors.text}]} 
+                    autoCapitalize='none' 
+                    // Login sırasında klavyede @ işareti zorunlu olmasın diye default yapıyoruz
+                    keyboardType={authMode === 'login' ? "default" : "email-address"} 
+                />
+            </View>
+
+            <View style={styles.authInputRow}>
+                <Lock size={20} color={currentColors.subText} />
+                <TextInput value={password} onChangeText={setPassword} placeholder="Şifre" placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} secureTextEntry />
+            </View>
+
+            {/* --- YENİ YER: BENİ HATIRLA (Sadece Giriş Modunda) --- */}
+            {authMode === 'login' && (
+                <TouchableOpacity 
+                    onPress={() => setRememberMe(!rememberMe)} 
+                    style={{flexDirection:'row', alignItems:'center', gap:10, marginBottom: 15, marginTop: 5}}
+                >
+                    <View style={{
+                        width: 20, height: 20, borderRadius: 4, borderWidth: 2, 
+                        borderColor: rememberMe ? COLORS.primary : currentColors.subText, 
+                        alignItems:'center', justifyContent:'center',
+                        backgroundColor: rememberMe ? COLORS.primary : 'transparent'
+                    }}>
+                        {rememberMe && <Check size={14} color="#fff" />}
+                    </View>
+                    <Text style={{color: currentColors.text, fontSize: 14}}>Beni Hatırla</Text>
+                </TouchableOpacity>
+            )}
+            {/* -------------------------------------------------- */}
+
+            {/* 3. GİRİŞ BUTONU */}
+            <TouchableOpacity onPress={handleAuth} style={[styles.createBtn, {marginTop: 10}]}>
+                <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>
+                    {authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}
+                </Text>
+            </TouchableOpacity>
+
+            {/* 4. ŞİFREMİ UNUTTUM BUTONU */}
+                {authMode === 'login' && (
+                    <TouchableOpacity onPress={openResetModal} style={{ marginTop: 15, alignSelf: 'center', padding: 5 }}>
+                        <Text style={{ color: currentColors.subText, fontSize: 14, fontWeight: '500' }}>
+                            {t('forgot_password')}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+
         </View>
         <View style={{marginTop: 20, gap: 10}}>
-           <TouchableOpacity disabled={!request} onPress={() => promptAsync()} style={[styles.socialBtn, {backgroundColor: currentColors.surface, flexDirection:'row', gap:10}]}>
-              <GoogleIcon size={20} color={currentColors.text} /> 
+           <TouchableOpacity disabled={!request} onPress={() => promptAsync()} style={[styles.socialBtn, {backgroundColor: currentColors.surface, flexDirection:'row', gap:10, justifyContent: 'center'}]}>
+              <Globe size={20} color={currentColors.text} /> 
               <Text style={{color: currentColors.text, fontWeight:'600'}}>Google ile Devam Et</Text>
            </TouchableOpacity>
+           
            {Platform.OS === 'ios' && (
-             <AppleAuthentication.AppleAuthenticationButton buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN} buttonStyle={isDark ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK} cornerRadius={12} style={{ width: '100%', height: 50 }} onPress={handleAppleLogin} />
+             <AppleAuthentication.AppleAuthenticationButton 
+               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN} 
+               buttonStyle={isDark ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK} 
+               cornerRadius={12} 
+               style={{ width: '100%', height: 50 }} 
+               onPress={handleAppleLogin} 
+             />
            )}
-           <TouchableOpacity onPress={handleGuestLogin} style={{marginTop:10}}><Text style={{textAlign:'center', color: currentColors.subText, textDecorationLine:'underline'}}>Üye olmadan devam et (Misafir)</Text></TouchableOpacity>
+           {/* MİSAFİR GİRİŞİ - SADECE MOBİLDE GÖZÜKSÜN (WEB'DE GİZLE) */}
+            {Platform.OS !== 'web' && (
+                <TouchableOpacity 
+                    onPress={handleGuestLogin} 
+                    style={{marginTop: 15, padding: 10, alignItems:'center'}}
+                >
+                    <Text style={{color: currentColors.subText, fontSize: 14, textDecorationLine:'underline'}}>
+                        {t('continue_guest')}
+                    </Text>
+                </TouchableOpacity>
+            )}
         </View>
       </KeyboardAvoidingView>
     );
   }
 
   return (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
     <SafeAreaView style={[styles.container, { backgroundColor: currentColors.bg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       
-      <View style={styles.header}>
-        <View><Text style={[styles.greeting, { color: currentColors.subText }]}>{getGreeting()},</Text><Text style={[styles.appTitle, { color: currentColors.text }]}>{user.isAnonymous ? 'Misafir' : (user.email?.split('@')[0] || 'Kullanıcı')}</Text></View>
-        <TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsSettingsOpen(!isSettingsOpen); }} style={[styles.iconBtn, { backgroundColor: isDark ? '#334155' : '#e2e8f0' }]}><Settings size={20} color={currentColors.text} /></TouchableOpacity>
-      </View>
-
-      {!isSettingsOpen && activeTab === 'list' && (
-          <View style={styles.dateNavContainer}>
-             <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}><ChevronLeft size={20} color={currentColors.subText} /></TouchableOpacity>
-             <View style={styles.dateDisplay}><Calendar size={14} color={COLORS.primary} style={{marginRight: 6}} /><Text style={[styles.dateText, { color: currentColors.text }]}>{selectedDate.getDate()}/{selectedDate.getMonth()+1} {selectedDate.getFullYear()}</Text>{getISODate(selectedDate) === getISODate(new Date()) && <View style={styles.todayBadge}><Text style={styles.todayText}>Bugün</Text></View>}</View>
-             <TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}><ChevronRight size={20} color={currentColors.subText} /></TouchableOpacity>
-          </View>
-      )}
-
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-        {isSettingsOpen ? (
-          <View style={{ gap: 15 }}>
-            <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
-               <View style={{flexDirection:'row', alignItems:'center', gap:10, marginBottom:15}}><User size={20} color={COLORS.primary} /><Text style={[styles.cardTitle, {color: currentColors.text, marginBottom:0}]}>Hesap</Text></View>
-               <Text style={{color: currentColors.text, marginBottom:10}}>{user.email || (user.isAnonymous ? "Misafir Hesap" : "Giriş Yapıldı")}</Text>
-               <TouchableOpacity onPress={handleLogout} style={{flexDirection:'row', alignItems:'center', gap:5, padding:10, backgroundColor:'#fee2e2', borderRadius:8, alignSelf:'flex-start'}}><LogOut size={16} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontWeight:'bold'}}>Çıkış Yap</Text></TouchableOpacity>
-            </View>
-            <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
-               <Text style={[styles.cardTitle, {color: currentColors.text}]}>Görünüm</Text>
-               <View style={{flexDirection:'row', gap:10}}>
-                   <TouchableOpacity onPress={() => setTheme('light')} style={[styles.settingBtn, theme === 'light' && styles.settingBtnActive]}><Sun size={16} color={theme === 'light' ? COLORS.primary : currentColors.subText} /><Text style={{color: theme === 'light' ? COLORS.primary : currentColors.subText}}>Aydınlık</Text></TouchableOpacity>
-                   <TouchableOpacity onPress={() => setTheme('dark')} style={[styles.settingBtn, theme === 'dark' && styles.settingBtnActive]}><Moon size={16} color={theme === 'dark' ? COLORS.primary : currentColors.subText} /><Text style={{color: theme === 'dark' ? COLORS.primary : currentColors.subText}}>Karanlık</Text></TouchableOpacity>
-               </View>
-            </View>
-          </View>
-        ) : (
-          activeTab === 'list' ? (
-            <View style={{gap: 12}}>
-              {currentDayTasks.length === 0 && (<View style={styles.emptyState}><View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Check size={32} color={COLORS.primary} /></View><Text style={[styles.emptyTitle, { color: currentColors.text }]}>Her şey yolunda!</Text><Text style={styles.emptyDesc}>Bugün için plan ekle.</Text></View>)}
-              {currentDayTasks.map(task => {
-                const catInfo = categories.find(c => c.id === task.categoryId) || categories[0];
-                const catColor = CATEGORY_COLORS.find(c => c.id === catInfo.color) || CATEGORY_COLORS[0];
-                return (
-                <View key={task.id} style={[styles.taskCard, { backgroundColor: currentColors.surface, opacity: task.completed ? 0.7 : 1 }]}>
-                  <TouchableOpacity onPress={() => toggleTask(task)} style={[styles.checkBox, task.completed ? { backgroundColor: COLORS.success, borderColor: COLORS.success } : { borderColor: '#cbd5e1' }]}><Check size={14} color={task.completed ? "#fff" : "transparent"} /></TouchableOpacity>
-                  <View style={{flex:1}}><Text style={[styles.taskText, { color: currentColors.text, textDecorationLine: task.completed ? 'line-through' : 'none' }]}>{task.text}</Text>
-                    <View style={styles.taskMeta}><View style={[styles.miniBadge, { backgroundColor: isDark ? '#334155' : catColor.bg }]}><View style={{width:6, height:6, borderRadius:3, backgroundColor: catColor.hex}} /><Text style={{fontSize:10, color: isDark ? '#fff' : catColor.hex, fontWeight:'bold'}}>{catInfo.name}</Text></View>
-                        {task.notificationTime && (<View style={styles.metaItem}><Bell size={10} color={COLORS.primary} /><Text style={{fontSize:10, color: COLORS.primary}}>{task.notificationTime}</Text></View>)}
-                        {task.alarmTime && (<View style={styles.metaItem}><AlarmClock size={10} color={COLORS.danger} /><Text style={{fontSize:10, color: COLORS.danger}}>{task.alarmTime}</Text></View>)}
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => deleteTask(task)} style={{padding:5}}><X size={16} color={currentColors.subText} /></TouchableOpacity>
-                </View>
-              )})}
-            </View>
-          ) : (
-            <View style={{padding:20, alignItems:'center'}}><Trophy size={48} color="#facc15" /><Text style={{fontSize:40, fontWeight:'bold', color: currentColors.text}}>{tasks.filter(t => t.completed).length}</Text><Text style={{color: currentColors.subText}}>Toplam Başarı</Text></View>
-          )
+      {activeTab !== 'chat_room' && (
+        <View style={[styles.header, { justifyContent: 'center' }]}> 
+            <TouchableOpacity onPress={() => setActiveTab('list')} activeOpacity={0.7}>
+                <Image 
+                    source={require('../../assets/Logo/Logo.png')} 
+                    style={{ width: 150, height: 50, resizeMode: 'contain' }} 
+                />
+            </TouchableOpacity>
+        </View>
         )}
-      </ScrollView>
+      
+      {/* --- TARİH NAVİGASYONU VE AÇILIR TAKVİM --- */}
+      {activeTab === 'list' && (
+        <View style={{ marginBottom: 15 }}>
+          
+          {/* Üst Bar: Sol Ok - Tarih (Tıklanabilir) - Sağ Ok */}
+          <View style={styles.dateNavContainer}>
+            <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}>
+              <ChevronLeft size={20} color={currentColors.subText} />
+            </TouchableOpacity>
 
-      {!isSettingsOpen && activeTab === 'list' && (
-      <View style={[styles.floatingInputWrapper, { backgroundColor: currentColors.surface, shadowColor: "#000" }]}>
-          {isInputExpanded && (
-              <View style={styles.expandedOptions}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{paddingVertical:10}}>{categories.map(cat => { const cc = CATEGORY_COLORS.find(c=>c.id===cat.color)||CATEGORY_COLORS[0]; return (<TouchableOpacity key={cat.id} onPress={() => setSelectedCategory(cat)} style={[styles.pill, selectedCategory.id === cat.id ? {backgroundColor: cc.bg, borderColor: cc.hex} : {borderColor: isDark ? '#334155' : '#e2e8f0'}]}><View style={{width:8, height:8, borderRadius:4, backgroundColor: cc.hex}} /><Text style={{fontSize:12, color: currentColors.text, fontWeight:'600'}}>{cat.name}</Text></TouchableOpacity>)})}</ScrollView>
-                  <View style={{flexDirection:'row', justifyContent:'space-between', paddingTop:10, borderTopWidth:1, borderColor:isDark?'#334155':'#f1f5f9'}}>
-                      <View style={[styles.timeToggle, isNotifOn && {backgroundColor: '#eff6ff', borderColor:'#3b82f6'}]}><Bell size={14} color={isNotifOn ? '#3b82f6' : currentColors.subText} /><Switch value={isNotifOn} onValueChange={setIsNotifOn} trackColor={{false:"#cbd5e1", true:"#93c5fd"}} thumbColor={isNotifOn ? "#3b82f6" : "#fff"} style={{transform:[{scale:0.7}]}} />{isNotifOn && <TextInput value={notifInput} onChangeText={setNotifInput} placeholder="09:00" placeholderTextColor="#94a3b8" style={{fontSize:12, fontWeight:'bold', width:40}} maxLength={5} />}</View>
-                      <View style={[styles.timeToggle, isAlarmOn && {backgroundColor: '#fef2f2', borderColor:'#ef4444'}]}><AlarmClock size={14} color={isAlarmOn ? '#ef4444' : currentColors.subText} /><Switch value={isAlarmOn} onValueChange={setIsAlarmOn} trackColor={{false:"#cbd5e1", true:"#fca5a5"}} thumbColor={isAlarmOn ? "#ef4444" : "#fff"} style={{transform:[{scale:0.7}]}} />{isAlarmOn && <TextInput value={alarmInput} onChangeText={setAlarmInput} placeholder="07:00" placeholderTextColor="#94a3b8" style={{fontSize:12, fontWeight:'bold', width:40}} maxLength={5} />}</View>
-                  </View>
-              </View>
+            <TouchableOpacity 
+              onPress={() => {
+                // Animasyonlu açılış/kapanış
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setIsCalendarExpanded(!isCalendarExpanded);
+              }}
+              style={styles.dateDisplay}
+              activeOpacity={0.7}
+            >
+              <CalendarIcon size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.dateText, { color: currentColors.text }]}>
+                {selectedDate.getDate()} {getGreeting(lang) === 'tr' ? ' ' : '/'} {selectedDate.getMonth() + 1} {'/ '}{selectedDate.getFullYear()}
+              </Text>
+              
+              {/* Açık/Kapalı Durumuna Göre Ok İkonu */}
+              {isCalendarExpanded ? (
+                 <ChevronUp size={14} color={COLORS.primary} style={{marginLeft: 5}} />
+              ) : (
+                 <ChevronDown size={14} color={currentColors.subText} style={{marginLeft: 5}} />
+              )}
+
+              {getISODate(selectedDate) === getISODate(new Date()) && (
+                <View style={styles.todayBadge}>
+                  <Text style={styles.todayText}>{t('today')}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}>
+              <ChevronRight size={20} color={currentColors.subText} />
+            </TouchableOpacity>
+          </View>
+
+          {/* --- AÇILIR TAKVİM (AKORDEON) --- */}
+          {isCalendarExpanded && (
+            <View style={{ 
+                marginTop: 10, 
+                backgroundColor: currentColors.surface, 
+                borderRadius: 16, 
+                padding: 10,
+                borderWidth: 1,
+                borderColor: isDark ? '#334155' : '#f1f5f9',
+                overflow: 'hidden' 
+            }}>
+              <Calendar
+                // Seçili tarih
+                current={getISODate(selectedDate)}
+                
+                // Animasyonlu geçiş için key
+                key={`${lang}-${theme}`} 
+                
+                // Custom Stiller
+                markingType={'custom'}
+                markedDates={{
+                  [getISODate(selectedDate)]: {
+                    selected: true,
+                    customStyles: {
+                      container: {
+                        backgroundColor: COLORS.primary,
+                        borderRadius: 8,
+                        elevation: 2
+                      },
+                      text: {
+                        color: '#fff',
+                        fontWeight: 'bold'
+                      }
+                    }
+                  },
+                  // Bugünün işaretlenmesi
+                  [getISODate(new Date())]: {
+                    customStyles: {
+                      text: {
+                        color: COLORS.primary,
+                        fontWeight: 'bold'
+                      }
+                    }
+                  }
+                }}
+
+                // Gün seçilince
+                onDayPress={(day: any) => {
+                  const newDate = new Date(day.timestamp);
+                  newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset());
+                  setSelectedDate(newDate);
+                  
+                  // Seçim yapınca kapat (İstersen açık bırakmak için bu satırı silebilirsin)
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setIsCalendarExpanded(false);
+                }}
+
+                // Tema Ayarları
+                theme={{
+                  backgroundColor: 'transparent',
+                  calendarBackground: 'transparent',
+                  textSectionTitleColor: currentColors.subText,
+                  selectedDayBackgroundColor: COLORS.primary,
+                  selectedDayTextColor: '#ffffff',
+                  todayTextColor: COLORS.primary,
+                  dayTextColor: currentColors.text,
+                  textDisabledColor: isDark ? '#475569' : '#d9e1e8',
+                  dotColor: COLORS.primary,
+                  arrowColor: COLORS.primary,
+                  monthTextColor: currentColors.text,
+                  indicatorColor: COLORS.primary,
+                  textDayFontWeight: '500',
+                  textMonthFontWeight: 'bold',
+                  textDayHeaderFontWeight: 'bold',
+                  textDayFontSize: 14,
+                  textMonthFontSize: 16,
+                  textDayHeaderFontSize: 12
+                }}
+              />
+              {/* --- TEMIZLENMIS: ONUMUZDEKI 7 GUN --- */}
+                <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10, paddingHorizontal: 5 }}>
+                    ONUMUZDEKI 7 GUN
+                </Text>
+                
+                {upcomingTasks.length > 0 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 5 }}>
+                    {upcomingTasks.map(task => (
+                        <View key={task.id} style={{
+                        width: 140, padding: 10, borderRadius: 12,
+                        backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
+                        borderLeftWidth: 3, borderLeftColor: getCategoryColor(task.categoryId).hex
+                        }}>
+                        <Text style={{ fontSize: 10, color: currentColors.subText, marginBottom: 4 }}>
+                            {task.date}
+                        </Text>
+                        <Text numberOfLines={2} style={{ fontSize: 12, fontWeight: '600', color: currentColors.text }}>
+                            {task.text}
+                        </Text>
+                        </View>
+                    ))}
+                    </ScrollView>
+                ) : (
+                    <Text style={{ fontSize: 12, color: currentColors.subText, fontStyle: 'italic', paddingHorizontal: 5 }}>
+                    Planlanmış görev yok.
+                    </Text>
+                )}
+                </View>
+            </View>
           )}
-          <View style={styles.inputMainRow}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(!isInputExpanded); }} style={styles.expandBtn}>{isInputExpanded ? <X size={20} color={currentColors.subText} /> : <MoreHorizontal size={20} color={currentColors.subText} />}</TouchableOpacity><TextInput value={inputValue} onChangeText={setInputValue} placeholder="Yeni bir görev ekle..." placeholderTextColor={currentColors.subText} style={[styles.mainInput, { color: currentColors.text }]} onFocus={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(true); }} /><TouchableOpacity onPress={addTask} style={[styles.sendBtn, { backgroundColor: inputValue.trim() ? COLORS.primary : (isDark ? '#334155' : '#e2e8f0') }]}><Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} /></TouchableOpacity></View>
+
+        </View>
+      )}
+      {/* --- ANA İÇERİK MANTIĞI --- */}
+      {/* DURUM 1: Eğer Chat Odası açıksa ScrollView YOK, direkt fonksiyon çalışsın */}
+      {activeTab === 'chat_room' && chatTarget ? (
+          
+          renderChatRoom()
+
+      ) : (
+      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 200 }} showsVerticalScrollIndicator={false}>
+        {/* GÖREV LİSTESİ */}
+        {activeTab === 'list' && (
+            
+            <View style={{gap: 12}}>
+                {/* --- GÖREVLER PROGRESS BAR --- */}
+                    {totalTodaysTasks > 0 && (
+                        <View style={{ backgroundColor: COLORS.primary, borderRadius: 20, padding: 20, marginBottom: 15, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 }}>
+                            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 5 }}>{t('daily_progress')}</Text>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
+                                <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>%{Math.round(taskProgress)}</Text>
+                                <Text style={{ color: '#fff', fontSize: 12 }}>{completedTodaysTasks}/{totalTodaysTasks} {t('task_progress_label')}</Text>
+                            </View>
+                            <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 3 }}>
+                                <View style={{ width: `${taskProgress}%`, height: '100%', backgroundColor: '#fff', borderRadius: 3 }} />
+                            </View>
+                        </View>
+                    )}
+              {overdueTasks.length > 0 && (<View style={{marginBottom: 10}}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsOverdueExpanded(!isOverdueExpanded); }} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', padding:10, backgroundColor: isDark ? '#450a0a' : '#fef2f2', borderRadius:12, marginBottom: isOverdueExpanded ? 10 : 0, borderWidth:1, borderColor: COLORS.danger}}><View style={{flexDirection:'row', alignItems:'center', gap:10}}><AlertCircle size={20} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontWeight:'bold'}}>{t('overdue')} ({overdueTasks.length})</Text></View>{isOverdueExpanded ? <ChevronUp size={20} color={COLORS.danger} /> : <ChevronDown size={20} color={COLORS.danger} />}</TouchableOpacity>{isOverdueExpanded && (<View style={{gap: 8}}>{overdueTasks.map(task => (<View key={task.id} style={[styles.taskCard, { backgroundColor: isDark ? '#450a0a' : '#fff', borderColor: COLORS.danger, borderWidth: 1 }]}><View style={{flex:1}}><Text style={[styles.taskText, { color: currentColors.text }]}>{task.text}</Text><Text style={{fontSize:10, color: COLORS.danger, marginTop:2}}>{task.date}</Text></View><TouchableOpacity onPress={() => deleteTask(task)}><Trash2 size={16} color={COLORS.danger} /></TouchableOpacity></View>))}</View>)}</View>)}
+              
+              {activeTasks.length > 0 ? activeTasks.map(task => renderTask(task)) : null}
+              
+              {completedTasks.length > 0 && (
+                  <View style={{marginTop: 20}}>
+                      {completedTasks.length === 1 ? (renderTask(completedTasks[0])) : (
+                          <View><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsCompletedExpanded(!isCompletedExpanded); }} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', padding:10, backgroundColor: currentColors.surface, borderRadius:12, marginBottom:10}}><View style={{flexDirection:'row', alignItems:'center', gap:10}}><CheckCircle2 size={20} color={COLORS.success} /><Text style={{color: currentColors.text, fontWeight:'bold'}}>{t('completed')} ({completedTasks.length})</Text></View>{isCompletedExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}</TouchableOpacity>{isCompletedExpanded && <View style={{opacity:0.7, gap:8}}>{completedTasks.map(task => renderTask(task))}</View>}</View>
+                      )}
+                  </View>
+              )}
+
+              {activeTasks.length === 0 && completedTasks.length === 0 && overdueTasks.length === 0 && (<View style={styles.emptyState}><View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Check size={32} color={COLORS.primary} /></View><Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('all_good')}</Text><Text style={styles.emptyDesc}>{t('no_tasks_today')}</Text></View>)}
+            </View>
+        )}
+
+        {/* ALIŞKANLIK LİSTESİ */}
+        {activeTab === 'habits' && (
+            <View style={{gap: 15}}>
+                
+                {/* --- YENİ TARİH NAVİGASYONU VE AÇILIR TAKVİM (HABITS İÇİN) --- */}
+                <View style={{ marginBottom: 5 }}>
+                  <View style={styles.dateNavContainer}>
+                    <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}>
+                      <ChevronLeft size={20} color={currentColors.subText} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setIsCalendarExpanded(!isCalendarExpanded);
+                      }}
+                      style={styles.dateDisplay}
+                      activeOpacity={0.7}
+                    >
+                      <CalendarIcon size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+                      <Text style={[styles.dateText, { color: currentColors.text }]}>
+                        {selectedDate.getDate()} {getGreeting(lang) === 'tr' ? ' ' : '/'} {selectedDate.getMonth() + 1} {selectedDate.getFullYear()}
+                      </Text>
+                      
+                      {isCalendarExpanded ? (
+                         <ChevronUp size={14} color={COLORS.primary} style={{marginLeft: 5}} />
+                      ) : (
+                         <ChevronDown size={14} color={currentColors.subText} style={{marginLeft: 5}} />
+                      )}
+
+                      {getISODate(selectedDate) === getISODate(new Date()) && (
+                        <View style={styles.todayBadge}>
+                          <Text style={styles.todayText}>{t('today')}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}>
+                      <ChevronRight size={20} color={currentColors.subText} />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* AÇILIR TAKVİM */}
+                  {isCalendarExpanded && (
+                    <View style={{ 
+                        marginTop: 10, 
+                        backgroundColor: currentColors.surface, 
+                        borderRadius: 16, 
+                        padding: 10,
+                        borderWidth: 1,
+                        borderColor: isDark ? '#334155' : '#f1f5f9',
+                        overflow: 'hidden',
+                        marginBottom: 10 // Alttaki elemanlarla mesafe
+                    }}>
+                      <Calendar
+                        current={getISODate(selectedDate)}
+                        key={`${lang}-${theme}-habits`} // Benzersiz key
+                        markingType={'custom'}
+                        markedDates={{
+                          [getISODate(selectedDate)]: {
+                            selected: true,
+                            customStyles: {
+                              container: { backgroundColor: COLORS.primary, borderRadius: 8, elevation: 2 },
+                              text: { color: '#fff', fontWeight: 'bold' }
+                            }
+                          },
+                          [getISODate(new Date())]: {
+                            customStyles: { text: { color: COLORS.primary, fontWeight: 'bold' } }
+                          }
+                        }}
+                        onDayPress={(day: any) => {
+                          const newDate = new Date(day.timestamp);
+                          newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset());
+                          setSelectedDate(newDate);
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setIsCalendarExpanded(false);
+                        }}
+                        theme={{
+                          backgroundColor: 'transparent',
+                          calendarBackground: 'transparent',
+                          textSectionTitleColor: currentColors.subText,
+                          selectedDayBackgroundColor: COLORS.primary,
+                          selectedDayTextColor: '#ffffff',
+                          todayTextColor: COLORS.primary,
+                          dayTextColor: currentColors.text,
+                          textDisabledColor: isDark ? '#475569' : '#d9e1e8',
+                          dotColor: COLORS.primary,
+                          arrowColor: COLORS.primary,
+                          monthTextColor: currentColors.text,
+                          indicatorColor: COLORS.primary,
+                          textDayFontWeight: '500',
+                          textMonthFontWeight: 'bold',
+                          textDayHeaderFontWeight: 'bold',
+                          textDayFontSize: 14,
+                          textMonthFontSize: 16,
+                          textDayHeaderFontSize: 12
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+                {/* --- ALISKANLIKLAR PROGRESS BAR (GÜNCELLENDİ) --- */}
+                <View style={{ 
+                    backgroundColor: COLORS.primary, // <-- DEĞİŞTİ (Eskisi: COLORS.secondary)
+                    borderRadius: 20, 
+                    padding: 20, 
+                    marginBottom: 15, 
+                    shadowColor: COLORS.primary,     // <-- DEĞİŞTİ (Eskisi: COLORS.secondary)
+                    shadowOpacity: 0.3, 
+                    shadowRadius: 10, 
+                    elevation: 5 
+                }}>
+                    <Text style={{ color: '#fff', fontSize: 12, marginBottom: 5, fontWeight:'600' }}>{t('daily_progress')}</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
+                        <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>%{Math.round(habitProgress)}</Text>
+                        <Text style={{ color: '#fff', fontSize: 12 }}>{completedTodaysHabits}/{totalTodaysHabits} {t('habit_progress_label')}</Text>
+                    </View>
+                    <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 3 }}>
+                        <View style={{ width: `${habitProgress}%`, height: '100%', backgroundColor: '#fff', borderRadius: 3 }} />
+                    </View>
+                </View>
+                {todaysHabits.length > 0 ? todaysHabits.map(habit => {
+                    const isDone = habit.completedDates.includes(currentISODate);
+                    const streak = habit.completedDates.length; 
+                    const cat = categories.find(c=>c.id===habit.categoryId);
+                    const cc = getCategoryColor(cat?.color || 'purple');
+
+                    return (
+                        <TouchableOpacity key={habit.id} onPress={() => toggleHabitCompletion(habit, currentISODate)} style={[styles.taskCard, {backgroundColor: currentColors.surface, opacity: isDone?0.8:1}]}>
+                             <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
+                                 <View style={{flexDirection:'row', alignItems:'center', gap:12}}>
+                                     <View style={[styles.checkBox, isDone ? {backgroundColor:COLORS.primary, borderColor:COLORS.primary} : {borderColor: '#cbd5e1'}]}>{isDone && <Check size={14} color="#fff" />}</View>
+                                     <View>
+                                        <Text style={[styles.taskText, {color: currentColors.text, textDecorationLine: isDone?'line-through':'none'}]}>{habit.title}</Text>
+                                        <View style={{flexDirection:'row', gap:5, marginTop:2}}>
+                                            <View style={{flexDirection:'row', alignItems:'center', gap:3, backgroundColor:'#ffedd5', paddingHorizontal:5, borderRadius:4}}><Flame size={10} color="#f97316" /><Text style={{fontSize:10, color:'#f97316', fontWeight:'bold'}}>{streak} {t('day')} </Text></View>
+                                            <View style={{backgroundColor:cc.bg, paddingHorizontal:5, borderRadius:4}}><Text style={{fontSize:10, color:cc.hex}}>{cat?.name}</Text></View>
+                                            {habit.notificationTime && <Text style={{fontSize:10, color:currentColors.subText}}>⏰ {habit.notificationTime}</Text>}
+                                        </View>
+                                     </View>
+                                 </View>
+                                 {/* WEB VE MOBİL İÇİN SİLME BUTONU DÜZELTİLDİ */}
+                                 <TouchableOpacity onPress={() => {
+                                    askConfirmation(
+                                        t('delete'), 
+                                        t('delete_habit_confirm'), 
+                                        () => deleteHabit(habit), 
+                                        true // isDestructive (Kırmızı buton)
+                                    );
+                                }}><Trash2 size={16} color={currentColors.subText} /></TouchableOpacity>
+                             </View>
+                        </TouchableOpacity>
+                    )
+                }) : (
+                    <View style={styles.emptyState}><View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Repeat size={32} color={COLORS.primary} /></View><Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('new_habit')}!</Text><Text style={styles.emptyDesc}>{t('motivational_daily')}</Text></View>
+                )}
+            </View>
+        )}
+        {/* MESAJLAR LİSTESİ (WHATSAPP TARZI) */}
+        {activeTab === 'messages' && (
+            user.isAnonymous ? (
+                 // MİSAFİR İÇİN BOŞ EKRAN UYARISI
+                 <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, marginTop:50}}>
+                    <MessageCircle size={60} color={COLORS.primary} style={{opacity:0.5, marginBottom:20}}/>
+                    <Text style={{textAlign:'center', fontWeight:'bold', fontSize:18, color:currentColors.text, marginBottom:10}}>Mesajlaşma</Text>
+                    <Text style={{textAlign:'center', color:currentColors.subText, marginBottom:20}}>Arkadaşlarınla mesajlaşmak için kayıt olmalısın.</Text>
+                    {/* BURASI DEĞİŞTİ: handleLogout YERİNE Modal Açılıyor */}
+                    <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, {paddingHorizontal:30}]}>
+                        <Text style={{color:'#fff', fontWeight:'bold'}}>Hesabı Oluştur</Text>
+                    </TouchableOpacity>
+                 </View>
+            ) : (
+             <View style={{ gap: 10, padding: 20 }}>
+                 {contacts
+                    // Son mesajın tarihine göre sırala (En yeni en üstte)
+                    .sort((a, b) => {
+                        const timeA = chatPreviews[a.uid]?.timestamp?.seconds || 0;
+                        const timeB = chatPreviews[b.uid]?.timestamp?.seconds || 0;
+                        return timeB - timeA;
+                    })
+                    .map(contact => {
+                       const preview = chatPreviews[contact.uid] || { text: "", timestamp: null, unread: 0 };
+                       
+                       return (
+                           <TouchableOpacity 
+                               key={contact.uid} 
+                               onPress={() => { setActiveTab('chat_room'); setChatTarget(contact); }} 
+                               style={[styles.card, {
+                                   backgroundColor: currentColors.surface, 
+                                   flexDirection: 'row', 
+                                   alignItems: 'center', 
+                                   paddingVertical: 12,
+                                   paddingHorizontal: 15,
+                                   marginBottom: 5
+                               }]}
+                           >
+                               
+                               {/* 1. FOTOĞRAF */}
+                               <View style={{position: 'relative'}}>
+                                   <View style={{width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden'}}>
+                                       {contact.photoURL ? (
+                                           <Image source={{uri: contact.photoURL}} style={{width: 50, height: 50}} />
+                                       ) : (
+                                           <Text style={{fontWeight: 'bold', color: '#fff', fontSize: 18}}>{contact.username[0].toUpperCase()}</Text>
+                                       )}
+                                   </View>
+                                   {/* Online durumu eklenebilir (Opsiyonel) */}
+                               </View>
+
+                               {/* 2. ORTA KISIM (İsim ve Mesaj) */}
+                               <View style={{marginLeft: 15, flex: 1, justifyContent: 'center'}}>
+                                   <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4}}>
+                                       <Text style={{fontSize: 16, fontWeight: 'bold', color: currentColors.text}} numberOfLines={1}>
+                                            {contact.displayName || contact.username}
+                                        </Text>
+                                       {/* ZAMAN DAMGASI */}
+                                        {preview.timestamp && (
+                                            <Text style={{
+                                                fontSize: 11, 
+                                                // BURASI GÜNCELLENDİ: Yeşil (success) yerine Mor (primary) yapıldı
+                                                color: preview.unread > 0 ? COLORS.primary : currentColors.subText, 
+                                                fontWeight: preview.unread > 0 ? 'bold' : 'normal'
+                                            }}>
+                                                {formatChatTime(preview.timestamp)}
+                                            </Text>
+                                        )}
+                                   </View>
+
+                                   <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                                       <Text style={{fontSize: 13, color: currentColors.subText, flex: 1, marginRight: 10}} numberOfLines={1}>
+                                            {preview.text}
+                                       </Text>
+                                       
+                                       {/* OKUNMAMIŞ MESAJ ROZETİ */}
+                                        {preview.unread > 0 && (
+                                            <View style={{
+                                                backgroundColor: COLORS.primary, // BURAYI GÜNCELLEDİK: Yeşil yerine Ana Renk (Mor)
+                                                minWidth: 20, height: 20, borderRadius: 10, 
+                                                alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5
+                                            }}>
+                                                <Text style={{color: '#fff', fontSize: 10, fontWeight: 'bold'}}>
+                                                    {preview.unread}
+                                                </Text>
+                                            </View>
+                                        )}
+                                   </View>
+                               </View>
+                           </TouchableOpacity>
+                     )
+                 })}
+                 
+                 {contacts.length === 0 && (
+                     <View style={{alignItems:'center', marginTop: 50, opacity: 0.6}}>
+                         <MessageCircle size={50} color={currentColors.subText} />
+                         <Text style={{marginTop: 10, color: currentColors.subText, textAlign:'center'}}>
+                            {t('no_connections')}
+                         </Text>
+                     </View>
+                 )}
+             </View>
+        ))}
+
+        {/* SOSYAL SEKME */}
+        {activeTab === 'social' && (
+            user.isAnonymous ? (
+                // MİSAFİR İÇİN BOŞ EKRAN UYARISI
+                <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, marginTop:50}}>
+                    <Users size={60} color={COLORS.primary} style={{opacity:0.5, marginBottom:20}}/>
+                    <Text style={{textAlign:'center', fontWeight:'bold', fontSize:18, color:currentColors.text, marginBottom:10}}>{t('social1')}</Text>
+                    <Text style={{textAlign:'center', color:currentColors.subText, marginBottom:20}}>{t('register_af')}</Text>
+                    <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, {paddingHorizontal:30}]}>
+                        <Text style={{color:'#fff', fontWeight:'bold'}}>{t('create_ac')}</Text>
+                    </TouchableOpacity>
+                </View>
+             ) : (
+            <View style={{ gap: 20, padding: 20 }}>
+                
+                {/* BAŞLIK VE EKLE BUTONU */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('friends')}</Text>
+                    <TouchableOpacity onPress={() => {
+                        if(!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true);
+                    }}>
+                        <UserPlus size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Gelen İstekler (Değişmedi) */}
+                {friendRequests.length > 0 && (
+                    <View>
+                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>GELEN İSTEKLER</Text>
+                        {friendRequests.map(req => (
+                            <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
+                                <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
+                                <View style={{ flexDirection: 'row', gap: 10 }}><TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity><TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity></View>
+                            </View>
+                        ))}
+                    </View>
+                )}
+
+                {/* --- ARKADAŞ LİSTESİ (AKORDEON YAPISI) --- */}
+                {contacts.map(contact => {
+                    const isExpanded = expandedContactId === contact.uid;
+                    const contactCat = categories.find(c => c.id === contact.defaultCategoryId);
+
+                    return (
+                        <View key={contact.uid} style={[styles.card, { backgroundColor: currentColors.surface, padding: 0, marginBottom: 10, overflow: 'hidden' }]}>
+                            
+                            {/* 1. KİŞİ BAŞLIĞI (Her zaman görünür) */}
+                            <TouchableOpacity 
+                                onPress={() => {
+                                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Animasyon
+                                    setExpandedContactId(isExpanded ? null : contact.uid); // Aç/Kapa mantığı
+                                }}
+                                activeOpacity={0.8}
+                                style={{ flexDirection: 'row', alignItems: 'center', padding: 15 }}
+                            >
+                                {/* Fotoğraf */}
+                                <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                    {contact.photoURL ? (
+                                        <Image source={{ uri: contact.photoURL }} style={{ width: 50, height: 50 }} />
+                                    ) : (
+                                        <Text style={{ fontWeight: 'bold', color: '#fff', fontSize: 18 }}>{contact.username[0].toUpperCase()}</Text>
+                                    )}
+                                </View>
+
+                               {/* --- ARKADAŞ LİSTESİ KARTI İÇİ --- */}
+                                <View style={{ marginLeft: 15, flex: 1 }}>
+                                    {/* 1. Ana İsim (Display Name) - Instagram'daki Kalın İsim */}
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>
+                                        {contact.displayName || contact.username}
+                                    </Text>
+                                    
+                                    {/* 2. Altına Kullanıcı Adı (@username) - Instagram'daki gri küçük yazı */}
+                                    <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight:'500', marginTop: 1 }}>
+                                        @{contact.username}
+                                    </Text>
+
+                                    <Text style={{ fontSize: 11, color: currentColors.subText, marginTop: 4 }}>
+                                        {isExpanded ? t('hide_detay') : t('touch_s')}
+                                    </Text>
+                                </View>
+
+                                {/* Açılır/Kapanır Ok */}
+                                {isExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}
+                            </TouchableOpacity>
+
+                            {/* 2. GİZLİ DETAYLAR (Sadece isExpanded true ise görünür) */}
+                            {isExpanded && (
+                                <View style={{ padding: 15, paddingTop: 0, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#f8fafc' }}>
+                                    
+                                    {/* A. Görev Atama İzni */}
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 15 }}>
+                                        <View>
+                                            <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('task_assign_permission')}</Text>
+                                            <Text style={{ fontSize: 10, color: currentColors.subText }}>{t('c_sendtask')}</Text>
+                                        </View>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: contact.canAssignToMe ? COLORS.success : currentColors.subText }}>
+                                                {contact.canAssignToMe ? "AÇIK" : "KAPALI"}
+                                            </Text>
+                                            <Switch 
+                                                value={contact.canAssignToMe} 
+                                                onValueChange={() => togglePermission(contact)} 
+                                                trackColor={{ false: "#cbd5e1", true: "#10b981" }} 
+                                            />
+                                        </View>
+                                    </View>
+
+                                    {/* B. Kategori Seçimi */}
+                                    <View>
+                                        <Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 8 }}>{t('assign_tasks_from')}</Text>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                            {categories.map(cat => {
+                                                const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0];
+                                                const isSelected = contact.defaultCategoryId === cat.id;
+                                                
+                                                return (
+                                                    <TouchableOpacity 
+                                                        key={cat.id} 
+                                                        onPress={() => setContactCategory(contact, cat.id)} 
+                                                        style={{
+                                                            flexDirection: 'row', alignItems: 'center', gap: 5, 
+                                                            paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, marginRight: 8,
+                                                            backgroundColor: isSelected ? cc.bg : (isDark ? '#334155' : '#fff'),
+                                                            borderWidth: 1, 
+                                                            borderColor: isSelected ? cc.hex : (isDark ? '#475569' : '#e2e8f0')
+                                                        }}
+                                                    >
+                                                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cc.hex }} />
+                                                        <Text style={{ fontSize: 12, color: isSelected ? cc.hex : currentColors.text, fontWeight: 'bold' }}>
+                                                            {cat.name}
+                                                        </Text>
+                                                        {isSelected && <Check size={12} color={cc.hex} />}
+                                                    </TouchableOpacity>
+                                                )
+                                            })}
+                                        </ScrollView>
+                                    </View>
+                                    {/* C. SİL VE ENGELLE BUTONLARI */}
+                                    <View style={{ marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#475569' : '#e2e8f0', flexDirection: 'row', gap: 10 }}>
+                                        {/* GÖNDERİLEN GÖREVLER BUTONU */}
+                                        <TouchableOpacity 
+                                            onPress={() => showTasksAssignedToFriend(contact.uid, contact.username)}
+                                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, borderRadius: 12, backgroundColor: '#e0e7ff', marginBottom: 10 }} // marginBottom ekledik ki diğer butonlara yapışmasın
+                                        >
+                                            <ListTodo size={16} color={COLORS.primary} />
+                                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primary }}>{t('my_assigned_tasks')}</Text>
+                                        </TouchableOpacity>
+
+                                        {/* Mevcut Sil ve Engelle butonları bunun altında kalsın... */}
+                                        <TouchableOpacity 
+                                            onPress={() => handleRemoveFriend(contact.uid, contact.username)}
+                                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, borderRadius: 12, backgroundColor: '#fee2e2',marginBottom: 10 }}
+                                        >
+                                            <UserMinus size={16} color={COLORS.danger} />
+                                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.danger }}>{t('remove_friend')}</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity 
+                                            onPress={() => handleBlockFriend(contact.uid, contact.username)}
+                                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#e2e8f0',marginBottom: 10 }}
+                                        >
+                                            <XCircle size={16} color={currentColors.subText} />
+                                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText }}>{t('block')}</Text>
+                                        </TouchableOpacity>
+                                        
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    );
+                })}
+
+                {contacts.length === 0 && friendRequests.length === 0 && <Text style={{ textAlign: 'center', color: currentColors.subText }}>{t('no_users')}</Text>}
+            </View>
+        ))}
+
+        {/* PROFİL SEKME */}
+{activeTab === 'profile' && (
+  <View style={{ gap: 15, padding: 20 }}>
+
+    {/* 1. PROFİL FOTOĞRAFI VE KULLANICI ADI KARTI */}
+    <View style={[styles.card, { backgroundColor: currentColors.surface, alignItems:'center', paddingVertical: 30 }]}>
+      
+      {/* A. Fotoğraf Kısmı */}
+      <TouchableOpacity onPress={pickImage} style={{ alignItems: 'center', marginBottom: 15 }}>
+        {user.photoURL ? (
+          <Image source={{uri: user.photoURL}} style={{width:100, height:100, borderRadius:50, marginBottom:10, borderWidth:3, borderColor:COLORS.primary}} />
+        ) : (
+          <View style={{width:100, height:100, borderRadius:50, backgroundColor:COLORS.primary, alignItems:'center', justifyContent:'center', marginBottom:10}}>
+            <User size={50} color="#fff" />
+          </View>
+        )}
+        {/* Tek ve net değiştirme yazısı */}
+        <Text style={{ color: COLORS.primary, fontWeight:'600', fontSize: 13 }}>{t('change_photo')}</Text>
+      </TouchableOpacity>
+
+      {/* B. İsim ve Kullanıcı Adı Kısmı */}
+      <View style={{alignItems: 'center', gap: 2}}>
+            {/* Gerçek İsim */}
+            <Text style={{ fontSize: 22, fontWeight: 'bold', color: currentColors.text }}>
+                {user.displayName || user.username || "İsimsiz"}
+            </Text>
+            
+            {/* Kullanıcı Adı ve Düzenle İkonu */}
+            <TouchableOpacity 
+                onPress={() => {
+                    setEditUsernameInput(user.username || "");
+                    setEditDisplayNameInput(user.displayName || ""); // İsmi de state'e at
+                    setIsEditProfileVisible(true);
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5, padding: 5 }}
+            >
+                <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>
+                    @{user.username}
+                </Text>
+                <View style={{backgroundColor: COLORS.primary+'20', padding:4, borderRadius:8}}>
+                    <Edit2 size={12} color={COLORS.primary} />
+                </View>
+            </TouchableOpacity>
+      </View>
+    </View>
+    
+
+    {/* 2. GENEL AYARLAR KARTI (Hepsi Bir Arada) */}
+    <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
+        <Text style={[styles.cardTitle, { color: currentColors.text }]}>{t('settings')}</Text>
+        
+        {/* A. Kategorileri Düzenle */}
+        <TouchableOpacity 
+            onPress={() => setIsCategoryModalOpen(true)} 
+            style={[styles.settingBtn, { marginBottom: 10, justifyContent: 'space-between' }]}
+        >
+            <View style={{flexDirection:'row', gap:10, alignItems:'center'}}>
+                <Layers size={20} color={COLORS.primary} />
+                <Text style={{ color: currentColors.text }}>{t('edit_categories')}</Text>
+            </View>
+            <ChevronRight size={16} color={currentColors.subText} />
+        </TouchableOpacity>
+        {/* PREMIUM OL BUTONU (TEST İÇİN) */}
+            {!isPremium && (
+                <TouchableOpacity 
+                    onPress={async () => {
+                        // Ödeme işlemi simülasyonu
+                        try {
+                            await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
+                            showToast(t('premium_congrats'), t('premium_active'), 'success');
+                        } catch (e) { console.log(e); }
+                    }}
+                    style={{
+                        overflow: 'hidden',
+                        borderRadius: 16,
+                        marginBottom: 15,
+                        borderWidth: 1,
+                        borderColor: '#fbbf24', // Amber rengi çerçeve
+                        backgroundColor: isDark ? '#422006' : '#fffbeb', // Koyu modda koyu amber, açıkta açık sarı
+                    }}
+                >
+                    <View style={{ padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <View style={{flex: 1}}>
+                            <View style={{flexDirection:'row', alignItems:'center', gap: 6, marginBottom: 4}}>
+                                <Trophy size={18} color="#d97706" fill="#d97706" />
+                                <Text style={{fontSize: 12, fontWeight:'800', color: '#d97706', letterSpacing: 1}}>PREMIUM</Text>
+                            </View>
+                            <Text style={{fontSize: 16, fontWeight: 'bold', color: isDark ? '#fcd34d' : '#92400e'}}>Sınırları Kaldır</Text>
+                            <Text style={{fontSize: 12, color: isDark ? '#fde68a' : '#b45309', marginTop: 2}}>Reklamsız deneyim ve sınırsız özellikler.</Text>
+                        </View>
+                        <View style={{
+                            backgroundColor: '#d97706', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20
+                        }}>
+                            <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Yükselt</Text>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            )}
+        
+        {/* PREMIUM İSE GÖSTERİLECEK ROZET */}
+        {isPremium && (
+             <View style={{padding: 15, backgroundColor: '#f0fdf4', borderRadius: 12, marginBottom: 15, borderWidth:1, borderColor:COLORS.success, flexDirection:'row', alignItems:'center', gap:10}}>
+                 <CheckCircle2 size={24} color={COLORS.success} />
+                 <Text style={{color: COLORS.success, fontWeight:'bold'}}>{t('active_premium')}</Text>
+             </View>
+        )}
+        {/* B. Dil Seçimi */}
+        <TouchableOpacity 
+             onPress={() => setIsLangModalOpen(true)} 
+             style={[styles.settingBtn, { marginBottom: 15, justifyContent: 'space-between' }]}
+        >
+             <View style={{flexDirection:'row', gap:10, alignItems:'center'}}>
+                 <Globe size={20} color={COLORS.primary} />
+                 <Text style={{ color: currentColors.text }}>{t('language')}</Text>
+             </View>
+             <Text style={{fontSize: 20}}>{LANGUAGES.find(l => l.code === lang)?.flag}</Text>
+        </TouchableOpacity>
+
+        {/* C. Tema (Görünüm) */}
+        <Text style={{fontSize:12, color:currentColors.subText, marginTop:5, marginBottom:10}}>{t('appearance')?.toUpperCase() || 'GÖRÜNÜM'}</Text>
+        <View style={{flexDirection:'row', gap:10, marginBottom:15}}>
+             <TouchableOpacity onPress={() => setTheme('light')} style={[styles.settingBtn, theme === 'light' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
+                <Sun size={16} color={theme === 'light' ? COLORS.primary : currentColors.subText} />
+                <Text style={{color: theme === 'light' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_light')}</Text>
+             </TouchableOpacity>
+             <TouchableOpacity onPress={() => setTheme('dark')} style={[styles.settingBtn, theme === 'dark' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
+                <Moon size={16} color={theme === 'dark' ? COLORS.primary : currentColors.subText} />
+                <Text style={{color: theme === 'dark' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_dark')}</Text>
+             </TouchableOpacity>
+             <TouchableOpacity onPress={() => setTheme('system')} style={[styles.settingBtn, theme === 'system' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
+                <Monitor size={16} color={theme === 'system' ? COLORS.primary : currentColors.subText} />
+                <Text style={{color: theme === 'system' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_system')}</Text>
+             </TouchableOpacity>
+        </View>
+        {/* --- ŞİFRE BELİRLEME / DEĞİŞTİRME BUTONU --- */}
+        {/* Condition (Şart) kaldırıldı, artık herkes görebilir */}
+        {(() => {
+            // Kullanıcının hali hazırda şifresi var mı kontrol edelim
+            const hasPasswordProvider = user.providerData.some((p: any) => p.providerId === 'password');
+            
+            return (
+                <TouchableOpacity 
+                    onPress={() => setIsPasswordModalOpen(true)} 
+                    style={{ 
+                        flexDirection: 'row', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        paddingHorizontal: 15, 
+                        paddingVertical: 12, 
+                        borderRadius: 12, 
+                        borderWidth: 1, 
+                        borderColor: isDark ? '#334155' : '#e2e8f0',
+                        backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                        marginBottom: 10 
+                    }}
+                >
+                    <View style={{flexDirection:'row', gap:12, alignItems:'center'}}>
+                        {/* İkon Kutusu */}
+                        <View style={{
+                            width:36, height:36, borderRadius:10, 
+                            backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#e0e7ff', 
+                            alignItems:'center', justifyContent:'center'
+                        }}>
+                            <Lock size={18} color={COLORS.primary} />
+                        </View>
+                        
+                        {/* Yazılar - Duruma göre değişir */}
+                        <View>
+                             <Text style={{ color: currentColors.text, fontWeight:'600', fontSize: 14 }}>
+                                {hasPasswordProvider ? t('change_password') : t('create_password')}
+                             </Text>
+                             <Text style={{ color: currentColors.subText, fontSize: 11 }}>
+                                {hasPasswordProvider 
+                                    ? "Güvenliğin için düzenli değiştir" 
+                                    : "E-posta ile de giriş yapabilmek için"}
+                             </Text>
+                        </View>
+                    </View>
+                    
+                    <ChevronRight size={18} color={currentColors.subText} />
+                </TouchableOpacity>
+            );
+        })()}
+
+        {/* D. Gizlilik Politikası Linki (Ayarlar Kartının En Altında) */}
+            <TouchableOpacity 
+                onPress={() => {
+                    // 1. Ayarlar modalı açıksa kapat (senin kodunda ayarlar bir modal değil sayfaydı ama yine de temiz olsun)
+                    setIsSettingsOpen(false); 
+                    
+                    // 2. Sayfaya yönlendir
+                    // '/tr/privacy' formatında yönlendirir
+                    router.push(`/${lang}/privacy`);
+                }} 
+                style={{paddingTop:15, borderTopWidth:1, borderColor: isDark?'#334155':'#f1f5f9'}}
+            >
+                <Text style={{color: COLORS.primary, textAlign:'center', fontSize:12, fontWeight:'600'}}>
+                   { t('privacy_terms')}
+                </Text>
+            </TouchableOpacity>
+    </View>
+    {/* --- MİSAFİR KULLANICI İÇİN KAYIT KARTI --- */}
+        {user.isGuest && (
+            <View style={[styles.card, { backgroundColor: '#fffbeb', borderColor: '#f59e0b', borderWidth: 1, marginBottom: 15 }]}>
+                <View style={{flexDirection:'row', alignItems:'center', gap:10, marginBottom:10}}>
+                    <AlertCircle size={24} color="#d97706" />
+                    <Text style={{fontSize:16, fontWeight:'bold', color:'#d97706'}}>{t('guest_acc')}</Text>
+                </View>
+                <Text style={{color:'#b45309', marginBottom:15, fontSize:13}}>
+                    {t('guest_now')}
+                </Text>
+                <TouchableOpacity 
+                    onPress={() => setIsGuestModalOpen(true)}
+                    style={{backgroundColor:'#d97706', padding:12, borderRadius:12, alignItems:'center'}}
+                >
+                    <Text style={{color:'#fff', fontWeight:'bold'}}>{t('save_register')}</Text>
+                </TouchableOpacity>
+            </View>
+        )}
+
+    {/* 3. ÇIKIŞ YAP KARTI */}
+    
+    <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
+      <TouchableOpacity onPress={handleLogout} style={{flexDirection:'row', alignItems:'center', gap:10, padding:15, backgroundColor:'#fee2e2', borderRadius:12, justifyContent:'center'}}>
+        <LogOut size={20} color={COLORS.danger} />
+        <Text style={{color: COLORS.danger, fontWeight:'bold', fontSize:16}}>{t('logout')}</Text>
+      </TouchableOpacity>
+    </View>
+
+    <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+        <TouchableOpacity 
+            onPress={handleDeleteAccount} 
+            style={{
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                gap: 10, 
+                padding: 10, 
+                justifyContent: 'center'
+            }}
+        >
+            <Trash2 size={20} color={currentColors.subText} />
+            <Text style={{ color: currentColors.subText, fontWeight: '600', fontSize: 14 }}>
+               { t('delete_account') }
+            </Text>
+        </TouchableOpacity>
+    </View>
+    
+  </View>
+  
+)}
+
+      </ScrollView>
+     )}
+      {/* REKLAM */}
+      {!isSettingsOpen && (<OmmioAdBanner isPremium={isPremium} />)}
+        
+      {/* BOTTOM TABS (YENİ DÜZEN) */}
+      {!isSettingsOpen && (
+      <View style={[styles.tabBar, { backgroundColor: currentColors.surface, borderTopColor: isDark?'#334155':'#e2e8f0' }]}>
+          <TouchableOpacity onPress={() => setActiveTab('list')} style={{alignItems:'center', opacity: activeTab==='list'?1:0.5}}><ListTodo size={24} color={activeTab==='list'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='list'?COLORS.primary:currentColors.subText}}>{t('tasks_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('habits')} style={{alignItems:'center', opacity: activeTab==='habits'?1:0.5}}><Repeat size={24} color={activeTab==='habits'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='habits'?COLORS.primary:currentColors.subText}}>{t('habits_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('messages')} style={{alignItems:'center', opacity: (activeTab==='messages'||activeTab==='chat_room')?1:0.5}}><MessageCircle size={24} color={(activeTab==='messages'||activeTab==='chat_room')?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:(activeTab==='messages'||activeTab==='chat_room')?COLORS.primary:currentColors.subText}}>{t('messages_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('social')} style={{alignItems:'center', opacity: activeTab==='social'?1:0.5}}><Users size={24} color={activeTab==='social'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='social'?COLORS.primary:currentColors.subText}}>{t('social_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('profile')} style={{alignItems:'center', opacity: activeTab==='profile'?1:0.5}}><User size={24} color={activeTab==='profile'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='profile'?COLORS.primary:currentColors.subText}}>{t('profile_tab')}</Text></TouchableOpacity>
       </View>
       )}
+      
+      {/* YENİ: ALIŞKANLIK EKLEME BUTONU (Sadece Habits sekmesinde) */}
+      {!isSettingsOpen && activeTab === 'habits' && (
+          <View style={[styles.floatingInputWrapper, {alignItems:'flex-end', backgroundColor:'transparent', shadowOpacity:0,bottom: !isPremium ? 175 : 95}]}>
+              <TouchableOpacity onPress={() => { setAddMode('habit'); setIsAddModalOpen(true); }} style={[styles.sendBtn, {backgroundColor: COLORS.primary, width:56, height:56, borderRadius:28, shadowColor:COLORS.primary, shadowOpacity:0.3, shadowRadius:10, elevation:5}]}>
+                  <Plus size={28} color="#fff" />
+              </TouchableOpacity>
+          </View>
+      )}
 
-      <View style={[styles.bottomTabs, { backgroundColor: currentColors.surface, borderTopColor: isDark ? '#334155' : '#f1f5f9' }]}>
-         <TouchableOpacity onPress={() => setActiveTab('list')} style={{alignItems:'center', opacity: activeTab === 'list' ? 1 : 0.5}}><List size={24} color={activeTab === 'list' ? COLORS.primary : currentColors.text} />{activeTab === 'list' && <View style={styles.activeDot} />}</TouchableOpacity>
-         <TouchableOpacity onPress={() => setActiveTab('stats')} style={{alignItems:'center', opacity: activeTab === 'stats' ? 1 : 0.5}}><LayoutDashboard size={24} color={activeTab === 'stats' ? COLORS.primary : currentColors.text} />{activeTab === 'stats' && <View style={styles.activeDot} />}</TouchableOpacity>
-      </View>
+    {/* GÖREV EKLEME BAR (SADECE GÖREVLER SEKMESİNDE) */}
+{!isSettingsOpen && activeTab === 'list' && (
+    <>
+        {/* 1. DIŞARI TIKLAMA KATMANI (Sadece genişletilmişse görünür) */}
+        {isInputExpanded && (
+            <TouchableWithoutFeedback onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Kapanış animasyonu
+                setIsInputExpanded(false);
+                Keyboard.dismiss();
+            }}>
+                <View style={{
+                    position: 'absolute',
+                    top: 0, bottom: 0, left: 0, right: 0,
+                    backgroundColor: 'rgba(0,0,0,0.2)', // Hafif karartma (İsterseniz 0.0 yapıp görünmez yapabilirsiniz)
+                    zIndex: 40 // İçerikten yüksek, Bardan düşük olmalı
+                }} />
+            </TouchableWithoutFeedback>
+        )}
 
-      <Modal visible={!!activeAlarmTask} transparent animationType="slide"><View style={styles.alarmOverlay}><View style={[styles.alarmCard, { backgroundColor: currentColors.surface }]}><Text style={[styles.alarmTitle, {color: currentColors.text}]}>ALARM!</Text><Text style={{color: currentColors.text}}>{activeAlarmTask?.text}</Text><TouchableOpacity onPress={() => setActiveAlarmTask(null)} style={styles.alarmCloseBtn}><Text style={{color:'#fff'}}>Kapat</Text></TouchableOpacity></View></View></Modal>
+        {/* 2. GÖREV EKLEME KUTUSU - KONUM GÜNCELLENDİ */}
+                <BlurView 
+                    intensity={Platform.OS === 'ios' ? 80 : 100}
+                    tint={isDark ? 'dark' : 'light'}
+                    style={[
+                        styles.floatingInputWrapper, 
+                        { 
+                            // DÜZELTME BURADA:
+                            // Eğer Premium DEĞİLSE (reklam varsa), kutuyu daha yukarı (155px) kaldır.
+                            // Premium ise (reklam yoksa), kutuyu biraz aşağı (95px) indir.
+                            bottom: !isPremium ? 185 : 95, 
+                            
+                            backgroundColor: isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.65)',
+                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
+                            borderWidth: 1, 
+                            overflow: 'hidden',
+                            zIndex: 50
+                        }
+                    ]}
+                >
+            {/* ... İÇERİK AYNEN KALIYOR ... */}
+            {isInputExpanded && (
+                <View style={styles.expandedOptions}>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5, marginTop: 5 }}>{t('assign_to')}</Text>
+                    <View style={{ flexDirection: 'row', gap: 5, marginBottom: 10, alignItems: 'center', borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', paddingBottom: 10 }}>
+                        <Search size={16} color={currentColors.subText} />
+                        <TextInput value={assignSearchText} onChangeText={setAssignSearchText} placeholder={t('search_contact')} placeholderTextColor={currentColors.subText} style={{ flex: 1, color: currentColors.text }} onSubmitEditing={addTask} />
+                    </View>
+                    {/* --- MODERN KİŞİ SEÇİM LİSTESİ --- */}
+                  <View style={{ marginBottom: 15 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.primary, marginBottom: 8, letterSpacing: 0.5 }}>
+                      {t('assign_to').toUpperCase()}
+                    </Text>
+                    
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 2, gap: 10 }}>
+                      
+                      {/* 1. "BEN" (ME) SEÇENEĞİ */}
+                      <TouchableOpacity 
+                        onPress={() => setAssignTarget(null)} 
+                        activeOpacity={0.8}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: !assignTarget ? COLORS.primary : (isDark ? '#334155' : '#fff'),
+                          paddingVertical: 6,
+                          paddingHorizontal: 12,
+                          borderRadius: 20,
+                          borderWidth: 1,
+                          borderColor: !assignTarget ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0'),
+                          shadowColor: "#000", shadowOpacity: !assignTarget ? 0.2 : 0.05, shadowRadius: 5, elevation: !assignTarget ? 4 : 1
+                        }}
+                      >
+                         <View style={{
+                           width: 28, height: 28, borderRadius: 14, 
+                           backgroundColor: !assignTarget ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9'),
+                           alignItems:'center', justifyContent:'center', marginRight: 8
+                         }}>
+                            {user.photoURL ? (
+                              <Image source={{uri: user.photoURL}} style={{width: 28, height: 28, borderRadius: 14}} />
+                            ) : (
+                              <User size={16} color={!assignTarget ? '#fff' : currentColors.subText} />
+                            )}
+                         </View>
+                         <Text style={{ fontSize: 13, fontWeight: '700', color: !assignTarget ? '#fff' : currentColors.text }}>
+                           {t('me')}
+                         </Text>
+                         {!assignTarget && <CheckCircle2 size={14} color="#fff" style={{marginLeft: 6}} />}
+                      </TouchableOpacity>
+
+                      {/* 2. ARKADAŞLAR LİSTESİ */}
+                      {filteredContacts.map(contact => {
+                         const isSelected = assignTarget?.uid === contact.uid;
+                         return (
+                            <TouchableOpacity 
+                              key={contact.uid} 
+                              onPress={() => setAssignTarget(contact)} 
+                              activeOpacity={0.8}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                // BURASI DEĞİŞTİ: COLORS.warning -> COLORS.primary (Mor oldu)
+                                backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#fff'),
+                                paddingVertical: 6,
+                                paddingHorizontal: 12,
+                                borderRadius: 20,
+                                borderWidth: 1,
+                                // BURASI DEĞİŞTİ: COLORS.warning -> COLORS.primary
+                                borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0'),
+                                shadowColor: "#000", shadowOpacity: isSelected ? 0.2 : 0.05, shadowRadius: 5, elevation: isSelected ? 4 : 1
+                              }}
+                            >
+                               <View style={{
+                                 width: 28, height: 28, borderRadius: 14, 
+                                 backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9'),
+                                 alignItems:'center', justifyContent:'center', marginRight: 8, overflow:'hidden'
+                               }}>
+                                  {contact.photoURL ? (
+                                    <Image source={{uri: contact.photoURL}} style={{width: 28, height: 28}} />
+                                  ) : (
+                                    <Text style={{fontSize: 12, fontWeight:'bold', color: isSelected ? '#fff' : currentColors.subText}}>
+                                      {contact.username[0].toUpperCase()}
+                                    </Text>
+                                  )}
+                               </View>
+                               
+                               <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : currentColors.text }}>
+                                 {contact.displayName || contact.username}
+                               </Text>
+                               
+                               {isSelected && <CheckCircle2 size={14} color="#fff" style={{marginLeft: 6}} />}
+                            </TouchableOpacity>
+                         );
+                      })}
+
+                    </ScrollView>
+                  </View>
+
+                    <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('description')}</Text>
+                        <TextInput value={inputDesc} onChangeText={setInputDesc} placeholder="..." placeholderTextColor={currentColors.subText} style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text }]} onSubmitEditing={addTask} />
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('start_date')}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TextInput value={inputStartDate} onChangeText={handleInputStartDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
+                                <TouchableOpacity onPress={() => openDatePicker('start')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><CalendarIcon size={16} color="#fff" /></TouchableOpacity>
+                            </View>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('due_date')}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TextInput value={inputDueDate} onChangeText={handleInputDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
+                                <TouchableOpacity onPress={() => openDatePicker('due')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><CalendarIcon size={16} color="#fff" /></TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+
+                        {/* KATEGORİ SEÇİM LİSTESİ - Sadece kendine görev atıyorsan (assignTarget yoksa) göster */}
+                        {!assignTarget ? (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                                {categories.map(cat => { 
+                                    const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0]; 
+                                    return (
+                                        <TouchableOpacity key={cat.id} onPress={() => setSelectedCategory(cat)} style={[styles.pill, selectedCategory.id === cat.id ? { backgroundColor: selectedCategory ? cc.hex : (isDark ? '#334155' : '#fff'),
+                                                
+                                                // Seçiliyse çerçeve şeffaf, değilse gri
+                                                borderColor: selectedCategory ? 'transparent' : (isDark ? '#475569' : '#e2e8f0') } : { borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                
+                                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cc.hex }} />
+                                            <Text style={{ fontSize: 12, color: currentColors.text, fontWeight: '600' }}>{cat.name}</Text>
+                                        </TouchableOpacity>
+                                    ) 
+                                })}
+                            </ScrollView>
+                        ) : (
+                            /* BAŞKASINA ATANIYORSA GÖSTERİLECEK UYARI */
+                            <View style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                                <Text style={{ fontSize: 11, color: COLORS.warning, fontStyle: 'italic' }}>
+                                    ⓘ Bu görev {assignTarget.username} kişisinin varsayılan kategorisine düşecek.
+                                </Text>
+                            </View>
+                        )}                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 }}><View style={{ flexDirection: 'row', gap: 5 }}><TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={[styles.iconToggle, isNotifOn && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]}><Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} /></TouchableOpacity><TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={[styles.iconToggle, isAlarmOn && { backgroundColor: '#fef2f2', borderColor: '#ef4444' }]}><AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} /></TouchableOpacity>{inputDueDate && <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={[styles.iconToggle, isEveryDayOn && { backgroundColor: '#f0fdf4', borderColor: '#10b981' }, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}><CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} /><Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>{t('every_day')}</Text></TouchableOpacity>}</View><View style={{ flexDirection: 'row', gap: 5 }}>{isNotifOn && <TextInput value={notifInput} onChangeText={handleNotifInputChange} placeholder="09:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.primary, borderColor: COLORS.primary }]} maxLength={5} onSubmitEditing={addTask} />}{isAlarmOn && <TextInput value={alarmInput} onChangeText={handleAlarmInputChange} placeholder="07:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.danger, borderColor: COLORS.danger }]} maxLength={5} onSubmitEditing={addTask} />}</View></View>
+                </View>
+            )}
+            <View style={styles.inputMainRow}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(!isInputExpanded); }} style={styles.expandBtn}>{isInputExpanded ? <X size={20} color={currentColors.subText} /> : <Sliders size={20} color={currentColors.subText} />}</TouchableOpacity><TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('addTask')} placeholderTextColor={currentColors.subText} style={[styles.mainInput, { color: currentColors.text }]} onFocus={() => { /* Artık oto açılmıyor */ }} onSubmitEditing={addTask} /><TouchableOpacity onPress={addTask} style={[styles.sendBtn, { backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0') }]}><Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} /></TouchableOpacity></View>
+        </BlurView>
+        
+    </>
+)}
+
+     {/* EKLEME MODALI (Alışkanlıklar için) */}
+<Modal visible={isAddModalOpen} animationType="slide" transparent>
+    {/* 1. DIŞ KATMAN: Buraya (arka plana) basınca modal kapanır ve klavye iner */}
+    <TouchableWithoutFeedback onPress={() => { setIsAddModalOpen(false); Keyboard.dismiss(); }}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+
+            {/* 2. İÇ KATMAN: Beyaz alana basınca kapanmayı engellemek için boş bir Touchable ekliyoruz */}
+            <TouchableWithoutFeedback>
+                <View style={{ backgroundColor: currentColors.bg, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, minHeight: 400 }}>
+                    
+                    {/* --- İÇERİK BAŞLANGICI (HİÇBİR ŞEY DEĞİŞMEDİ) --- */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('new_habit')}</Text>
+                        <TouchableOpacity onPress={() => setIsAddModalOpen(false)}><X size={24} color={currentColors.text} /></TouchableOpacity>
+                    </View>
+                    
+                    <View style={{ gap: 15 }}>
+                        <TextInput placeholder={t('habit_name')} placeholderTextColor={currentColors.subText} value={newHabitTitle} onChangeText={setNewHabitTitle} style={[styles.input, { color: currentColors.text }]} />
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity onPress={() => setNewHabitFreq('daily')} style={[styles.pill, newHabitFreq === 'daily' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'daily' ? '#fff' : currentColors.text }}>{t('daily')}</Text></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setNewHabitFreq('weekly')} style={[styles.pill, newHabitFreq === 'weekly' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'weekly' ? '#fff' : currentColors.text }}>{t('weekly')}</Text></TouchableOpacity>
+                        </View>
+                        
+                        {newHabitFreq === 'weekly' && (
+                            <View style={{ marginTop: 10 }}>
+                                <Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 8 }}>{t('which_days')}</Text>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                    {getDaysOfWeek(lang).map((dayObj) => {
+                                        const isSelected = newHabitDays.includes(dayObj.id);
+                                        return (
+                                            <TouchableOpacity
+                                                key={dayObj.id}
+                                                onPress={() => toggleHabitDay(dayObj.id)}
+                                                style={{
+                                                    width: 36, height: 36, borderRadius: 18,
+                                                    backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'),
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                    borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0')
+                                                }}
+                                            >
+                                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: isSelected ? '#fff' : currentColors.text }}>
+                                                    {dayObj.label.substring(0, 2)} {/* Sığması için ilk 2 harf */}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        )}
+
+                        <TextInput placeholder={t('time_placeholder')} placeholderTextColor={currentColors.subText} value={habitNotifInput} onChangeText={(t) => setHabitNotifInput(maskTimeInput(t))} style={[styles.input, { color: currentColors.text }]} maxLength={5} keyboardType="numeric" />
+                        <Text style={{ color: currentColors.subText, fontSize: 10 }}>{t('category')}</Text>
+                        <ScrollView horizontal>{categories.map(c => <TouchableOpacity key={c.id} onPress={() => setSelectedCategory(c)} style={{ padding: 8, marginRight: 5, borderRadius: 8, backgroundColor: selectedCategory.id === c.id ? COLORS.secondary : currentColors.surface }}><Text style={{ color: currentColors.text }}>{c.name}</Text></TouchableOpacity>)}</ScrollView>
+                        <TouchableOpacity onPress={addHabit} style={styles.btn}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('start_habit')}</Text></TouchableOpacity>
+                    </View>
+                    {/* --- İÇERİK BİTİŞİ --- */}
+
+                </View>
+            </TouchableWithoutFeedback>
+        </View>
+    </TouchableWithoutFeedback>
+    
+</Modal>
+{/* --- MİSAFİR DÖNÜŞÜM MODALI --- */}
+<Modal visible={isGuestModalOpen} transparent animationType="slide">
+    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', padding:20}}>
+            <View style={{backgroundColor: currentColors.surface, borderRadius:24, padding:25}}>
+                
+                <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}>
+                    <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text}}>Hesabı Oluştur</Text>
+                    <TouchableOpacity onPress={() => setIsGuestModalOpen(false)}>
+                        <X size={24} color={currentColors.subText} />
+                    </TouchableOpacity>
+                </View>
+
+                <Text style={{color:currentColors.subText, marginBottom:20}}>
+                    Verilerinizi korumak için bir kullanıcı adı, e-posta ve şifre belirleyin. Mevcut verileriniz silinmeyecek.
+                </Text>
+
+                <View style={{gap:15}}>
+                    {/* Kullanıcı Adı */}
+                    <View style={styles.authInputRow}>
+                        <User size={20} color={currentColors.subText} />
+                        <TextInput 
+                            value={username} 
+                            onChangeText={setUsername} 
+                            placeholder="Kullanıcı Adı" 
+                            placeholderTextColor={currentColors.subText} 
+                            style={[styles.authInput, {color: currentColors.text}]} 
+                            autoCapitalize='none' 
+                        />
+                    </View>
+
+                    {/* E-posta */}
+                    <View style={styles.authInputRow}>
+                        <Mail size={20} color={currentColors.subText} />
+                        <TextInput 
+                            value={email} 
+                            onChangeText={setEmail} 
+                            placeholder="E-posta" 
+                            placeholderTextColor={currentColors.subText} 
+                            style={[styles.authInput, {color: currentColors.text}]} 
+                            autoCapitalize='none' 
+                            keyboardType="email-address"
+                        />
+                    </View>
+
+                    {/* Şifre */}
+                    <View style={styles.authInputRow}>
+                        <Lock size={20} color={currentColors.subText} />
+                        <TextInput 
+                            value={password} 
+                            onChangeText={setPassword} 
+                            placeholder="Şifre" 
+                            placeholderTextColor={currentColors.subText} 
+                            style={[styles.authInput, {color: currentColors.text}]} 
+                            secureTextEntry 
+                        />
+                    </View>
+
+                    <TouchableOpacity 
+                        onPress={handleConvertGuest} 
+                        style={[styles.createBtn, {marginTop: 10}]}
+                    >
+                        {isAuthLoading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>Kaydı Tamamla</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    </TouchableWithoutFeedback>
+</Modal>
+      {/* --- TARİH SEÇİCİ (WEB, IOS, ANDROID UYUMLU) --- */}
+      {showDatePicker && (
+        Platform.OS === 'android' ? (
+           <DateTimePicker 
+              value={selectedDate || new Date()} 
+              mode="date" 
+              display="default" 
+              onChange={onDateChange} 
+           />
+        ) : (
+           <Modal transparent visible={true} animationType="fade">
+             <TouchableOpacity 
+                activeOpacity={1} 
+                onPress={() => setShowDatePicker(false)}
+                style={{flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'rgba(0,0,0,0.6)'}}
+             >
+                <TouchableWithoutFeedback>
+                  <View style={{
+                      backgroundColor: currentColors.surface, 
+                      borderRadius: 24, 
+                      padding: 20,
+                      width: Platform.OS === 'web' ? 360 : '85%', 
+                      maxWidth: 400,
+                      shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 20, elevation: 15
+                  }}>
+                    
+                    {/* Header */}
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15}}>
+                       <View style={{flexDirection:'row', alignItems:'center', gap: 10}}>
+                          <View style={{backgroundColor: COLORS.primary + '20', padding: 8, borderRadius: 10}}>
+                            <CalendarIcon size={20} color={COLORS.primary} />
+                          </View>
+                          <Text style={{fontSize: 18, fontWeight:'bold', color: currentColors.text}}>Tarih Seç</Text>
+                       </View>
+                       <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{padding: 5}}>
+                          <X size={24} color={currentColors.subText} />
+                       </TouchableOpacity>
+                    </View>
+
+                    {/* --- GÜNCELLENMİŞ TAKVİM --- */}
+                    <Calendar
+                      // Takvimi seçili tarihe odakla
+                      current={selectedStr}
+                      
+                      // Özel stil tipi
+                      markingType={'custom'}
+
+                      // YUKARIDA OLUŞTURDUĞUMUZ DEĞİŞKENİ BURAYA VERİYORUZ
+                      markedDates={calendarMarks}
+
+                      onDayPress={(day: any) => {
+                          const timestamp = new Date(day.timestamp);
+                          // Saat dilimi hatasını önlemek için güvenli çeviri
+                          const newDate = new Date(timestamp.valueOf() + timestamp.getTimezoneOffset() * 60000);
+                          
+                          onDateChange(null, newDate); 
+                          // setShowDatePicker(false); // İstersen seçince otomatik kapat, istersen "Tamam"a bastır.
+                      }}
+
+                      theme={{
+                        backgroundColor: 'transparent',
+                        calendarBackground: 'transparent',
+                        textSectionTitleColor: currentColors.subText,
+                        selectedDayBackgroundColor: COLORS.primary,
+                        selectedDayTextColor: '#ffffff',
+                        todayTextColor: COLORS.primary,
+                        dayTextColor: currentColors.text,
+                        textDisabledColor: '#d9e1e8',
+                        dotColor: COLORS.primary,
+                        arrowColor: COLORS.primary,
+                        monthTextColor: currentColors.text,
+                        indicatorColor: COLORS.primary,
+                        textDayFontWeight: '600',
+                        textMonthFontWeight: 'bold',
+                        textDayHeaderFontWeight: 'bold',
+                        textDayFontSize: 15,
+                        textMonthFontSize: 16,
+                        textDayHeaderFontSize: 12
+                      }}
+                      
+                      // Dil veya Seçili Tarih değişince takvimi zorla yenile
+                      key={`${lang}-${selectedStr}`} 
+                    />
+                    
+                  </View>
+                </TouchableWithoutFeedback>
+             </TouchableOpacity>
+           </Modal>
+        )
+      )}
+      {showDetailDatePicker && (Platform.OS === 'ios' ? (<Modal transparent visible={true} animationType="slide"><View style={{flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.3)'}}><View style={{backgroundColor: currentColors.surface, padding:20, borderTopLeftRadius:20, borderTopRightRadius:20}}><View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:10}}><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{color:COLORS.danger}}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onDetailDateChange} /></View></View></Modal>) : (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onDetailDateChange} />))}
+      {showHabitDatePicker && Platform.OS === 'android' && (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onHabitDateChange} />)}
+      <Modal transparent visible={showHabitDatePicker && Platform.OS === 'ios'} animationType="slide"><View style={{flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.3)'}}><View style={{backgroundColor: currentColors.surface, padding:20, borderTopLeftRadius:20, borderTopRightRadius:20}}><View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:10}}><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{color:COLORS.danger}}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onHabitDateChange} /></View></View></Modal>
+      
+      {/* --- GOREV DETAY VE SOHBET MODALI (FIXED) --- */}
+            <Modal visible={!!selectedTask} animationType="slide" presentationStyle="pageSheet">
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                <View style={[styles.container, { backgroundColor: currentColors.bg, padding: 20 }]}>
+                    
+                    <View style={{ marginBottom: 20 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>Gorev Detayi</Text>
+                        <TouchableOpacity onPress={() => setSelectedTask(null)}>
+                        <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>Kapat</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 10, padding: 4 }}>
+                        <TouchableOpacity 
+                        onPress={() => setTaskModalTab('details')} 
+                        style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'details' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}>
+                        <Text style={{ fontWeight: '600', color: taskModalTab === 'details' ? currentColors.text : currentColors.subText }}>Duzenle</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                        onPress={() => setTaskModalTab('chat')} 
+                        style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'chat' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}>
+                        <Text style={{ fontWeight: '600', color: taskModalTab === 'chat' ? currentColors.text : currentColors.subText }}>Tartisma</Text>
+                        </TouchableOpacity>
+                    </View>
+                    </View>
+
+                    {selectedTask && (
+                    <View style={{flex:1}}>
+                        {taskModalTab === 'details' && (
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            <View style={{ gap: 15 }}>
+                            <View>
+                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>Baslik</Text>
+                                <TextInput value={detailText} onChangeText={setDetailText} multiline={true} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, minHeight: 60, borderRadius: 12, paddingHorizontal: 15, paddingTop:15 }]} />
+                            </View>
+                            <View>
+                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>Aciklama</Text>
+                                <TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder="Not ekle..." placeholderTextColor={currentColors.subText} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 100, borderRadius: 12, paddingHorizontal: 15, paddingTop: 15, textAlignVertical: 'top' }]} />
+                            </View>
+                            <View>
+                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>Son Tarih</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TextInput value={detailDueDate} onChangeText={handleDetailDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, borderRadius: 12, paddingHorizontal: 15, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} />
+                                <TouchableOpacity onPress={() => openDatePicker('detail')} style={{ backgroundColor: COLORS.primary, padding: 10, borderTopRightRadius: 12, borderBottomRightRadius: 12, height: 50, justifyContent: 'center' }}><CalendarIcon size={24} color="#fff" /></TouchableOpacity>
+                                </View>
+                            </View>
+                            <TouchableOpacity onPress={saveTaskDetail} style={[styles.createBtn, { backgroundColor: COLORS.primary, marginTop: 10 }]}>
+                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Kaydet</Text>
+                            </TouchableOpacity>
+                            </View>
+                        </ScrollView>
+                        )}
+
+                        {taskModalTab === 'chat' && (
+                        <View style={{ flex: 1, backgroundColor: currentColors.surface, borderRadius: 16, overflow: 'hidden' }}>
+                            
+                            <FlatList
+                            data={taskComments}
+                            keyExtractor={item => item.id}
+                            contentContainerStyle={{ padding: 15, paddingBottom: 60 }}
+                            renderItem={({ item }) => {
+                                const isMe = item.senderId === user.uid;
+                                return (
+                                <View style={{ flexDirection: 'row', marginBottom: 15, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                                    {!isMe && (
+                                    <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.secondary, marginRight: 8, alignItems:'center', justifyContent:'center' }}>
+                                        <Text style={{ fontSize:10, fontWeight:'bold', color:'#fff' }}>{item.senderName?.[0]}</Text>
+                                    </View>
+                                    )}
+                                    <View style={{ maxWidth: '80%' }}>
+                                    <View style={{ 
+                                        backgroundColor: isMe ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'), 
+                                        padding: 10, borderRadius: 12, borderTopLeftRadius: isMe?12:0, borderTopRightRadius: isMe?0:12 
+                                    }}>
+                                        <Text style={{ color: isMe ? '#fff' : currentColors.text, fontSize: 14 }}>{item.text}</Text>
+                                    </View>
+                                    <Text style={{ fontSize: 9, color: currentColors.subText, marginTop: 2, textAlign: isMe ? 'right' : 'left' }}>
+                                        {item.senderName}
+                                    </Text>
+                                    </View>
+                                </View>
+                                );
+                            }}
+                            ListEmptyComponent={
+                                <View style={{ alignItems: 'center', marginTop: 50, opacity: 0.5 }}>
+                                <MessageCircle size={40} color={currentColors.subText} />
+                                <Text style={{ color: currentColors.subText, marginTop: 10 }}>Henuz yorum yok.</Text>
+                                </View>
+                            }
+                            />
+
+                            <View style={{ padding: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: currentColors.surface }}>
+                            <TextInput
+                                value={taskCommentInput}
+                                onChangeText={setTaskCommentInput}
+                                placeholder="Yorum yaz..."
+                                placeholderTextColor={currentColors.subText}
+                                style={{ flex: 1, backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderRadius: 20, paddingHorizontal: 15, height: 40, color: currentColors.text }}
+                            />
+                            <TouchableOpacity onPress={sendTaskComment} disabled={!taskCommentInput.trim()}>
+                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: taskCommentInput.trim() ? COLORS.primary : '#ccc', alignItems: 'center', justifyContent: 'center' }}>
+                                <Send size={18} color="#fff" />
+                                </View>
+                            </TouchableOpacity>
+                            </View>
+                        </View>
+                        )}
+                    </View>
+                    )}
+                </View>
+                </KeyboardAvoidingView>
+            </Modal>
+{/* ARKADAŞ EKLEME / AĞ MODALI */}
+      <Modal visible={isNetworkModalOpen} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.container, { backgroundColor: currentColors.bg, padding: 20 }]}>
+            
+            {/* --- DÜZELTME: BİLDİRİM KUTUSU ARTIK MODALIN İÇİNDE VE EN ÜSTTE --- */}
+            {customToast.visible && (
+                <View style={{ 
+                    position: 'absolute', top: 20, left: 20, right: 20, 
+                    zIndex: 9999, // En üstte kalması için
+                    backgroundColor: customToast.type === 'error' ? '#fee2e2' : (customToast.type === 'warning' ? '#fef3c7' : '#f0fdf4'), 
+                    padding: 15, borderRadius: 16, 
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10,
+                    borderWidth: 1, borderColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981')
+                }}>
+                    <View style={{ 
+                        width: 36, height: 36, borderRadius: 18, 
+                        backgroundColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981'), 
+                        alignItems: 'center', justifyContent: 'center' 
+                    }}>
+                        {customToast.type === 'success' && <Check size={18} color="#fff" />}
+                        {customToast.type === 'error' && <X size={18} color="#fff" />}
+                        {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
+                        {customToast.type === 'info' && <Bell size={18} color="#fff" />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#1e293b', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
+                        <Text style={{ color: '#475569', fontSize: 11 }}>{customToast.message}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setCustomToast({...customToast, visible: false})}>
+                        <X size={16} color="#475569" />
+                    </TouchableOpacity>
+                </View>
+            )}
+            {/* ------------------------------------------------------------------ */}
+
+            {/* BAŞLIK VE KAPAT BUTONU */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 10 }}>
+                <Text style={{ fontSize: 24, fontWeight: 'bold', color: currentColors.text }}>{t('connections')}</Text>
+                <TouchableOpacity onPress={() => setIsNetworkModalOpen(false)}>
+                    <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('close')}</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* TABLAR (Ommio / Rehber) */}
+            <View style={{ flexDirection: 'row', marginBottom: 20, backgroundColor: currentColors.surface, borderRadius: 12, padding: 4 }}>
+                <TouchableOpacity onPress={() => setNetworkTab('ommio')} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'ommio' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}>
+                    <Text style={{ fontWeight: 'bold', color: currentColors.text }}>Kullanıcı Adı</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setNetworkTab('contacts'); fetchDeviceContacts(); }} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'contacts' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}>
+                    <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('find_from_contacts')}</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* --- OMMIO ARAMA SEKMESİ --- */}
+            {networkTab === 'ommio' ? (
+                <>
+                    <Text style={{ color: currentColors.subText, marginBottom: 10 }}>Yeni bir arkadaş eklemek için kullanıcı adını gir:</Text>
+
+                    {/* ARAMA KUTUSU VE BUTONU */}
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
+                        <TextInput
+                            value={searchUsername}
+                            onChangeText={setSearchUsername}
+                            placeholder={t('search_username')}
+                            placeholderTextColor={currentColors.subText}
+                            style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, flex: 1, borderRadius: 12, paddingHorizontal: 15 }]}
+                            autoCapitalize='none'
+                        />
+                        <TouchableOpacity onPress={sendFriendRequest} style={{ backgroundColor: COLORS.primary, width: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
+                            <UserPlus size={24} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* GELEN İSTEKLER LİSTESİ */}
+                    {friendRequests.length > 0 && (
+                        <View style={{ marginBottom: 20 }}>
+                            <Text style={{ fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>GELEN İSTEKLER</Text>
+                            {friendRequests.map(req => (
+                                <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
+                                    <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
+                                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                                        <TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity>
+                                        <TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity>
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+                </>
+            ) : (
+                /* --- REHBER SEKMESİ --- */
+                <FlatList
+                    data={deviceContacts}
+                    keyExtractor={item => item.id}
+                    renderItem={({ item }) => (
+                        <View style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <View>
+                                <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{item.name}</Text>
+                                <Text style={{ color: currentColors.subText, fontSize: 12 }}>{item.phoneNumber}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => inviteContact(item.phoneNumber)} style={{ backgroundColor: '#eff6ff', padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                <Share2 size={16} color={COLORS.primary} />
+                                <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: 'bold' }}>Davet Et</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                    ListEmptyComponent={<Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 20 }}>{t('contacts_loading_or_denied')}</Text>}
+                />
+            )}
+        </View>
+      </Modal>
+      
+      <Modal visible={isLangModalOpen} transparent animationType="fade"><View style={styles.modalBackdrop}><View style={[styles.catModal, { backgroundColor: currentColors.surface, maxHeight: '80%' }]}><Text style={[styles.catModalTitle, {color: currentColors.text}]}>{t('language')}</Text><FlatList data={LANGUAGES} keyExtractor={item => item.code} renderItem={({item}) => (<TouchableOpacity onPress={() => { setLang(item.code as LangCode); setIsLangModalOpen(false); }} style={{flexDirection:'row', alignItems:'center', padding:15, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}><Text style={{fontSize:24, marginRight:15}}>{item.flag}</Text><Text style={{fontSize:16, color: currentColors.text, fontWeight: lang === item.code ? 'bold' : 'normal'}}>{item.label}</Text>{lang === item.code && <Check size={18} color={COLORS.success} style={{marginLeft:'auto'}} />}</TouchableOpacity>)} /><TouchableOpacity onPress={() => setIsLangModalOpen(false)} style={{marginTop:15, padding:10, alignItems:'center'}}><Text style={{color:COLORS.danger, fontWeight:'bold'}}>{t('cancel')}</Text></TouchableOpacity></View></View></Modal>
+      <Modal visible={!!activeAlarmTask} transparent animationType="slide"><View style={styles.alarmOverlay}><View style={[styles.alarmCard, { backgroundColor: currentColors.surface }]}><Text style={[styles.alarmTitle, {color: currentColors.text}]}>{t('alarm')}</Text><Text style={{color: currentColors.text}}>{activeAlarmTask?.text}</Text><TouchableOpacity onPress={() => setActiveAlarmTask(null)} style={styles.alarmCloseBtn}><Text style={{color:'#fff'}}>{t('close')}</Text></TouchableOpacity></View></View></Modal>
+      {/* --- ŞİFRE SIFIRLAMA MODALI --- */}
+        <Modal visible={isResetModalVisible} transparent animationType="fade">
+            {/* Arka planı karartma ve tıklayınca kapatma */}
+            <TouchableOpacity 
+                activeOpacity={1} 
+                onPress={() => { setResetModalVisible(false); Keyboard.dismiss(); }} 
+                style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}
+            >
+                {/* Modal İçeriği (Tıklamayı engellemek için TouchableWithoutFeedback kullanıyoruz) */}
+                <TouchableWithoutFeedback>
+                    <View style={{ width: '100%', maxWidth: 360, backgroundColor: currentColors.surface, padding: 25, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
+                        
+                        <View style={{alignItems:'center', marginBottom:20}}>
+                            <View style={{width:60, height:60, borderRadius:30, backgroundColor: '#e0e7ff', alignItems:'center', justifyContent:'center', marginBottom:15}}>
+                                <Lock size={30} color={COLORS.primary} />
+                            </View>
+                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text, textAlign:'center' }}>
+                                Şifreni mi Unuttun?
+                            </Text>
+                            <Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 10, fontSize: 14, lineHeight: 20 }}>
+                                Hesabına ait <b>E-posta adresini</b> veya <b>Kullanıcı Adını</b> gir. Sana sıfırlama bağlantısı göndereceğiz.
+                            </Text>
+                        </View>
+
+                        {/* Input Alanı */}
+                        <View style={{ marginBottom: 25 }}>
+                            <View style={{ 
+                                flexDirection: 'row', alignItems: 'center', 
+                                borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', 
+                                borderRadius: 12, paddingHorizontal: 15, height: 55, 
+                                backgroundColor: isDark ? '#1e293b' : '#f8fafc' 
+                            }}>
+                                <Mail size={20} color={currentColors.subText} />
+                                <TextInput
+                                    value={resetInput}
+                                    onChangeText={setResetInput}
+                                    style={{ flex: 1, paddingHorizontal: 12, color: currentColors.text, fontSize: 16 }}
+                                    placeholder="E-posta veya Kullanıcı Adı"
+                                    placeholderTextColor={currentColors.subText}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                            </View>
+                        </View>
+
+                        {/* Butonlar */}
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity 
+                                onPress={() => setResetModalVisible(false)} 
+                                style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
+                            >
+                                <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>İptal</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity 
+                                onPress={handleSendPasswordReset} 
+                                disabled={isResetLoading}
+                                style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center', flexDirection:'row', justifyContent:'center', gap: 8 }}
+                            >
+                                {isResetLoading && <ActivityIndicator size="small" color="#fff" />}
+                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>
+                                    {isResetLoading ? "Gönderiliyor" : "Gönder"}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                    </View>
+                </TouchableWithoutFeedback>
+            </TouchableOpacity>
+        </Modal>
+     {/* --- ŞİFRE SIFIRLAMA MODALI --- */}
+        <Modal visible={isForgotPasswordModalOpen} transparent animationType="fade">
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                <View style={{ width: '100%', maxWidth: 350, backgroundColor: currentColors.surface, padding: 25, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
+                    
+                    <View style={{alignItems:'center', marginBottom:20}}>
+                        <View style={{width:50, height:50, borderRadius:25, backgroundColor:'#e0e7ff', alignItems:'center', justifyContent:'center', marginBottom:10}}>
+                            <Lock size={24} color={COLORS.primary} />
+                        </View>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('forgot_password')}</Text>
+                        <Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 5, fontSize: 13 }}>
+                            Hesabınıza kayıtlı e-posta adresini girin. Size şifre sıfırlama bağlantısı göndereceğiz.
+                        </Text>
+                    </View>
+
+                    <View style={{ marginBottom: 20 }}>
+                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5, marginLeft: 4 }}>E-Posta Adresi</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 12, paddingHorizontal: 15, height: 50, backgroundColor: isDark ? '#1e293b' : '#f8fafc' }}>
+                            <Mail size={18} color={currentColors.subText} />
+                            <TextInput
+                                value={resetEmailInput}
+                                onChangeText={setResetEmailInput}
+                                style={{ flex: 1, paddingHorizontal: 10, color: currentColors.text, fontSize: 15 }}
+                                placeholder="ornek@email.com"
+                                placeholderTextColor={currentColors.subText}
+                                autoCapitalize="none"
+                                keyboardType="email-address"
+                            />
+                        </View>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity 
+                            onPress={() => setIsForgotPasswordModalOpen(false)} 
+                            style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
+                        >
+                            <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{t('cancel_btn')}</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                            onPress={handleSendResetEmail} 
+                            style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center' }}
+                        >
+                            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Gönder</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                </View>
+            </View>
+        </Modal>
+     <Modal visible={showOnboarding} animationType="fade">
+    <View style={{flex:1, backgroundColor: COLORS.primary, padding: 20, justifyContent:'center', alignItems:'center'}}>
+    
+        {onboardingStep === 0 && (
+            <View style={{alignItems:'center', gap:20}}>
+                <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
+                    <ListTodo size={60} color="#fff" />
+                </View>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Hoş Geldin!</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Ommio ile görevlerini organize et, hayatını düzene sok. Başlamak için hazırsan kaydır!</Text>
+            </View>
+        )}
+        {onboardingStep === 1 && (
+            <View style={{alignItems:'center', gap:20}}>
+                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
+                    <Repeat size={60} color="#fff" />
+                </View>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Alışkanlıklar Kazan</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Her gün %1 daha iyi ol. Zinciri kırma ve yeni alışkanlıklarını takip et.</Text>
+            </View>
+        )}
+        {onboardingStep === 2 && (
+            <View style={{alignItems:'center', gap:20}}>
+                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
+                    <Users size={60} color="#fff" />
+                </View>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Sosyal Ol</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Arkadaşlarınla görev paylaş, sohbet et ve birbirinizi motive edin.</Text>
+            </View>
+        )}
+
+        {/* İLERLEME BUTONLARI */}
+        <View style={{position:'absolute', bottom: 50, flexDirection:'row', width:'100%', justifyContent:'space-between', alignItems:'center'}}>
+             <View style={{flexDirection:'row', gap:5}}>
+                {[0,1,2].map(i => <View key={i} style={{width:8, height:8, borderRadius:4, backgroundColor: i===onboardingStep?'#fff':'rgba(255,255,255,0.3)'}} />)}
+             </View>
+             <TouchableOpacity onPress={async() => {
+                setShowOnboarding(false);
+                // Veritabanına kullanıcının rehberi gördüğünü işle
+                if (user) {
+                    await updateDoc(doc(db, "users", user.uid), { hasSeenOnboarding: true });
+                }
+             }} style={{backgroundColor:'#fff', paddingHorizontal:20, paddingVertical:10, borderRadius:20}}>
+                <Text style={{color:COLORS.primary, fontWeight:'bold'}}>{onboardingStep === 2 ? 'Başla' : 'İleri'}</Text>
+             </TouchableOpacity>
+        </View>
+    </View>
+</Modal>
+        {/* KATEGORİ YÖNETİM MODALI (SCROLL FIX & FLEX LAYOUT) */}
+        <Modal visible={isCategoryModalOpen} transparent animationType="fade">
+            <TouchableOpacity 
+                activeOpacity={1} 
+                onPress={() => { setIsCategoryModalOpen(false); Keyboard.dismiss(); }} 
+                style={styles.modalBackdrop}
+            >
+                <KeyboardAvoidingView 
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ width: '100%', alignItems: 'center', justifyContent: 'center', flex: 1 }}
+                >
+                    <TouchableWithoutFeedback>
+                        <View style={{ 
+                            width: '90%', 
+                            maxWidth: 400, 
+                            backgroundColor: currentColors.surface, 
+                            borderRadius: 24, 
+                            padding: 20,
+                            shadowColor: "#000",
+                            shadowOffset: { width: 0, height: 10 },
+                            shadowOpacity: 0.25,
+                            shadowRadius: 10,
+                            elevation: 10,
+                            // ÖNEMLİ: Sabit yükseklik yerine ekranın %80'ini kaplasın
+                            height: '80%', 
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}>
+                            
+                            {/* 1. BAŞLIK (SABİT) */}
+                            <View style={{ 
+                                flexDirection: 'row', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                marginBottom: 10, 
+                                paddingBottom: 10, 
+                                borderBottomWidth: 1, 
+                                borderColor: isDark ? '#334155' : '#f1f5f9',
+                                flexShrink: 0 // Başlık küçülmesin
+                            }}>
+                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>
+                                    {t('categories_title')}
+                                </Text>
+                                <TouchableOpacity onPress={() => setIsCategoryModalOpen(false)} style={{ padding: 5 }}>
+                                    <X size={24} color={currentColors.subText} />
+                                </TouchableOpacity>
+                            </View>
+                            
+                            {/* 2. LİSTE (SCROLLABLE - FLEX: 1) */}
+                            {/* flex: 1 sayesinde başlık ve alt kısım haricindeki tüm alanı burası alır */}
+                            <ScrollView 
+                                style={{ flex: 1, marginBottom: 15 }} 
+                                contentContainerStyle={{ paddingBottom: 10 }}
+                                showsVerticalScrollIndicator={true} 
+                                indicatorStyle={isDark ? 'white' : 'black'}
+                            >
+                                {categories.map((cat) => (
+                                    <View key={cat.id} style={{ 
+                                        flexDirection: 'row', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'space-between', 
+                                        paddingVertical: 12, 
+                                        paddingHorizontal: 10,
+                                        marginBottom: 8,
+                                        borderRadius: 12,
+                                        backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                                        borderWidth: 1,
+                                        borderColor: isDark ? '#334155' : '#e2e8f0'
+                                    }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                            <View style={{ 
+                                                width: 16, height: 16, borderRadius: 8, 
+                                                backgroundColor: CATEGORY_COLORS.find(c => c.id === cat.color)?.hex || 'gray',
+                                                borderWidth: 2, borderColor: isDark ? '#334155' : '#fff'
+                                            }} />
+                                            <Text style={{ fontSize: 16, fontWeight: '600', color: currentColors.text }}>{cat.name}</Text>
+                                        </View>
+                                        
+                                        <TouchableOpacity 
+                                            onPress={() => handleDeleteCategory(cat.id)} 
+                                            style={{ backgroundColor: '#fee2e2', padding: 8, borderRadius: 8 }}
+                                        >
+                                            <Trash2 size={18} color={COLORS.danger} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </ScrollView>
+
+                            {/* 3. YENİ EKLEME ALANI (SABİT) */}
+                            <View style={{ 
+                                paddingTop: 15, 
+                                borderTopWidth: 1, 
+                                borderColor: isDark ? '#334155' : '#f1f5f9',
+                                flexShrink: 0 // Alt kısım sıkışmasın
+                            }}>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10, textTransform: 'uppercase' }}>
+                                    Yeni Kategori Oluştur
+                                </Text>
+
+                                {/* Input */}
+                                <TextInput
+                                    value={newCategoryName}
+                                    onChangeText={setNewCategoryName}
+                                    placeholder={t('category_name_placeholder')}
+                                    placeholderTextColor={currentColors.subText}
+                                    style={{
+                                        backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
+                                        color: currentColors.text,
+                                        padding: 15,
+                                        borderRadius: 12,
+                                        fontSize: 16,
+                                        borderWidth: 1,
+                                        borderColor: isDark ? '#475569' : '#cbd5e1',
+                                        marginBottom: 15
+                                    }}
+                                />
+
+                                {/* Renk Seçimi */}
+                                <View style={{ marginBottom: 20, height: 50 }}>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, alignItems: 'center' }}>
+                                        {CATEGORY_PALETTE.map(colorName => {
+                                            const colorHex = CATEGORY_COLORS.find(c => c.id === colorName)?.hex || '#000';
+                                            const isSelected = newCategoryColor === colorName;
+                                            return (
+                                                <TouchableOpacity 
+                                                    key={colorName} 
+                                                    onPress={() => setNewCategoryColor(colorName)} 
+                                                    style={{
+                                                        width: 40, height: 40, 
+                                                        borderRadius: 20, 
+                                                        backgroundColor: colorHex, 
+                                                        alignItems: 'center', 
+                                                        justifyContent: 'center',
+                                                        borderWidth: isSelected ? 3 : 0,
+                                                        borderColor: currentColors.text,
+                                                        elevation: 3
+                                                    }}
+                                                >
+                                                    {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
+                                                </TouchableOpacity>
+                                            )
+                                        })}
+                                    </ScrollView> 
+                                </View>
+
+                                {/* Ekle Butonu */}
+                                <TouchableOpacity 
+                                    onPress={handleAddCategory} 
+                                    disabled={!newCategoryName.trim()}
+                                    style={{ 
+                                        backgroundColor: newCategoryName.trim() ? COLORS.success : '#94a3b8', 
+                                        paddingVertical: 15, 
+                                        borderRadius: 16, 
+                                        alignItems: 'center', 
+                                        flexDirection: 'row', 
+                                        justifyContent: 'center', 
+                                        gap: 8,
+                                        shadowColor: COLORS.success,
+                                        shadowOpacity: newCategoryName.trim() ? 0.3 : 0,
+                                        shadowRadius: 5,
+                                        elevation: newCategoryName.trim() ? 5 : 0
+                                    }}
+                                >
+                                    <Plus size={20} color="#fff" strokeWidth={3} />
+                                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Kategori Ekle</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                        </View>
+                    </TouchableWithoutFeedback>
+                </KeyboardAvoidingView>
+            </TouchableOpacity>
+        </Modal>
+      {/* PROFİL DÜZENLEME MODALI */}
+      <Modal visible={isEditProfileVisible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
+           {/* --- PROFİL DÜZENLEME MODALI İÇERİĞİ --- */}
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{width:'85%', backgroundColor: currentColors.surface, padding: 25, borderRadius: 24}}>
+                <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text, marginBottom: 5, textAlign:'center'}}>Profili Düzenle</Text>
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 20, textAlign:'center'}}>Arkadaşlarınız sizi bu isimle görecek.</Text>
+                
+                {/* 1. GÖRÜNEN İSİM (DISPLAY NAME) */}
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>Görünen İsim</Text>
+                <View style={{flexDirection:'row', alignItems:'center', backgroundColor: isDark?'#334155':'#f8fafc', borderWidth:1, borderColor: isDark?'#475569':'#e2e8f0', borderRadius:12, paddingHorizontal:15, marginBottom:15}}>
+                    <User size={18} color={COLORS.primary} />
+                    <TextInput 
+                        value={editDisplayNameInput}
+                        onChangeText={setEditDisplayNameInput}
+                        style={{flex:1, padding: 12, color: currentColors.text, fontSize:16, fontWeight:'600'}}
+                        placeholder="Adınız Soyadınız"
+                        placeholderTextColor={currentColors.subText}
+                    />
+                    {/* Kalem ikonu dekoratif */}
+                    <Edit2 size={14} color={currentColors.subText} />
+                </View>
+
+                {/* 2. KULLANICI ADI (USERNAME) */}
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>Kullanıcı Adı (Benzersiz)</Text>
+                <View style={{flexDirection:'row', alignItems:'center', backgroundColor: isDark?'#1e293b':'#f1f5f9', borderWidth:1, borderColor: isDark?'#334155':'#cbd5e1', borderRadius:12, paddingHorizontal:15, marginBottom:25}}>
+                    <Text style={{color: currentColors.subText, fontWeight:'bold', fontSize:16}}>@</Text>
+                    <TextInput 
+                        value={editUsernameInput}
+                        onChangeText={setEditUsernameInput}
+                        style={{flex:1, padding: 12, color: currentColors.subText, fontSize:14}} // Username biraz daha sönük dursun
+                        autoCapitalize="none"
+                        placeholder="kullaniciadi"
+                        placeholderTextColor={currentColors.subText}
+                    />
+                </View>
+
+                <View style={{flexDirection:'row', gap: 12}}>
+                    <TouchableOpacity onPress={() => setIsEditProfileVisible(false)} style={{flex:1, padding:15, alignItems:'center', borderRadius:14, backgroundColor: isDark?'#334155':'#f1f5f9'}}>
+                        <Text style={{color: currentColors.text, fontWeight:'bold'}}>İptal</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleUpdateProfile} style={{flex:1, padding:15, alignItems:'center', borderRadius:14, backgroundColor: COLORS.primary, shadowColor: COLORS.primary, shadowOpacity:0.3, shadowRadius:5}}>
+                        <Text style={{color: '#fff', fontWeight:'bold'}}>Kaydet</Text>
+                    </TouchableOpacity>
+                </View>
+            </KeyboardAvoidingView>
+        </View>
+      </Modal>
+      
+            <Modal visible={friendTasksModal.visible} transparent animationType="slide">
+            <View style={styles.modalBackdrop}>
+                <View style={[styles.catModal, { backgroundColor: currentColors.surface, height: '70%' }]}>
+                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15}}>
+                        <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text}}>
+                            {friendTasksModal.friendName} - Durum
+                        </Text>
+                        <TouchableOpacity onPress={()=>setFriendTasksModal({...friendTasksModal, visible:false})}>
+                            <X size={24} color={currentColors.text} />
+                        </TouchableOpacity>
+                    </View>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        {friendTasksModal.tasks.length === 0 ? (
+                            <Text style={{textAlign:'center', color:currentColors.subText, marginTop:20}}>t('no_tasks_assigned')</Text>
+                        ) : (
+                            friendTasksModal.tasks.map(t => (
+                                <View key={t.id} style={{padding:15, borderRadius:12, backgroundColor: isDark?'#334155':'#f8fafc', marginBottom:10, borderLeftWidth:4, borderLeftColor: t.completed ? COLORS.success : COLORS.warning}}>
+                                    <Text style={{fontWeight:'bold', color:currentColors.text, textDecorationLine: t.completed ? 'line-through' : 'none'}}>{t.text}</Text>
+                                    <View style={{flexDirection:'row', justifyContent:'space-between', marginTop:5}}>
+                                        <Text style={{fontSize:12, color: t.completed ? COLORS.success : COLORS.warning}}>
+                                            {t.completed ? "Tamamlandı" : "Bekliyor"}
+                                        </Text>
+                                        <Text style={{fontSize:10, color:currentColors.subText}}>{t.date}</Text>
+                                    </View>
+                                </View>
+                            ))
+                        )}
+                    </ScrollView>
+                </View>
+            </View>
+        </Modal> 
+        {/* ŞİFRE DEĞİŞTİRME MODALI */}
+      <Modal visible={isPasswordModalOpen} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
+            <View style={{width:'85%', backgroundColor: currentColors.surface, padding: 20, borderRadius: 20}}>
+                <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text, marginBottom: 15}}>Yeni Şifre Belirle</Text>
+                
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 5}}>Yeni Şifreniz</Text>
+                <View style={{flexDirection:'row', alignItems:'center', borderWidth:1, borderColor: isDark?'#334155':'#e2e8f0', borderRadius:12, paddingHorizontal:10, marginBottom:20}}>
+                    <Lock size={16} color={currentColors.subText} />
+                    <TextInput 
+                        value={newPasswordInput}
+                        onChangeText={setNewPasswordInput}
+                        style={{flex:1, padding: 15, color: currentColors.text, fontSize:16}}
+                        secureTextEntry
+                        placeholder="******"
+                        placeholderTextColor={currentColors.subText}
+                    />
+                </View>
+
+                <View style={{flexDirection:'row', gap: 10}}>
+                    <TouchableOpacity onPress={() => { setIsPasswordModalOpen(false); setNewPasswordInput(""); }} style={{flex:1, padding:15, alignItems:'center', borderRadius:12, backgroundColor: isDark?'#334155':'#f1f5f9'}}>
+                        <Text style={{color: currentColors.subText, fontWeight:'bold'}}>{t('cancel_btn')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handlePasswordChange} style={{flex:1, padding:15, alignItems:'center', borderRadius:12, backgroundColor: COLORS.primary}}>
+                        <Text style={{color: '#fff', fontWeight:'bold'}}>{t('save')}</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+      </Modal>
+        {/* --- CUSTOM TOAST (LANDING PAGE STİLİ) --- */}
+{/* --- CUSTOM TOAST (GÜNCELLENDİ) --- */}
+{customToast.visible && (
+    <View style={{ 
+        position: 'absolute', bottom: 100, left: 20, right: 20, 
+        backgroundColor: '#1e293b', padding: 15, borderRadius: 16, 
+        flexDirection: 'row', alignItems: 'center', gap: 12, 
+        shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10, zIndex: 9999 
+    }}>
+        <View style={{ 
+            width: 36, height: 36, borderRadius: 18, 
+            // Warning için renk koşulu eklendi (#f59e0b)
+            backgroundColor: customToast.type === 'error' ? '#ef4444' : 
+                           (customToast.type === 'warning' ? '#f59e0b' : 
+                           (customToast.type === 'info' ? '#3b82f6' : '#10b981')), 
+            alignItems: 'center', justifyContent: 'center' 
+        }}>
+            {customToast.type === 'success' && <Check size={18} color="#fff" />}
+            {customToast.type === 'error' && <X size={18} color="#fff" />}
+            {customToast.type === 'info' && <Bell size={18} color="#fff" />}
+            {/* Warning için ikon eklendi */}
+            {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
+        </View>
+        <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 11 }}>{customToast.message}</Text>
+        </View>
+        <TouchableOpacity onPress={() => setCustomToast({...customToast, visible: false})} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#334155', alignItems:'center', justifyContent:'center' }}>
+            <X size={14} color="#fff" />
+        </TouchableOpacity>
+    </View>
+)}
+{/* --- CUSTOM CONFIRM MODAL --- */}
+<Modal visible={confirmModal.visible} transparent animationType="fade">
+    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <View style={{ backgroundColor: currentColors.surface, borderRadius: 24, padding: 25, width: '100%', maxWidth: 340, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
+            
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>
+                {confirmModal.title}
+            </Text>
+            <Text style={{ color: currentColors.subText, marginBottom: 25, lineHeight: 22 }}>
+                {confirmModal.message}
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity 
+                    onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))} 
+                    style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
+                >
+                    <Text style={{ color: currentColors.text, fontWeight: '600' }}>Vazgeç</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    onPress={() => {
+                        confirmModal.onConfirm();
+                        setConfirmModal(prev => ({ ...prev, visible: false }));
+                    }} 
+                    style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: confirmModal.isDestructive ? COLORS.danger : COLORS.primary, alignItems: 'center' }}
+                >
+                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>
+                        {confirmModal.isDestructive ? 'Sil' : 'Onayla'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    </View>
+</Modal>              
+
+     {/* ================================================================================= */}
+      {/* 1. ZORUNLU REKLAM MODALI (SAYAÇLI) */}
+      {/* ================================================================================= */}
+      <Modal visible={isAdVisible} transparent animationType="fade">
+        <View style={premiumStyles.overlay}>
+            {/* Reklam Alanı Container */}
+            <View style={[premiumStyles.adContainer, {backgroundColor: '#000'}]}>
+                
+                <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}>
+                   <Text style={{color:'#fff', fontSize:12, fontWeight:'bold', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>REKLAM / AD</Text>
+                </View>
+
+                {/* --- BURASI GOOGLE ADS ALANI --- */}
+                <View style={{flex:1, width:'100%', justifyContent:'center', alignItems:'center', backgroundColor:'#1e1e1e', borderRadius:8}}>
+                     <Text style={{color:'#666'}}>Google Ads Component Here</Text>
+                     {/* Web için örnek görsel, Mobil için AdMob Componenti buraya gelir */}
+                     {Platform.OS === 'web' && <Image source={{uri: 'https://via.placeholder.com/350x250'}} style={{width:300, height:250, opacity:0.5}} />}
+                </View>
+                {/* ------------------------------- */}
+
+                {/* SAYAÇLI KAPATMA BUTONU */}
+                <TouchableOpacity 
+                    disabled={adCountdown > 0} // Süre bitmeden tıklanamaz
+                    onPress={() => {
+                        setIsAdVisible(false);
+                        setIsUpsellVisible(true); // Reklam bitince Premium teklifi aç
+                    }}
+                    style={[
+                        premiumStyles.closeAdButton, 
+                        { backgroundColor: adCountdown > 0 ? 'rgba(255,255,255,0.1)' : '#fff' }
+                    ]}
+                >
+                    {adCountdown > 0 ? (
+                        <Text style={{color:'#aaa', fontWeight:'bold'}}>Reklamı Atla: {adCountdown}</Text>
+                    ) : (
+                        <Text style={{color:'#000', fontWeight:'bold'}}>Reklamı Kapat ✕</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+        </View>
+      </Modal>
+
+      {/* ================================================================================= */}
+      {/* 2. MODERN PREMIUM UPSELL (SATIŞ) MODALI */}
+      {/* ================================================================================= */}
+      <Modal visible={isUpsellVisible} transparent animationType="slide">
+        <View style={premiumStyles.overlay}>
+            <View style={[premiumStyles.card, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+                
+                {/* --- BAŞLIK KISMI (Header) --- */}
+                <View style={premiumStyles.headerSection}>
+                    <View style={premiumStyles.iconCircle}>
+                        <Trophy size={40} color="#d97706" fill="#d97706" />
+                    </View>
+                    <Text style={[premiumStyles.title, { color: isDark ? '#fff' : '#1e293b' }]}>
+                        Sınırları Kaldır
+                    </Text>
+                    <Text style={[premiumStyles.subtitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+                        Ommio Premium ile tam potansiyeline ulaş.
+                    </Text>
+                </View>
+
+                {/* --- ÖZELLİK LİSTESİ --- */}
+                <View style={premiumStyles.featuresList}>
+                    {/* Madde 1 */}
+                    <View style={premiumStyles.featureItem}>
+                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Reklamsız deneyim</Text>
+                    </View>
+                    {/* Madde 2 */}
+                    <View style={premiumStyles.featureItem}>
+                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Sınırsız alışkanlık takibi</Text>
+                    </View>
+                    {/* Madde 3 */}
+                    <View style={premiumStyles.featureItem}>
+                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Gelişmiş istatistikler</Text>
+                    </View>
+                    {/* Madde 4 */}
+                    <View style={premiumStyles.featureItem}>
+                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Özel temalar ve ikonlar</Text>
+                    </View>
+                </View>
+
+                {/* --- AKSİYON BUTONLARI --- */}
+                <View style={{marginTop: 20, width: '100%', gap: 12}}>
+                    <TouchableOpacity 
+                        onPress={async () => {
+                             // Premium Satın Alma Simülasyonu
+                             try {
+                                if(user) {
+                                    await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
+                                    showToast("Harika!", "Premium üyelik aktif edildi.", 'success');
+                                    setIsUpsellVisible(false);
+                                }
+                            } catch(e) { console.log(e); }
+                        }}
+                        style={premiumStyles.ctaButton}
+                    >
+                        <Text style={premiumStyles.ctaText}>Premium'a Geç</Text>
+                        <Text style={premiumStyles.ctaSubText}>sadece 29.99₺ / ay</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => setIsUpsellVisible(false)} style={premiumStyles.secondaryButton}>
+                        <Text style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: 13, fontWeight: '600' }}>
+                            Şimdilik reklamlarla devam et
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+            </View>
+        </View>
+      </Modal>              
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
-
+const premiumStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)', // Arkası hafif karartılmış
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  adContainer: {
+    width: '100%',
+    maxWidth: 400, // Web'de çok genişlemesin
+    height: '60%', // Ekranın %60'ını kaplasın
+    backgroundColor: '#000',
+    borderRadius: 16,
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  closeAdButton: {
+    width: '100%',
+    padding: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380, // Web'de kart görünümü için sınır
+    borderRadius: 32, // Modern yuvarlak köşeler
+    padding: 30,
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: 25
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#fffbeb', // Açık amber rengi
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#fcd34d'
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8
+  },
+  subtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+    lineHeight: 20
+  },
+  featuresList: {
+    width: '100%',
+    marginBottom: 20
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12
+  },
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#10b981', // Yeşil tik
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  featureText: {
+    fontSize: 15,
+    fontWeight: '500'
+  },
+  ctaButton: {
+    backgroundColor: '#d97706', // Amber-600
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#d97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 5
+  },
+  ctaText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  ctaSubText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    marginTop: 2
+  },
+  secondaryButton: {
+    padding: 10,
+    alignItems: 'center'
+  }
+});
 const styles = StyleSheet.create({
+  
   container: { flex: 1 },
-  header: { paddingHorizontal: 24, paddingTop: Platform.OS === 'android' ? 50 : 20, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { padding: 20, flexDirection: 'row', justifyContent:'space-between', alignItems:'center' },
+  card: { padding: 20, borderRadius: 16, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
+  input: { backgroundColor: 'rgba(0,0,0,0.05)', padding: 15, borderRadius: 12, fontSize: 16 },
+  btn: { backgroundColor: COLORS.primary, padding: 15, borderRadius: 12, alignItems: 'center' },
   greeting: { fontSize: 14, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
   appTitle: { fontSize: 28, fontWeight: '900' },
-  iconBtn: { padding: 10, borderRadius: 14 },
+  tabBar: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 20, paddingTop: 10, borderTopWidth: 1, height: 80, alignItems:'center' },
+  checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#cbd5e1' },
+  menuItem: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingVertical:15, borderBottomWidth:1, borderColor:'rgba(0,0,0,0.05)' },
+  menuText: { fontSize:16, fontWeight:'500', marginLeft:10, flex:1 },
+  pill: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', marginRight: 10 },
   dateNavContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20 },
-  dateDisplay: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(99, 102, 241, 0.1)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+// styles objesi içinde güncelle veya kontrol et:
+  dateDisplay: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(99, 102, 241, 0.1)', // Hafif mor arka plan
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 20 
+  },
   dateText: { fontWeight: '700', fontSize: 14 },
   todayBadge: { marginLeft: 8, backgroundColor: COLORS.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   todayText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
@@ -404,24 +4997,21 @@ const styles = StyleSheet.create({
   emptyIconBox: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
   emptyDesc: { textAlign: 'center', color: '#94a3b8', lineHeight: 20 },
-  taskCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 24, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  taskCard: { padding: 16, borderRadius: 24, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
   checkBox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
   taskText: { fontSize: 16, fontWeight: '600' },
   taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   miniBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  floatingInputWrapper: { position: 'absolute', bottom: 90, left: 20, right: 20, borderRadius: 24, padding: 10, shadowColor: "#000", shadowOffset: {width:0, height:5}, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+floatingInputWrapper: {position: 'absolute', bottom: 90, left: 20, right: 20, borderRadius: 24, padding: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10, overflow: 'hidden'},  
   inputMainRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   mainInput: { flex: 1, fontSize: 16, height: 40, fontWeight: '500' },
   sendBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   expandBtn: { padding: 8 },
   expandedOptions: { paddingBottom: 10, marginBottom: 10 },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, marginRight: 8 },
   timeToggle: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   statsHero: { padding: 30, borderRadius: 32, marginBottom: 20 },
-  bottomTabs: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, flexDirection: 'row', justifyContent: 'space-around', paddingTop: 15, borderTopWidth: 1 },
   activeDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: COLORS.primary, marginTop: 4 },
-  card: { padding: 20, borderRadius: 24, marginBottom: 15 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
   settingBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   settingBtnActive: { borderColor: COLORS.primary, backgroundColor: '#e0e7ff' },
@@ -433,4 +5023,12 @@ const styles = StyleSheet.create({
   alarmCard: { width: '80%', padding: 30, borderRadius: 30, alignItems: 'center' },
   alarmTitle: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
   alarmCloseBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 30, paddingVertical: 12, borderRadius: 16, marginTop: 20 },
+  smallInput: { fontSize: 12, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', height: 36 },
+  iconToggle: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  tinyInput: { fontSize: 12, fontWeight: 'bold', width: 40, padding: 0, textAlign: 'center', borderBottomWidth: 1 },
+  dateBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#eff6ff', padding: 8, borderRadius: 8, marginTop: 5 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+  catModal: { width: '80%', padding: 20, borderRadius: 24 },
+  catModalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+  
 });

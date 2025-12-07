@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from "firebase/app";
 import { browserLocalPersistence, getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
-import { getFirestore } from "firebase/firestore";
+import { getFirestore,initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { Platform } from 'react-native';
 
 // Firebase Konsolundan aldığın gerçek veriler:
@@ -40,3 +40,4 @@ if (Platform.OS === 'web') {
 const db = getFirestore(app);
 
 export { auth, db };
+

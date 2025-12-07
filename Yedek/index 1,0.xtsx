@@ -1,0 +1,1712 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { BlurView } from 'expo-blur';
+import * as Contacts from 'expo-contacts';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
+import * as SMS from 'expo-sms';
+import {
+    AlarmClock,
+    AlertCircle,
+    AlignLeft,
+    Bell,
+    Calendar,
+    CalendarClock,
+    CalendarDays,
+    Check,
+    CheckCircle2,
+    ChevronDown,
+    ChevronLeft, ChevronRight,
+    ChevronUp,
+    Edit2,
+    Flame,
+    Globe,
+    Layers,
+    ListTodo,
+    Lock,
+    LogOut, Mail,
+    MessageCircle,
+    Monitor,
+    Moon,
+    Plus,
+    Repeat,
+    Search,
+    Send,
+    Share2, Sliders,
+    Sun,
+    Trash2,
+    Trophy,
+    User,
+    UserCheck,
+    UserPlus,
+    Users,
+    X,
+    XCircle
+} from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList, Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    LayoutAnimation,
+    Linking,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView, StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput, TouchableOpacity,
+    TouchableWithoutFeedback,
+    UIManager,
+    useColorScheme,
+    View
+} from 'react-native';
+
+// --- FIREBASE ---
+// @ts-ignore
+
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Google from 'expo-auth-session/providers/google';
+import {
+    createUserWithEmailAndPassword,
+    getAuth,
+    GoogleAuthProvider,
+    OAuthProvider,
+    onAuthStateChanged,
+    sendPasswordResetEmail,
+    signInWithCredential,
+    signInWithEmailAndPassword,
+    signOut,
+    updateProfile
+} from 'firebase/auth';
+
+import { initializeApp } from "firebase/app";
+import {
+    addDoc,
+    arrayRemove,
+    arrayUnion,
+    collection,
+    deleteDoc, doc,
+    getDocs,
+    getFirestore,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+    where
+} from 'firebase/firestore';
+// Auth tipini güvenli hale getiriyoruz
+
+import * as WebBrowser from 'expo-web-browser';
+
+// Widget (Android)
+// @ts-ignore
+import { requestWidgetUpdate } from 'react-native-android-widget';
+// @ts-ignore
+import { widgetTaskHandler } from '@/widget-task-handler';
+WebBrowser.maybeCompleteAuthSession();
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+const COLORS = {
+  primary: '#6366f1', secondary: '#a5b4fc', background: '#F8FAFC', surface: '#ffffff',
+  textDark: '#1e293b', textLight: '#64748b', textMuted: '#94a3b8',
+  success: '#10b981', danger: '#ef4444', warning: '#f59e0b', darkBg: '#0f172a', darkSurface: '#1e293b',
+};
+const firebaseConfig = {
+  apiKey: "AIzaSyCKClbJrNCzTgNPsy9JcAMgmGpP1hQ1Ts4",
+  authDomain: "ommio-30d72.firebaseapp.com",
+  projectId: "ommio-30d72",
+  storageBucket: "ommio-30d72.firebasestorage.app",
+  messagingSenderId: "677937409612",
+  appId: "1:677937409612:web:09e17f70f5e1a8904d0ee9",
+  measurementId: "G-V7WP221WRP"
+};
+const app = initializeApp(firebaseConfig);
+
+// YENİ KISIM (Standart Yöntem)
+const auth = getAuth(app);
+
+// Veritabanı başlatma
+const db = getFirestore(app);
+const CATEGORY_COLORS = [
+  { id: 'blue', hex: '#3b82f6', bg: '#eff6ff' },
+  { id: 'orange', hex: '#f97316', bg: '#fff7ed' },
+  { id: 'green', hex: '#10b981', bg: '#f0fdf4' },
+  { id: 'purple', hex: '#a855f7', bg: '#faf5ff' },
+  { id: 'pink', hex: '#ec4899', bg: '#fdf2f8' },
+];
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }),
+});
+
+const LANGUAGES = [{ code: 'en', label: 'English', flag: '🇬🇧' }, { code: 'tr', label: 'Türkçe', flag: '🇹🇷' }, { code: 'nl', label: 'Dutch', flag: '🇳🇱' }, { code: 'de', label: 'German', flag: '🇩🇪' }, { code: 'es', label: 'Spanish', flag: '🇪🇸' }, { code: 'fr', label: 'French', flag: '🇫🇷' }, { code: 'ar', label: 'Arabic', flag: '🇸🇦' }, { code: 'id', label: 'Indonesian', flag: '🇮🇩' }, { code: 'pt', label: 'Portuguese', flag: '🇵🇹' }, { code: 'hi', label: 'Hindi', flag: '🇮🇳' }, { code: 'ko', label: 'Korean', flag: '🇰🇷' }, { code: 'ja', label: 'Japanese', flag: '🇯🇵' }, { code: 'ru', label: 'Russian', flag: '🇷🇺' }, { code: 'it', label: 'Italian', flag: '🇮🇹' }, { code: 'pl', label: 'Polish', flag: '🇵🇱' }, { code: 'uk', label: 'Ukrainian', flag: '🇺🇦' }];
+
+const TRANSLATIONS = {
+  en:{categories_title:"Categories",category_name_placeholder:"Category name...",edit_categories:"Edit categories",at_least_one_category:"At least one category must remain.",ok_btn:"OK",warning_label:"Warning",delete_label:"Delete",title_label:"Title",add_note_placeholder:"Add a note...",which_days:"Which days?",category:"Category",delete_habit_confirm:"Do you want to delete this habit?",motivational_daily:"Be 1% better every day.",connections:"Connections",close:"Close",me:"Me",work:"Work",personal:"Personal",home:"Home",habit_name_label:"Habit name",time_placeholder:"Time (09:00)",every_day_label:"Every Day",weekly_label:"Weekly",day_label:"Day",start_habit:"Start Habit",no_connections:"You have no connections yet.",friends:"Friends",no_users:"No users yet.",search_username:"Search Username...",find_from_contacts:"Find from Contacts",contacts_loading_or_denied:"Contacts loading or permission denied.",theme_light:"Light",theme_dark:"Dark",theme_system:"System",
+      welcome:"Welcome",addTask:"Add a new task...",habits:"Habits",stats:"Stats",settings:"Settings",appearance:"Appearance",language:"Language",logout:"Log out",assign_to:"Assign to",description:"Description",start_date:"Start date",due_date:"Due date",daily:"Daily",weekly:"Weekly",new_habit:"New habit",habit_name:"Habit name",frequency:"Frequency",days:"Days",end_date:"End date",time:"Time",create:"Create",cancel:"Cancel",save:"Save",delete:"Delete",edit:"Edit",completed:"Completed",search_contact:"Search contact...",notification:"Notification",alarm:"Alarm",every_day:"Every day",change_photo:"Change photo",today: "Today",all_good: "All good!",no_tasks_today: "Add a plan for today.",tasks_tab:"Tasks",habits_tab:"Habits",messages_tab:"Messages",social_tab:"Social",profile_tab:"Profile",},
+  tr:{categories_title:"Kategoriler",category_name_placeholder:"Kategori adı...",edit_categories:"Kategorileri düzenle",at_least_one_category:"En az bir kategori kalmalıdır.",ok_btn:"Tamam",warning_label:"Uyarı",delete_label:"Sil",title_label:"Başlık",add_note_placeholder:"Not ekle...",which_days:"Hangi günler?",category:"Kategori",delete_habit_confirm:"Bu alışkanlığı silmek istiyor musun?",motivational_daily:"Her gün %1 daha iyi ol.",connections:"Bağlantılar",close:"Kapat",me:"Ben",work:"İş",personal:"Kişisel",home:"Ev",habit_name_label:"Alışkanlık adı",time_placeholder:"Saat (09:00)",every_day_label:"Her gün",weekly_label:"Haftalık",day_label:"Gün",start_habit:"Alışkanlığı Başlat",no_connections:"Henüz kimseyle bağlantın yok.",friends:"Arkadaşlar",no_users:"Henüz kimse yok.",search_username:"Kullanıcı Adı Ara...",find_from_contacts:"Rehberden Bul",contacts_loading_or_denied:"Rehber yükleniyor veya izin verilmedi.",theme_light:"Açık",theme_dark:"Koyu",theme_system:"Sistem",
+      welcome:"Hoş geldin",addTask:"Yeni bir görev ekle...",habits:"Alışkanlıklar",stats:"Özet",settings:"Ayarlar",appearance:"Görünüm",language:"Dil",logout:"Çıkış yap",assign_to:"Kime",description:"Açıklama",start_date:"Başlangıç",due_date:"Son tarih",daily:"Her gün",weekly:"Haftalık",new_habit:"Yeni alışkanlık",habit_name:"Alışkanlık adı",frequency:"Sıklık",days:"Günler",end_date:"Bitiş tarihi",time:"Saat",create:"Oluştur",cancel:"İptal",save:"Kaydet",delete:"Sil",edit:"Düzenle",completed:"Tamamlananlar",search_contact:"Kişi ara...",notification:"Bildirim",alarm:"Alarm",every_day:"Her gün",change_photo:"Fotoğraf değiştir",today: "Bugün",all_good: "Her şey yolunda!",no_tasks_today: "Bugün için plan ekle.",tasks_tab:"Görevler",habits_tab:"Alışkanlık",messages_tab:"Mesajlar",social_tab:"Sosyal",profile_tab:"Profil",},
+  nl:{categories_title:"Categorieën",category_name_placeholder:"Categorienaam...",edit_categories:"Categorieën bewerken",at_least_one_category:"Er moet minstens één categorie overblijven.",ok_btn:"OK",warning_label:"Waarschuwing",delete_label:"Verwijderen",title_label:"Titel",add_note_placeholder:"Notitie toevoegen...",which_days:"Welke dagen?",category:"Categorie",delete_habit_confirm:"Wil je deze gewoonte verwijderen?",motivational_daily:"Word elke dag 1% beter.",connections:"Verbindingen",close:"Sluiten",me:"Ik",work:"Werk",personal:"Persoonlijk",home:"Thuis",habit_name_label:"Gewoonte naam",time_placeholder:"Tijd (09:00)",every_day_label:"Elke dag",weekly_label:"Wekelijks",day_label:"Dag",start_habit:"Gewoonte starten",    no_connections:"Je hebt nog geen connecties.",friends:"Vrienden",no_users:"Nog geen gebruikers.",search_username:"Gebruikersnaam zoeken...",find_from_contacts:"Zoek vanuit contacten",contacts_loading_or_denied:"Contacten laden of toestemming geweigerd.",theme_light:"Licht",theme_dark:"Donker",theme_system:"Systeem",
+      welcome:"Welkom",addTask:"Voeg een nieuwe taak toe...",habits:"Gewoontes",stats:"Statistieken",settings:"Instellingen",appearance:"Weergave",language:"Taal",logout:"Uitloggen",assign_to:"Toewijzen aan",description:"Beschrijving",start_date:"Startdatum",due_date:"Einddatum",daily:"Dagelijks",weekly:"Wekelijks",new_habit:"Nieuwe gewoonte",habit_name:"Gewoonte naam",frequency:"Frequentie",days:"Dagen",end_date:"Einddatum",time:"Tijd",create:"Aanmaken",cancel:"Annuleren",save:"Opslaan",delete:"Verwijderen",edit:"Bewerken",completed:"Voltooid",search_contact:"Contact zoeken...",notification:"Notificatie",alarm:"Alarm",every_day:"Elke dag",change_photo:"Foto wijzigen",today: "Vandaag",all_good: "Alles is in orde!",no_tasks_today: "Voeg een plan toe voor vandaag.",tasks_tab:"Taken",habits_tab:"Gewoontes",messages_tab:"Berichten",social_tab:"Sociaal",profile_tab:"Profiel",},
+  de:{categories_title:"Kategorien",category_name_placeholder:"Kategoriename...",edit_categories:"Kategorien bearbeiten",at_least_one_category:"Mindestens eine Kategorie muss bestehen bleiben.",ok_btn:"OK",warning_label:"Warnung",delete_label:"Löschen",title_label:"Titel",add_note_placeholder:"Notiz hinzufügen...",which_days:"Welche Tage?",category:"Kategorie",delete_habit_confirm:"Möchtest du diese Gewohnheit löschen?",motivational_daily:"Werde jeden Tag 1% besser.",connections:"Verbindungen",close:"Schließen",me:"Ich",work:"Arbeit",personal:"Persönlich",home:"Zuhause",habit_name_label:"Gewohnheitsname",time_placeholder:"Zeit (09:00)",every_day_label:"Jeden Tag",weekly_label:"Wöchentlich",day_label:"Tag",start_habit:"Gewohnheit starten",no_connections:"Du hast noch keine Verbindungen.",friends:"Freunde",no_users:"Noch keine Nutzer.",search_username:"Benutzername suchen...",find_from_contacts:"Aus Kontakten finden",contacts_loading_or_denied:"Kontakte werden geladen oder Berechtigung verweigert.",theme_light:"Hell",theme_dark:"Dunkel",theme_system:"System",
+      welcome:"Willkommen",addTask:"Neue Aufgabe hinzufügen...",habits:"Gewohnheiten",stats:"Statistiken",settings:"Einstellungen",appearance:"Darstellung",language:"Sprache",logout:"Abmelden",assign_to:"Zuweisen an",description:"Beschreibung",start_date:"Startdatum",due_date:"Fälligkeitsdatum",daily:"Täglich",weekly:"Wöchentlich",new_habit:"Neue Gewohnheit",habit_name:"Gewohnheitsname",frequency:"Frequenz",days:"Tage",end_date:"Enddatum",time:"Zeit",create:"Erstellen",cancel:"Abbrechen",save:"Speichern",delete:"Löschen",edit:"Bearbeiten",completed:"Abgeschlossen",search_contact:"Kontakt suchen...",notification:"Benachrichtigung",alarm:"Alarm",every_day:"Jeden Tag",change_photo:"Foto ändern",today: "Heute",all_good: "Alles in Ordnung!",no_tasks_today: "Füge einen Plan für heute hinzu.",tasks_tab:"Aufgaben",habits_tab:"Gewohnheiten",messages_tab:"Nachrichten",social_tab:"Sozial",profile_tab:"Profil",},
+  es:{categories_title:"Categorías",category_name_placeholder:"Nombre de la categoría...",edit_categories:"Editar categorías",at_least_one_category:"Debe quedar al menos una categoría.",ok_btn:"OK",warning_label:"Advertencia",delete_label:"Eliminar",title_label:"Título",add_note_placeholder:"Agregar nota...",which_days:"¿Qué días?",category:"Categoría",delete_habit_confirm:"¿Quieres eliminar este hábito?",motivational_daily:"Sé un 1% mejor cada día.",connections:"Conexiones",close:"Cerrar",me:"Yo",work:"Trabajo",personal:"Personal",home:"Hogar",habit_name_label:"Nombre del hábito",time_placeholder:"Hora (09:00)",every_day_label:"Cada día",weekly_label:"Semanal",day_label:"Día",start_habit:"Iniciar hábito",no_connections:"Aún no tienes conexiones.",friends:"Amigos",no_users:"Aún no hay usuarios.",search_username:"Buscar nombre de usuario...",find_from_contacts:"Buscar desde contactos",contacts_loading_or_denied:"Cargando contactos o permiso denegado.",theme_light:"Claro",theme_dark:"Oscuro",theme_system:"Sistema",
+      welcome:"Bienvenido",addTask:"Agregar una nueva tarea...",habits:"Hábitos",stats:"Estadísticas",settings:"Configuración",appearance:"Apariencia",language:"Idioma",logout:"Cerrar sesión",assign_to:"Asignar a",description:"Descripción",start_date:"Fecha de inicio",due_date:"Fecha límite",daily:"Diario",weekly:"Semanal",new_habit:"Nuevo hábito",habit_name:"Nombre del hábito",frequency:"Frecuencia",days:"Días",end_date:"Fecha de finalización",time:"Hora",create:"Crear",cancel:"Cancelar",save:"Guardar",delete:"Eliminar",edit:"Editar",completed:"Completado",search_contact:"Buscar contacto...",notification:"Notificación",alarm:"Alarma",every_day:"Cada día",change_photo:"Cambiar foto",today: "Hoy",all_good: "¡Todo en orden!",no_tasks_today: "Agrega un plan para hoy.",tasks_tab:"Tareas",habits_tab:"Hábitos",messages_tab:"Mensajes",social_tab:"Social",profile_tab:"Perfil",},
+  fr:{categories_title:"Catégories",category_name_placeholder:"Nom de la catégorie...",edit_categories:"Modifier les catégories",at_least_one_category:"Au moins une catégorie doit rester.",ok_btn:"OK",warning_label:"Avertissement",delete_label:"Supprimer",title_label:"Titre",add_note_placeholder:"Ajouter une note...",which_days:"Quels jours ?",category:"Catégorie",delete_habit_confirm:"Voulez-vous supprimer cette habitude ?",motivational_daily:"Devenez 1% meilleur chaque jour.",connections:"Connexions",close:"Fermer",me:"Moi",work:"Travail",personal:"Personnel",home:"Maison",habit_name_label:"Nom de l'habitude",time_placeholder:"Heure (09:00)",every_day_label:"Chaque jour",weekly_label:"Hebdomadaire",day_label:"Jour",start_habit:"Commencer l'habitude",no_connections:"Vous n’avez encore aucune connexion.",friends:"Amis",no_users:"Aucun utilisateur pour le moment.",search_username:"Rechercher un nom d’utilisateur...",find_from_contacts:"Trouver dans les contacts",contacts_loading_or_denied:"Chargement des contacts ou permission refusée.",theme_light:"Clair",theme_dark:"Sombre",theme_system:"Système",
+      welcome:"Bienvenue",addTask:"Ajouter une nouvelle tâche...",habits:"Habitudes",stats:"Statistiques",settings:"Paramètres",appearance:"Apparence",language:"Langue",logout:"Se déconnecter",assign_to:"Assigner à",description:"Description",start_date:"Date de début",due_date:"Date limite",daily:"Quotidien",weekly:"Hebdomadaire",new_habit:"Nouvelle habitude",habit_name:"Nom de l'habitude",frequency:"Fréquence",days:"Jours",end_date:"Date de fin",time:"Heure",create:"Créer",cancel:"Annuler",save:"Enregistrer",delete:"Supprimer",edit:"Modifier",completed:"Terminé",search_contact:"Rechercher un contact...",notification:"Notification",alarm:"Alarme",every_day:"Chaque jour",change_photo:"Changer la photo",today: "Aujourd’hui",all_good: "Tout va bien !",no_tasks_today: "Ajoutez un plan pour aujourd’hui.",tasks_tab:"Tâches",habits_tab:"Habitudes",messages_tab:"Messages",social_tab:"Social",profile_tab:"Profil",},
+  ar:{categories_title:"الفئات",category_name_placeholder:"اسم الفئة...",edit_categories:"تحرير الفئات",at_least_one_category:"يجب أن تبقى فئة واحدة على الأقل.",ok_btn:"حسناً",warning_label:"تحذير",delete_label:"حذف",title_label:"العنوان",add_note_placeholder:"أضف ملاحظة...",which_days:"ما هي الأيام؟",category:"الفئة",delete_habit_confirm:"هل تريد حذف هذه العادة؟",motivational_daily:"كن أفضل بنسبة 1٪ كل يوم.",connections:"الاتصالات",close:"إغلاق",me:"أنا",work:"عمل",personal:"شخصي",home:"المنزل",habit_name_label:"اسم العادة",time_placeholder:"الوقت (09:00)",every_day_label:"كل يوم",weekly_label:"أسبوعي",day_label:"يوم",start_habit:"ابدأ العادة",no_connections:"ليس لديك أي اتصال بعد.",friends:"الأصدقاء",no_users:"لا يوجد مستخدمون بعد.",search_username:"ابحث عن اسم المستخدم...",find_from_contacts:"البحث من جهات الاتصال",contacts_loading_or_denied:"جارٍ تحميل جهات الاتصال أو تم رفض الإذن.",theme_light:"فاتح",theme_dark:"داكن",theme_system:"النظام",
+      welcome:"مرحبا",addTask:"أضف مهمة جديدة...",habits:"العادات",stats:"الإحصائيات",settings:"الإعدادات",appearance:"المظهر",language:"اللغة",logout:"تسجيل الخروج",assign_to:"تعيين إلى",description:"الوصف",start_date:"تاريخ البدء",due_date:"تاريخ الانتهاء",daily:"يومي",weekly:"أسبوعي",new_habit:"عادة جديدة",habit_name:"اسم العادة",frequency:"التكرار",days:"الأيام",end_date:"تاريخ النهاية",time:"الوقت",create:"إنشاء",cancel:"إلغاء",save:"حفظ",delete:"حذف",edit:"تعديل",completed:"مكتمل",search_contact:"ابحث عن جهة اتصال...",notification:"إشعار",alarm:"منبه",every_day:"كل يوم",change_photo:"تغيير الصورة",today: "اليوم",all_good: "كل شيء على ما يرام!",no_tasks_today: "أضف خطة لليوم.",tasks_tab:"المهام",habits_tab:"العادات",messages_tab:"الرسائل",social_tab:"اجتماعي",profile_tab:"الملف الشخصي",},
+  id:{categories_title:"Kategori",category_name_placeholder:"Nama kategori...",edit_categories:"Edit kategori",at_least_one_category:"Setidaknya satu kategori harus tersisa.",ok_btn:"OK",warning_label:"Peringatan",delete_label:"Hapus",title_label:"Judul",add_note_placeholder:"Tambahkan catatan...",which_days:"Hari apa saja?",category:"Kategori",delete_habit_confirm:"Apakah Anda ingin menghapus kebiasaan ini?",motivational_daily:"Jadilah 1% lebih baik setiap hari.",connections:"Koneksi",close:"Tutup",me:"Saya",work:"Pekerjaan",personal:"Pribadi",home:"Rumah",habit_name_label:"Nama kebiasaan",time_placeholder:"Waktu (09:00)",every_day_label:"Setiap hari",weekly_label:"Mingguan",day_label:"Hari",start_habit:"Mulai kebiasaan",no_connections:"Kamu belum punya koneksi.",friends:"Teman",no_users:"Belum ada pengguna.",search_username:"Cari nama pengguna...",find_from_contacts:"Cari dari kontak",contacts_loading_or_denied:"Memuat kontak atau izin ditolak.",theme_light:"Terang",theme_dark:"Gelap",theme_system:"Sistem",
+      welcome:"Selamat datang",addTask:"Tambahkan tugas baru...",habits:"Kebiasaan",stats:"Statistik",settings:"Pengaturan",appearance:"Tampilan",language:"Bahasa",logout:"Keluar",assign_to:"Tugaskan kepada",description:"Deskripsi",start_date:"Tanggal mulai",due_date:"Tanggal jatuh tempo",daily:"Harian",weekly:"Mingguan",new_habit:"Kebiasaan baru",habit_name:"Nama kebiasaan",frequency:"Frekuensi",days:"Hari",end_date:"Tanggal berakhir",time:"Waktu",create:"Buat",cancel:"Batal",save:"Simpan",delete:"Hapus",edit:"Edit",completed:"Selesai",search_contact:"Cari kontak...",notification:"Notifikasi",alarm:"Alarm",every_day:"Setiap hari",change_photo:"Ganti foto",today: "Hari ini",all_good: "Semua baik-baik saja!",no_tasks_today: "Tambahkan rencana untuk hari ini.",tasks_tab:"Tugas",habits_tab:"Kebiasaan",messages_tab:"Pesan",social_tab:"Sosial",profile_tab:"Profil",},
+  pt:{categories_title:"Categorias",category_name_placeholder:"Nome da categoria...",edit_categories:"Editar categorias",at_least_one_category:"Pelo menos uma categoria deve permanecer.",ok_btn:"OK",warning_label:"Aviso",delete_label:"Excluir",title_label:"Título",add_note_placeholder:"Adicionar nota...",which_days:"Quais dias?",category:"Categoria",delete_habit_confirm:"Deseja excluir este hábito?",motivational_daily:"Seja 1% melhor a cada dia.",connections:"Conexões",close:"Fechar",me:"Eu",work:"Trabalho",personal:"Pessoal",home:"Casa",habit_name_label:"Nome do hábito",time_placeholder:"Hora (09:00)",every_day_label:"Todos os dias",weekly_label:"Semanal",day_label:"Dia",start_habit:"Iniciar hábito",no_connections:"Você ainda não tem conexões.",friends:"Amigos",no_users:"Ainda não há usuários.",search_username:"Buscar nome de usuário...",find_from_contacts:"Encontrar nos contatos",contacts_loading_or_denied:"Carregando contatos ou permissão negada.",theme_light:"Claro",theme_dark:"Escuro",theme_system:"Sistema",
+      welcome:"Bem-vindo",addTask:"Adicionar nova tarefa...",habits:"Hábitos",stats:"Estatísticas",settings:"Configurações",appearance:"Aparência",language:"Idioma",logout:"Sair",assign_to:"Atribuir a",description:"Descrição",start_date:"Data de início",due_date:"Data de vencimento",daily:"Diário",weekly:"Semanal",new_habit:"Novo hábito",habit_name:"Nome do hábito",frequency:"Frequência",days:"Dias",end_date:"Data final",time:"Hora",create:"Criar",cancel:"Cancelar",save:"Salvar",delete:"Excluir",edit:"Editar",completed:"Concluído",search_contact:"Pesquisar contato...",notification:"Notificação",alarm:"Alarme",every_day:"Todos os dias",change_photo:"Alterar foto",today: "Hoje",all_good: "Tudo certo!",no_tasks_today: "Adicione um plano para hoje.",tasks_tab:"Tarefas",habits_tab:"Hábitos",messages_tab:"Mensagens",social_tab:"Social",profile_tab:"Perfil",},
+  hi:{categories_title:"श्रेणियाँ",category_name_placeholder:"श्रेणी का नाम...",edit_categories:"श्रेणियाँ संपादित करें",at_least_one_category:"कम से कम एक श्रेणी रहनी चाहिए.",ok_btn:"ठीक है",warning_label:"चेतावनी",delete_label:"हटाएँ",title_label:"शीर्षक",add_note_placeholder:"नोट जोड़ें...",which_days:"कौन से दिन?",category:"श्रेणी",delete_habit_confirm:"क्या आप इस आदत को हटाना चाहते हैं?",motivational_daily:"हर दिन 1% बेहतर बनें।",connections:"कनेक्शन",close:"बंद करें",me:"मैं",work:"काम",personal:"व्यक्तिगत",home:"घर",habit_name_label:"आदत का नाम",time_placeholder:"समय (09:00)",every_day_label:"हर दिन",weekly_label:"साप्ताहिक",day_label:"दिन",start_habit:"आदत शुरू करें",no_connections:"आपकी अभी तक किसी से कनेक्शन नहीं है.",friends:"दोस्त",no_users:"अभी कोई उपयोगकर्ता नहीं.",search_username:"उपयोगकर्ता नाम खोजें...",find_from_contacts:"संपर्कों से खोजें",contacts_loading_or_denied:"संपर्क लोड हो रहे हैं या अनुमति अस्वीकृत.",theme_light:"हल्का",theme_dark:"गहरा",theme_system:"सिस्टम",
+      welcome:"स्वागत है",addTask:"एक नया कार्य जोड़ें...",habits:"आदतें",stats:"आँकड़े",settings:"सेटिंग्स",appearance:"दिखावट",language:"भाषा",logout:"लॉग आउट",assign_to:"सौंपें",description:"विवरण",start_date:"प्रारंभ तिथि",due_date:"नियत तिथि",daily:"दैनिक",weekly:"साप्ताहिक",new_habit:"नई आदत",habit_name:"आदत का नाम",frequency:"आवृत्ति",days:"दिन",end_date:"समाप्ति तिथि",time:"समय",create:"बनाएँ",cancel:"रद्द",save:"सहेजें",delete:"हटाएँ",edit:"संपादित करें",completed:"पूर्ण",search_contact:"संपर्क खोजें...",notification:"सूचना",alarm:"अलार्म",every_day:"हर दिन",change_photo:"फ़ोटो बदलें",today: "आज",all_good: "सब ठीक है!",no_tasks_today: "आज के लिए एक योजना जोड़ें।",tasks_tab:"कार्य",habits_tab:"आदतें",messages_tab:"संदेश",social_tab:"सामाजिक",profile_tab:"प्रोफ़ाइल",},
+  ko:{categories_title:"카테고리",category_name_placeholder:"카테고리 이름...",edit_categories:"카테고리 편집",at_least_one_category:"하나 이상의 카테고리가 남아 있어야 합니다.",ok_btn:"확인",warning_label:"경고",delete_label:"삭제",title_label:"제목",add_note_placeholder:"메모 추가...",which_days:"어떤 요일?",category:"카테고리",delete_habit_confirm:"이 습관을 삭제하시겠습니까?",motivational_daily:"매일 1% 더 나아지세요.",connections:"연결",close:"닫기",me:"나",work:"일",personal:"개인",home:"집",habit_name_label:"습관 이름",time_placeholder:"시간 (09:00)",every_day_label:"매일",weekly_label:"매주",day_label:"날",start_habit:"습관 시작",no_connections:"아직 연결된 사람이 없습니다.",friends:"친구",no_users:"아직 사용자가 없습니다.",search_username:"사용자 이름 검색...",find_from_contacts:"연락처에서 찾기",contacts_loading_or_denied:"연락처 로딩 중 또는 권한 거부됨.",theme_light:"라이트",theme_dark:"다크",theme_system:"시스템",
+      welcome:"환영합니다",addTask:"새 작업 추가...",habits:"습관",stats:"통계",settings:"설정",appearance:"모양",language:"언어",logout:"로그아웃",assign_to:"할당 대상",description:"설명",start_date:"시작 날짜",due_date:"마감일",daily:"매일",weekly:"매주",new_habit:"새로운 습관",habit_name:"습관 이름",frequency:"빈도",days:"일",end_date:"종료 날짜",time:"시간",create:"생성",cancel:"취소",save:"저장",delete:"삭제",edit:"편집",completed:"완료됨",search_contact:"연락처 검색...",notification:"알림",alarm:"알람",every_day:"매일",change_photo:"사진 변경",today: "오늘",all_good: "모든 것이 괜찮아요!",no_tasks_today: "오늘 계획을 추가하세요.",tasks_tab:"작업",habits_tab:"습관",messages_tab:"메시지",social_tab:"소셜",profile_tab:"프로필",},
+  ja:{categories_title:"カテゴリー",category_name_placeholder:"カテゴリー名...",edit_categories:"カテゴリーを編集",at_least_one_category:"少なくとも1つのカテゴリーを残す必要があります.",ok_btn:"OK",warning_label:"警告",delete_label:"削除",title_label:"タイトル",add_note_placeholder:"メモを追加...",which_days:"どの日ですか？",category:"カテゴリー",delete_habit_confirm:"この習慣を削除しますか？",motivational_daily:"毎日1%成長しよう。",connections:"つながり",close:"閉じる",me:"私",work:"仕事",personal:"個人",home:"家",habit_name_label:"習慣名",time_placeholder:"時間 (09:00)",every_day_label:"毎日",weekly_label:"毎週",day_label:"日",start_habit:"習慣を始める",no_connections:"まだ誰ともつながっていません。",friends:"友だち",no_users:"まだユーザーがいません。",search_username:"ユーザー名を検索...",find_from_contacts:"連絡先から探す",contacts_loading_or_denied:"連絡先を読み込み中または許可が拒否されました。",theme_light:"ライト",theme_dark:"ダーク",theme_system:"システム",
+      welcome:"ようこそ",addTask:"新しいタスクを追加...",habits:"習慣",stats:"統計",settings:"設定",appearance:"外観",language:"言語",logout:"ログアウト",assign_to:"割り当て先",description:"説明",start_date:"開始日",due_date:"期限日",daily:"毎日",weekly:"毎週",new_habit:"新しい習慣",habit_name:"習慣名",frequency:"頻度",days:"日",end_date:"終了日",time:"時間",create:"作成",cancel:"キャンセル",save:"保存",delete:"削除",edit:"編集",completed:"完了",search_contact:"連絡先検索...",notification:"通知",alarm:"アラーム",every_day:"毎日",change_photo:"写真を変更",today: "今日",all_good: "すべて順調です！",no_tasks_today: "今日の予定を追加してください。",tasks_tab:"タスク",habits_tab:"習慣",messages_tab:"メッセージ",social_tab:"ソーシャル",profile_tab:"プロフィール",},
+  ru:{categories_title:"Категории",category_name_placeholder:"Название категории...",edit_categories:"Редактировать категории",at_least_one_category:"Должна остаться хотя бы одна категория.",ok_btn:"OK",warning_label:"Предупреждение",delete_label:"Удалить",title_label:"Заголовок",add_note_placeholder:"Добавить заметку...",which_days:"Какие дни?",category:"Категория",delete_habit_confirm:"Вы хотите удалить эту привычку?",motivational_daily:"Становитесь лучше на 1% каждый день.",connections:"Связи",close:"Закрыть",me:"Я",work:"Работа",personal:"Личное",home:"Дом",habit_name_label:"Название привычки",time_placeholder:"Время (09:00)",every_day_label:"Каждый день",weekly_label:"Еженедельно",day_label:"День",start_habit:"Начать привычку",no_connections:"У вас пока нет соединений.",friends:"Друзья",no_users:"Пока нет пользователей.",search_username:"Поиск имени пользователя...",find_from_contacts:"Найти в контактах",contacts_loading_or_denied:"Контакты загружаются или разрешение отклонено.",theme_light:"Светлая",theme_dark:"Тёмная",theme_system:"Система",
+      welcome:"Добро пожаловать",addTask:"Добавить новую задачу...",habits:"Привычки",stats:"Статистика",settings:"Настройки",appearance:"Внешний вид",language:"Язык",logout:"Выйти",assign_to:"Назначить",description:"Описание",start_date:"Дата начала",due_date:"Срок",daily:"Ежедневно",weekly:"Еженедельно",new_habit:"Новая привычка",habit_name:"Название привычки",frequency:"Частота",days:"Дни",end_date:"Дата окончания",time:"Время",create:"Создать",cancel:"Отмена",save:"Сохранить",delete:"Удалить",edit:"Изменить",completed:"Завершено",search_contact:"Поиск контактов...",notification:"Уведомление",alarm:"Будильник",every_day:"Каждый день",change_photo:"Изменить фото",today: "Сегодня",all_good: "Всё в порядке!",no_tasks_today: "Добавьте план на сегодня.",tasks_tab:"Задачи",habits_tab:"Привычки",messages_tab:"Сообщения",social_tab:"Социальное",profile_tab:"Профиль",},
+  it:{categories_title:"Categorie",category_name_placeholder:"Nome categoria...",edit_categories:"Modifica categorie",at_least_one_category:"Deve rimanere almeno una categoria.",ok_btn:"OK",warning_label:"Avviso",delete_label:"Elimina",title_label:"Titolo",add_note_placeholder:"Aggiungi nota...",which_days:"Quali giorni?",category:"Categoria",delete_habit_confirm:"Vuoi eliminare questa abitudine?",motivational_daily:"Migliora dell'1% ogni giorno.",connections:"Connessioni",close:"Chiudi",me:"Io",work:"Lavoro",personal:"Personale",home:"Casa",habit_name_label:"Nome dell'abitudine",time_placeholder:"Ora (09:00)",every_day_label:"Ogni giorno",weekly_label:"Settimanale",day_label:"Giorno",start_habit:"Inizia abitudine",no_connections:"Non hai ancora connessioni.",friends:"Amici",no_users:"Non ci sono ancora utenti.",search_username:"Cerca nome utente...",find_from_contacts:"Trova dai contatti",contacts_loading_or_denied:"Caricamento contatti o permesso negato.",theme_light:"Chiaro",theme_dark:"Scuro",theme_system:"Sistema",
+      welcome:"Benvenuto",addTask:"Aggiungi un nuovo compito...",habits:"Abitudini",stats:"Statistiche",settings:"Impostazioni",appearance:"Aspetto",language:"Lingua",logout:"Disconnettersi",assign_to:"Assegna a",description:"Descrizione",start_date:"Data di inizio",due_date:"Data di scadenza",daily:"Quotidiano",weekly:"Settimanale",new_habit:"Nuova abitudine",habit_name:"Nome dell'abitudine",frequency:"Frequenza",days:"Giorni",end_date:"Data di fine",time:"Ora",create:"Crea",cancel:"Annulla",save:"Salva",delete:"Elimina",edit:"Modifica",completed:"Completato",search_contact:"Cerca contatto...",notification:"Notifica",alarm:"Allarme",every_day:"Ogni giorno",change_photo:"Cambia foto",today: "Oggi",all_good: "Tutto bene!",no_tasks_today: "Aggiungi un piano per oggi.",tasks_tab:"Compiti",habits_tab:"Abitudini",messages_tab:"Messaggi",social_tab:"Social",profile_tab:"Profilo",},
+  pl:{categories_title:"Kategorie",category_name_placeholder:"Nazwa kategorii...",edit_categories:"Edytuj kategorie",at_least_one_category:"Musi pozostać co najmniej jedna kategoria.",ok_btn:"OK",warning_label:"Ostrzeżenie",delete_label:"Usuń",title_label:"Tytuł",add_note_placeholder:"Dodaj notatkę...",which_days:"Które dni?",category:"Kategoria",delete_habit_confirm:"Czy chcesz usunąć ten nawyk?",motivational_daily:"Bądź o 1% lepszy każdego dnia.",connections:"Połączenia",close:"Zamknij",me:"Ja",work:"Praca",personal:"Osobiste",home:"Dom",habit_name_label:"Nazwa nawyku",time_placeholder:"Godzina (09:00)",every_day_label:"Codziennie",weekly_label:"Co tydzień",day_label:"Dzień",start_habit:"Rozpocznij nawyk",no_connections:"Nie masz jeszcze żadnych połączeń.",friends:"Przyjaciele",no_users:"Nie ma jeszcze użytkowników.",search_username:"Szukaj nazwy użytkownika...",find_from_contacts:"Znajdź w kontaktach",contacts_loading_or_denied:"Ładowanie kontaktów lub odmowa dostępu.",theme_light:"Jasny",theme_dark:"Ciemny",theme_system:"System",
+      welcome:"Witamy",addTask:"Dodaj nowe zadanie...",habits:"Nawyki",stats:"Statystyki",settings:"Ustawienia",appearance:"Wygląd",language:"Język",logout:"Wyloguj",assign_to:"Przypisz do",description:"Opis",start_date:"Data rozpoczęcia",due_date:"Termin",daily:"Codziennie",weekly:"Co tydzień",new_habit:"Nowy nawyk",habit_name:"Nazwa nawyku",frequency:"Częstotliwość",days:"Dni",end_date:"Data zakończenia",time:"Czas",create:"Utwórz",cancel:"Anuluj",save:"Zapisz",delete:"Usuń",edit:"Edytuj",completed:"Ukończono",search_contact:"Szukaj kontaktu...",notification:"Powiadomienie",alarm:"Alarm",every_day:"Codziennie",change_photo:"Zmień zdjęcie",today: "Dzisiaj",all_good: "Wszystko w porządku!",no_tasks_today: "Dodaj plan na dziś.",tasks_tab:"Zadania",habits_tab:"Nawyki",messages_tab:"Wiadomości",social_tab:"Społeczność",profile_tab:"Profil",},
+  uk:{categories_title:"Категорії",category_name_placeholder:"Назва категорії...",edit_categories:"Редагувати категорії",at_least_one_category:"Має залишитися щонайменше одна категорія.",ok_btn:"Гаразд",warning_label:"Попередження",delete_label:"Видалити",title_label:"Заголовок",add_note_placeholder:"Додати нотатку...",which_days:"Які дні?",category:"Категорія",delete_habit_confirm:"Ви хочете видалити цю звичку?",motivational_daily:"Ставайте кращими на 1% щодня.",connections:"Зв'язки",close:"Закрити",me:"Я",work:"Робота",personal:"Особисте",home:"Дім",habit_name_label:"Назва звички",time_placeholder:"Час (09:00)",every_day_label:"Щодня",weekly_label:"Щотижня",day_label:"День",start_habit:"Почати звичку",no_connections:"У вас ще немає зв’язків.",friends:"Друзі",no_users:"Користувачів поки немає.",search_username:"Пошук імені користувача...",find_from_contacts:"Знайти у контактах",contacts_loading_or_denied:"Контакти завантажуються або доступ заборонено.",theme_light:"Світла",theme_dark:"Темна",theme_system:"Система",
+      welcome:"Ласкаво просимо",addTask:"Додати нове завдання...",habits:"Звички",stats:"Статистика",settings:"Налаштування",appearance:"Зовнішній вигляд",language:"Мова",logout:"Вийти",assign_to:"Призначити",description:"Опис",start_date:"Дата початку",due_date:"Кінцевий термін",daily:"Щодня",weekly:"Щотижня",new_habit:"Нова звичка",habit_name:"Назва звички",frequency:"Частота",days:"Дні",end_date:"Дата завершення",time:"Час",create:"Створити",cancel:"Скасувати",save:"Зберегти",delete:"Видалити",edit:"Редагувати",completed:"Завершено",search_contact:"Пошук контакту...",notification:"Сповіщення",alarm:"Будильник",every_day:"Щодня",change_photo:"Змінити фото",today: "Сьогодні",all_good: "Все добре!",no_tasks_today: "Додайте план на сьогодні.",tasks_tab:"Завдання",habits_tab:"Звички",messages_tab:"Повідомлення",social_tab:"Соціальне",profile_tab:"Профіль",}
+};
+
+// --- TİP TANIMLAMALARI ---
+type ThemeMode = 'light' | 'dark' | 'system';
+type LangCode = 'en' | 'tr' | 'nl' | 'de' | 'es' | 'fr' | 'ar' | 'id' | 'pt' | 'hi' | 'ko' | 'ja' | 'ru' | 'it' | 'pl' | 'uk';
+
+interface Task { 
+  id: string; text: string; description?: string; completed: boolean; date: string; dueDate?: string; showEveryDayUntilDue?: boolean; categoryId: string; notificationTime?: string | null; alarmTime?: string | null; assignedBy?: string; assignedByName?: string; assignedTo?: string; 
+}
+
+interface Habit {
+  id: string; title: string; frequency: 'daily' | 'weekly'; selectedDays: number[]; endDate?: string | null; notificationTime?: string | null; notificationIds?: string[]; completedDates: string[]; categoryId: string; createdAt: any;
+}
+
+interface Category { id: string; name: string; color: string; }
+interface Contact { uid: string; username: string; email: string; phoneNumber?: string; canAssignToMe: boolean; defaultCategoryId?: string; photoURL?: string; }
+interface FriendRequest { id: string; fromUid: string; fromUsername: string; fromEmail: string; status: 'pending'; }
+interface DeviceContact { id: string; name: string; phoneNumber: string; isAppUser?: boolean; uid?: string; }
+interface ChatMessage { id: string; text: string; senderId: string; timestamp: any; read?: boolean; }
+
+const getISODate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateDDMMYYYY = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}-${month}-${year}`;
+};
+
+const parseDueDate = (dateStr?: string) => {
+    if (!dateStr) return Infinity; 
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return Infinity;
+    return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).getTime();
+};
+
+const convertDDMMYYYYtoISO = (dateStr: string) => {
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+};
+
+const maskDateInput = (text: string) => {
+  const cleaned = text.replace(/[^0-9]/g, '');
+  let formatted = cleaned;
+  if (cleaned.length > 2) formatted = cleaned.slice(0, 2) + '-' + cleaned.slice(2);
+  if (cleaned.length > 4) formatted = formatted.slice(0, 5) + '-' + cleaned.slice(4);
+  return formatted.slice(0, 10); 
+};
+
+const maskTimeInput = (text: string) => {
+  const cleaned = text.replace(/[^0-9]/g, '');
+  let formatted = cleaned;
+  if (cleaned.length > 2) formatted = cleaned.slice(0, 2) + ':' + cleaned.slice(2);
+  return formatted.slice(0, 5);
+};
+
+const GREETINGS = {
+  en:{morning:"Good morning",afternoon:"Good afternoon",evening:"Good evening"},
+  tr:{morning:"Günaydın",afternoon:"Tünaydın",evening:"İyi akşamlar"},
+  nl:{morning:"Goedemorgen",afternoon:"Goedemiddag",evening:"Goedenavond"},
+  de:{morning:"Guten Morgen",afternoon:"Guten Nachmittag",evening:"Guten Abend"},
+  es:{morning:"Buenos días",afternoon:"Buenas tardes",evening:"Buenas noches"},
+  fr:{morning:"Bonjour",afternoon:"Bon après-midi",evening:"Bonsoir"},
+  ar:{morning:"صباح الخير",afternoon:"مساء الخير",evening:"مساء الخير"},
+  id:{morning:"Selamat pagi",afternoon:"Selamat siang",evening:"Selamat malam"},
+  pt:{morning:"Bom dia",afternoon:"Boa tarde",evening:"Boa noite"},
+  hi:{morning:"सुप्रभात",afternoon:"नमस्कार",evening:"शुभ संध्या"},
+  ko:{morning:"좋은 아침",afternoon:"좋은 오후",evening:"좋은 저녁"},
+  ja:{morning:"おはようございます",afternoon:"こんにちは",evening:"こんばんは"},
+  ru:{morning:"Доброе утро",afternoon:"Добрый день",evening:"Добрый вечер"},
+  it:{morning:"Buongiorno",afternoon:"Buon pomeriggio",evening:"Buonasera"},
+  pl:{morning:"Dzień dobry",afternoon:"Dzień dobry",evening:"Dobry wieczór"},
+  uk:{morning:"Доброго ранку",afternoon:"Добрий день",evening:"Добрий вечір"}
+};
+const getGreeting = (lang:LangCode)=>{const hour=new Date().getHours();const g=GREETINGS[lang]||GREETINGS.en;return hour<12?g.morning:hour<18?g.afternoon:g.evening;};
+
+
+const DAYS_OF_WEEK_MAP = {
+  en:[{id:1,label:"Mon"},{id:2,label:"Tue"},{id:3,label:"Wed"},{id:4,label:"Thu"},{id:5,label:"Fri"},{id:6,label:"Sat"},{id:0,label:"Sun"}],
+  tr:[{id:1,label:"Pzt"},{id:2,label:"Sal"},{id:3,label:"Çar"},{id:4,label:"Per"},{id:5,label:"Cum"},{id:6,label:"Cmt"},{id:0,label:"Paz"}],
+  nl:[{id:1,label:"Ma"},{id:2,label:"Di"},{id:3,label:"Wo"},{id:4,label:"Do"},{id:5,label:"Vr"},{id:6,label:"Za"},{id:0,label:"Zo"}],
+  de:[{id:1,label:"Mo"},{id:2,label:"Di"},{id:3,label:"Mi"},{id:4,label:"Do"},{id:5,label:"Fr"},{id:6,label:"Sa"},{id:0,label:"So"}],
+  es:[{id:1,label:"Lun"},{id:2,label:"Mar"},{id:3,label:"Mié"},{id:4,label:"Jue"},{id:5,label:"Vie"},{id:6,label:"Sáb"},{id:0,label:"Dom"}],
+  fr:[{id:1,label:"Lun"},{id:2,label:"Mar"},{id:3,label:"Mer"},{id:4,label:"Jeu"},{id:5,label:"Ven"},{id:6,label:"Sam"},{id:0,label:"Dim"}],
+  ar:[{id:1,label:"الاثنين"},{id:2,label:"الثلاثاء"},{id:3,label:"الأربعاء"},{id:4,label:"الخميس"},{id:5,label:"الجمعة"},{id:6,label:"السبت"},{id:0,label:"الأحد"}],
+  id:[{id:1,label:"Sen"},{id:2,label:"Sel"},{id:3,label:"Rab"},{id:4,label:"Kam"},{id:5,label:"Jum"},{id:6,label:"Sab"},{id:0,label:"Min"}],
+  pt:[{id:1,label:"Seg"},{id:2,label:"Ter"},{id:3,label:"Qua"},{id:4,label:"Qui"},{id:5,label:"Sex"},{id:6,label:"Sáb"},{id:0,label:"Dom"}],
+  hi:[{id:1,label:"सोम"},{id:2,label:"मंगल"},{id:3,label:"बुध"},{id:4,label:"गुरु"},{id:5,label:"शुक्र"},{id:6,label:"शनि"},{id:0,label:"रवि"}],
+  ko:[{id:1,label:"월"},{id:2,label:"화"},{id:3,label:"수"},{id:4,label:"목"},{id:5,label:"금"},{id:6,label:"토"},{id:0,label:"일"}],
+  ja:[{id:1,label:"月"},{id:2,label:"火"},{id:3,label:"水"},{id:4,label:"木"},{id:5,label:"金"},{id:6,label:"土"},{id:0,label:"日"}],
+  ru:[{id:1,label:"Пн"},{id:2,label:"Вт"},{id:3,label:"Ср"},{id:4,label:"Чт"},{id:5,label:"Пт"},{id:6,label:"Сб"},{id:0,label:"Вс"}],
+  it:[{id:1,label:"Lun"},{id:2,label:"Mar"},{id:3,label:"Mer"},{id:4,label:"Gio"},{id:5,label:"Ven"},{id:6,label:"Sab"},{id:0,label:"Dom"}],
+  pl:[{id:1,label:"Pon"},{id:2,label:"Wto"},{id:3,label:"Śro"},{id:4,label:"Czw"},{id:5,label:"Pią"},{id:6,label:"Sob"},{id:0,label:"Nie"}],
+  uk:[{id:1,label:"Пн"},{id:2,label:"Вт"},{id:3,label:"Ср"},{id:4,label:"Чт"},{id:5,label:"Пт"},{id:6,label:"Сб"},{id:0,label:"Нд"}]
+};
+
+const getDaysOfWeek = (lang:LangCode)=>DAYS_OF_WEEK_MAP[lang]||DAYS_OF_WEEK_MAP.en;
+
+export default function OmmioApp() {
+  const systemScheme = useColorScheme();
+  const [user, setUser] = useState<any>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email'); 
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(''); 
+  const [newCategoryColor, setNewCategoryColor] = useState('blue'); // Varsayılan renk
+  const CATEGORY_PALETTE = ['blue', 'orange', 'green', 'purple','pink']; // Seçenekler
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  
+  // NAVIGATION STATE
+  const [activeTab, setActiveTab] = useState<'list' | 'habits' | 'messages' | 'social' | 'profile' | 'chat_room'>('list');
+  const [chatTarget, setChatTarget] = useState<Contact | null>(null); 
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+
+
+  const [isTyping, setIsTyping] = useState(false); // Karşı taraf yazıyor mu?
+  const [lastVisibleMsg, setLastVisibleMsg] = useState<any>(null); // Pagination için
+  const [loadingMoreMsg, setLoadingMoreMsg] = useState(false);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  
+  const [msgLimit, setMsgLimit] = useState(125); // Başlangıçta 125 mesaj göster
+
+  const [theme, setTheme] = useState<ThemeMode>("system");
+  const [lang, setLang] = useState<LangCode>("en");
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isLangModalOpen, setIsLangModalOpen] = useState(false);
+  const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
+  const [isOverdueExpanded, setIsOverdueExpanded] = useState(true);
+  const [taskViewMode, setTaskViewMode] = useState<'list' | 'category'>('list');
+
+  // ADD MODAL STATE (Eksik olanlar eklendi)
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false); 
+  const [addMode, setAddMode] = useState<'task' | 'habit'>('task'); 
+  
+  const [inputValue, setInputValue] = useState("");
+  const [inputDesc, setInputDesc] = useState("");
+  const [inputDueDate, setInputDueDate] = useState(""); 
+  const [inputStartDate, setInputStartDate] = useState(""); 
+  const [notifInput, setNotifInput] = useState("");
+  const [alarmInput, setAlarmInput] = useState("");
+  const [isNotifOn, setIsNotifOn] = useState(false);
+  const [isAlarmOn, setIsAlarmOn] = useState(false);
+  const [isEveryDayOn, setIsEveryDayOn] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<Contact | null>(null);
+
+  const [newHabitTitle, setNewHabitTitle] = useState("");
+  const [newHabitFreq, setNewHabitFreq] = useState<'daily' | 'weekly'>('daily');
+  const [newHabitDays, setNewHabitDays] = useState<number[]>([]);
+  const [newHabitEndDate, setNewHabitEndDate] = useState("");
+  const [habitNotifInput, setHabitNotifInput] = useState(""); 
+  const [isHabitModalOpen, setIsHabitModalOpen] = useState(false);
+  // ... diğer state tanımları
+  const [newCategoryName, setNewCategoryName] = useState("");
+
+  const [categories, setCategories] = useState<Category[]>([
+      { id: 'work', name: 'İş', color: 'blue' }, 
+      { id: 'home', name: 'Ev', color: 'orange' },
+      { id: 'personal', name: 'Kişisel', color: 'green' }
+  ]);
+  const [selectedCategory, setSelectedCategory] = useState<Category>(categories[0]);
+
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [activeAlarmTask, setActiveAlarmTask] = useState<Task | null>(null);
+  const [detailText, setDetailText] = useState("");
+  const [detailDesc, setDetailDesc] = useState("");
+  const [detailDueDate, setDetailDueDate] = useState("");
+
+  // DATE PICKERS
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDetailDatePicker, setShowDetailDatePicker] = useState(false); 
+  const [showHabitDatePicker, setShowHabitDatePicker] = useState(false);
+  const [datePickerTarget, setDatePickerTarget] = useState<'start' | 'due' | 'habitEnd' | 'detail'>('start');
+
+  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([]); 
+  const [assignSearchText, setAssignSearchText] = useState("");
+  const [searchUsername, setSearchUsername] = useState("");
+  const [isNetworkModalOpen, setIsNetworkModalOpen] = useState(false);
+  const [networkTab, setNetworkTab] = useState<'ommio' | 'contacts'>('ommio'); 
+  const [isInputExpanded, setIsInputExpanded] = useState(false);
+
+const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    // Google Cloud Console'dan aldığın ID'leri buraya yaz:
+    clientId: '677937409612-ijhg8dbhknb24hs53t9r8gvse397pvrh.apps.googleusercontent.com', 
+    iosClientId: '677937409612-sats3t36t7mko7i2lds7m45sc52aofq2.apps.googleusercontent.com', 
+    androidClientId: '677937409612-prdicaptu9fn46vmbp4o1c05nrhg2asb.apps.googleusercontent.com', 
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(auth, credential);
+    }
+  }, [response]);
+  useEffect(() => {
+    const checkFirstLaunch = async () => {
+        const hasLaunched = await AsyncStorage.getItem("hasLaunched");
+        if (hasLaunched === null) {
+            setShowOnboarding(true);
+            await AsyncStorage.setItem("hasLaunched", "true");
+        }
+    };
+    checkFirstLaunch();
+}, []);
+  // --- APPLE LOGIN ---
+  const handleAppleLogin = async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      const { identityToken } = credential;
+      if (identityToken) {
+        const provider = new OAuthProvider('apple.com');
+        const oAuthCredential = provider.credential({ idToken: identityToken });
+        await signInWithCredential(auth, oAuthCredential);
+      }
+    } catch (e: any) {
+      if (e.code !== 'ERR_CANCELED') Alert.alert('Hata', 'Apple girişi başarısız.');
+    }
+  };
+
+  // --- EFFECT: AUTH & DATA ---
+  useEffect(() => { const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setIsAuthLoading(false); }); return unsub; }, []);
+  useEffect(() => { setInputStartDate(formatDateDDMMYYYY(selectedDate)); }, [selectedDate]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+        try {
+            const savedLang = await AsyncStorage.getItem("ommio_lang");
+            const savedTheme = await AsyncStorage.getItem("ommio_theme");
+            if (savedLang) setLang(savedLang as LangCode);
+            if (savedTheme) setTheme(savedTheme as ThemeMode);
+        } catch (e) {}
+    };
+    loadSettings();
+  }, []);
+
+  useEffect(() => {
+    const saveSettings = async () => {
+        try {
+            await AsyncStorage.setItem("ommio_lang", lang);
+            await AsyncStorage.setItem("ommio_theme", theme);
+        } catch (e) {}
+    };
+    saveSettings();
+  }, [lang, theme]);
+
+  useEffect(() => {
+    if (!user) return;
+    const qTasks = query(collection(db, "users", user.uid, "tasks"));
+    const qHabits = query(collection(db, "users", user.uid, "habits"));
+    const qContacts = query(collection(db, "users", user.uid, "contacts"));
+    const qReqs = query(collection(db, "users", user.uid, "friend_requests"));
+
+    const unsubT = onSnapshot(qTasks, (snap) => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task))));
+    const unsubH = onSnapshot(qHabits, (snap) => setHabits(snap.docs.map(d => ({ id: d.id, ...d.data() } as Habit))));
+    const unsubC = onSnapshot(qContacts, (snap) => setContacts(snap.docs.map(d => d.data() as Contact)));
+    const unsubR = onSnapshot(qReqs, (snap) => setFriendRequests(snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest))));
+
+    return () => { unsubT(); unsubH(); unsubC(); unsubR(); };
+  }, [user]);
+
+  // --- EFFECT: CHAT ---
+ // --- EFFECT: CHAT (GÜNCELLENDİ: Pagination & Okundu Bilgisi) ---
+  useEffect(() => {
+    if (!user || !chatTarget) return;
+
+    const chatId = [user.uid, chatTarget.uid].sort().join('_');
+    
+    // YENİLİK 1: 'desc' (azalan) sıralama yapıyoruz ki en son mesajlar önce gelsin.
+    // YENİLİK 2: limit(msgLimit) ile dinamik sayı kadar mesaj çekiyoruz.
+    const qMsgs = query(
+        collection(db, "chats", chatId, "messages"), 
+        orderBy("timestamp", "desc"), 
+        limit(msgLimit)
+    );
+    
+    const unsubMsg = onSnapshot(qMsgs, (snap) => {
+        const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
+        
+        // YENİLİK 3: OKUNDU BİLGİSİ İŞLEME
+        // Mesaj bana ait değilse (karşıdan gelmişse) ve okunmamışsa, okundu yap.
+        msgs.forEach(async (msg) => {
+            if (msg.senderId !== user.uid && !msg.read) {
+                try {
+                   // updateDoc ile veritabanında 'read: true' yapıyoruz
+                   await updateDoc(doc(db, "chats", chatId, "messages", msg.id), { read: true });
+                } catch (e) {
+                   console.log("Okundu işaretlenemedi", e);
+                }
+            }
+        });
+
+        setChatMessages(msgs);
+    });
+
+    return () => unsubMsg();
+  }, [user, chatTarget, msgLimit]); // msgLimit değişince sorgu tekrar çalışır
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+        const todayISO = getISODate(new Date());
+        const todaysTasks = tasks.filter(t => t.date === todayISO);
+        const comp = todaysTasks.filter(t => t.completed).length;
+        try { 
+          // @ts-ignore
+          requestWidgetUpdate({ 
+            widgetName: 'OmmioWidget', 
+            // @ts-ignore
+            renderWidget: () => widgetTaskHandler({ 
+              completedCount: comp, totalCount: todaysTasks.length, 
+              topTasks: todaysTasks.slice(0, 3).map(t => ({ text: t.text, completed: t.completed })) 
+            }), widgetNotFound: () => { } 
+          }); 
+        } catch (e) {}
+    }
+  }, [tasks]);
+
+  const t = (key: string) => {
+    // @ts-ignore
+    return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
+  };
+
+  // --- FONKSİYONLAR ---
+  const sendMessage = async () => {
+      if (!chatInput.trim() || !chatTarget || !user) return;
+      const chatId = [user.uid, chatTarget.uid].sort().join('_');
+      await addDoc(collection(db, "chats", chatId, "messages"), {
+          text: chatInput,
+          senderId: user.uid,
+          timestamp: serverTimestamp()
+      });
+      setChatInput("");
+  };
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+        Alert.alert("E-posta Gerekli", "Şifre sıfırlama bağlantısı için lütfen e-posta adresinizi yazın.");
+        return;
+    }
+    try {
+        await sendPasswordResetEmail(auth, email);
+        Alert.alert("Başarılı", "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.");
+    } catch (e: any) {
+        Alert.alert("Hata", e.message);
+    }
+};
+  const handleAuth = async () => {
+      try {
+          if (authMode === 'login') await signInWithEmailAndPassword(auth, email, password);
+          else {
+              const cred = await createUserWithEmailAndPassword(auth, email, password);
+              await updateProfile(cred.user, { displayName: username });
+              await setDoc(doc(db, "public_users", cred.user.uid), { uid: cred.user.uid, username: username.toLowerCase(), originalUsername: username, email });
+          }
+      } catch (e: any) { Alert.alert("Hata", e.message); }
+  };
+
+  const handleLogout = async () => { await signOut(auth); setTasks([]); };
+  
+const pickImage = async () => {
+    try {
+        console.log("Resim seçme işlemi başladı...");
+
+        // 1. İzin İste
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (permissionResult.granted === false) {
+            alert("Galeri izni gerekli.");
+            return;
+        }
+
+        // 2. Resmi Seç
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 1, // Buradaki kalite önemli değil, aşağıda manipulator ile ayarlayacağız
+        });
+
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            const asset = result.assets[0];
+            
+            console.log("Resim seçildi, yeniden boyutlandırılıyor...");
+
+            // --- 3. RESMİ KÜÇÜLTME (RESIZE) İŞLEMİ ---
+            // Genişliği 500px yapıyoruz, yükseklik otomatik ayarlanıyor.
+            // Bu işlem boyutu 50KB - 150KB arasına düşürür.
+            const manipResult = await ImageManipulator.manipulateAsync(
+                asset.uri,
+                [{ resize: { width: 500 } }], // Genişliği 500px'e sabitle
+                { 
+                    compress: 0.7, // Kalite %70 (Gayet yeterli)
+                    format: ImageManipulator.SaveFormat.JPEG, 
+                    base64: true // Base64 verisini istiyoruz
+                }
+            );
+
+            const finalBase64 = `data:image/jpeg;base64,${manipResult.base64}`;
+
+            // Boyut Kontrolü (Artık buraya takılması imkansıza yakın)
+            if (finalBase64.length > 1048487) {
+                alert("Resim küçültülmesine rağmen hala çok büyük.");
+                return;
+            }
+
+            // 4. Kaydetme İşlemleri
+          
+
+            await setDoc(doc(db, "users", user.uid), { photoURL: finalBase64 }, { merge: true });
+            
+            try {
+                await setDoc(doc(db, "public_users", user.uid), { photoURL: finalBase64 }, { merge: true });
+            } catch (e) {}
+
+            setUser({ ...user, photoURL: finalBase64 });
+            
+            const msg = "Profil fotoğrafın başarıyla güncellendi!";
+            Platform.OS === 'web' ? alert(msg) : Alert.alert("Başarılı", msg);
+        }
+    } catch (e: any) {
+        console.error("Hata:", e);
+        const errMsg = "Resim işlenirken hata: " + e.message;
+        Platform.OS === 'web' ? alert(errMsg) : Alert.alert("Hata", errMsg);
+    }
+  };
+
+  const scheduleLocalNotification = async (title: string, body: string, timeString: string, type: 'notification' | 'alarm') => {
+      if (Platform.OS === 'web') return null;
+      try {
+        const [hours, minutes] = timeString.split(':').map(Number);
+        const triggerDate = new Date(selectedDate); triggerDate.setHours(hours, minutes, 0, 0);
+        const id = await Notifications.scheduleNotificationAsync({ 
+            content: { title: title, body: body, sound: true, priority: Notifications.AndroidNotificationPriority.HIGH, data: { type: type } }, 
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate }, 
+        });
+        return id;
+      } catch (e) { return null; }
+  };
+
+  const addTask = async () => {
+      if (!inputValue.trim()) return;
+      let notifId = null, alarmId = null;
+      if (isNotifOn && notifInput.length === 5) notifId = await scheduleLocalNotification("Hatırlatma", inputValue, notifInput, 'notification');
+      if (isAlarmOn && alarmInput.length === 5) alarmId = await scheduleLocalNotification(t('alarm'), inputValue, alarmInput, t('alarm'));
+
+      const formattedStart = convertDDMMYYYYtoISO(inputStartDate);
+      const newTask = {
+          text: inputValue, description: inputDesc, completed: false, date: formattedStart, dueDate: inputDueDate.length>=10?inputDueDate:null,
+          showEveryDayUntilDue: isEveryDayOn, categoryId: selectedCategory.id, notificationTime: isNotifOn?notifInput:null, alarmTime: isAlarmOn?alarmInput:null, notificationId: notifId, alarmId: alarmId,
+          createdAt: serverTimestamp(), assignedBy: user.uid, assignedByName: user.displayName, assignedTo: assignTarget ? assignTarget.uid : user.uid
+      };
+      
+      if (assignTarget) {
+          await addDoc(collection(db, "users", assignTarget.uid, "tasks"), newTask);
+          Alert.alert("İletildi", `${assignTarget.username} kişisine görev atandı.`);
+      } else {
+          await addDoc(collection(db, "users", user.uid, "tasks"), newTask);
+      }
+      setIsAddModalOpen(false); 
+      setInputValue(""); setInputDesc(""); setInputDueDate(""); 
+      setNotifInput(""); setAlarmInput(""); setIsNotifOn(false); setIsAlarmOn(false); setIsEveryDayOn(false); setAssignTarget(null);
+  };
+
+  const addHabit = async () => {
+      if (!newHabitTitle.trim()) return;
+      const endDateISO = newHabitEndDate ? convertDDMMYYYYtoISO(newHabitEndDate) : null;
+      let notificationIds: string[] = [];
+      if (habitNotifInput.length === 5 && Platform.OS !== 'web') {
+          const [hours, minutes] = habitNotifInput.split(':').map(Number);
+          try {
+              if (newHabitFreq === 'daily') {
+                   // @ts-ignore
+                   const id = await Notifications.scheduleNotificationAsync({ content: { title: "Alışkanlık Vakti!", body: newHabitTitle, sound: true }, trigger: { hour: hours, minute: minutes, repeats: true, type: Notifications.SchedulableTriggerInputTypes.CALENDAR } });
+                   notificationIds.push(id);
+              } else if (newHabitFreq === 'weekly') {
+                   for (const dayIndex of newHabitDays) {
+                       const expoWeekday = dayIndex + 1; 
+                       // @ts-ignore
+                       const id = await Notifications.scheduleNotificationAsync({ content: { title: "Alışkanlık Vakti!", body: newHabitTitle, sound: true }, trigger: { weekday: expoWeekday, hour: hours, minute: minutes, repeats: true, type: Notifications.SchedulableTriggerInputTypes.CALENDAR } });
+                       notificationIds.push(id);
+                   }
+              }
+          } catch(e) { console.log("Notif error", e); }
+      }
+      if (user) {
+          await addDoc(collection(db, "users", user.uid, "habits"), { 
+            title: newHabitTitle, frequency: newHabitFreq, selectedDays: newHabitDays, endDate: endDateISO, 
+            completedDates: [], notificationTime: habitNotifInput, notificationIds: notificationIds, 
+            categoryId: selectedCategory.id, // Kategori Eklendi
+            createdAt: serverTimestamp() 
+          });
+      }
+      setIsAddModalOpen(false);
+      setNewHabitTitle(""); setNewHabitFreq('daily'); setNewHabitDays([]); setNewHabitEndDate(""); setHabitNotifInput("");
+  };
+
+  const toggleTask = async (task: Task) => { if(user) await updateDoc(doc(db, "users", user.uid, "tasks", task.id), { completed: !task.completed }); };
+  const deleteTask = async (task: Task) => { if (user) { await deleteDoc(doc(db, "users", user.uid, "tasks", task.id)); } };
+  
+  const toggleHabitCompletion = async (habit: Habit, date: string) => {
+      const ref = doc(db, "users", user.uid, "habits", habit.id);
+      if (habit.completedDates.includes(date)) await updateDoc(ref, { completedDates: arrayRemove(date) });
+      else await updateDoc(ref, { completedDates: arrayUnion(date) });
+  };
+  
+  const deleteHabit = async (habit: Habit) => { 
+      if (habit.notificationIds) {
+          for(const id of habit.notificationIds) { if (Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id); }
+      }
+      if (user) await deleteDoc(doc(db, "users", user.uid, "habits", habit.id)); 
+  };
+
+  const toggleExpand = (taskId: string) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedTaskId(expandedTaskId === taskId ? null : taskId); };
+  const openEditModal = (task: Task) => { if (task.assignedBy !== user.uid && task.assignedTo !== user.uid) { Alert.alert("Yetkisiz", "Bu görevi düzenleme yetkiniz yok."); return; } setSelectedTask(task); setDetailText(task.text); setDetailDesc(task.description || ""); setDetailDueDate(task.dueDate || ""); };
+  const saveTaskDetail = async () => { if (!selectedTask) return; try { const targetUid = selectedTask.assignedTo || user.uid; const taskRef = doc(db, "users", targetUid, "tasks", selectedTask.id); await updateDoc(taskRef, { text: detailText, description: detailDesc, dueDate: detailDueDate }); setSelectedTask(null); Alert.alert("Başarılı", "Görev güncellendi."); } catch (e) { Alert.alert("Hata", "Güncelleme başarısız."); } };
+  
+  const onDateChange = (event: any, selected: Date | undefined) => { 
+      setShowDatePicker(false); 
+      if (selected) { 
+          const formatted = formatDateDDMMYYYY(selected);
+          if (datePickerTarget === 'start') setInputStartDate(formatted);
+          if (datePickerTarget === 'due') setInputDueDate(formatted);
+          if (datePickerTarget === 'habitEnd') setNewHabitEndDate(formatted);
+          if (datePickerTarget === 'detail') setDetailDueDate(formatted);
+      } 
+  };
+  
+  const onDetailDateChange = (event: any, selected: Date | undefined) => { 
+      setShowDetailDatePicker(false); 
+      if (selected) setDetailDueDate(formatDateDDMMYYYY(selected));
+  };
+  const onHabitDateChange = (event: any, selected: Date | undefined) => {
+      setShowHabitDatePicker(false);
+      if (selected) setNewHabitEndDate(formatDateDDMMYYYY(selected));
+  };
+
+  const openDatePicker = (target: 'start' | 'due' | 'habitEnd' | 'detail') => {
+      setDatePickerTarget(target);
+      setShowDatePicker(true);
+  };
+
+  const handleInputStartDateChange = (text: string) => { setInputStartDate(maskDateInput(text)); };
+  const handleInputDueDateChange = (text: string) => { setInputDueDate(maskDateInput(text)); };
+  const handleDetailDueDateChange = (text: string) => { setDetailDueDate(maskDateInput(text)); };
+  const handleHabitEndDateChange = (text: string) => setNewHabitEndDate(maskDateInput(text));
+  const handleNotifInputChange = (text: string) => { setNotifInput(maskTimeInput(text)); };
+  const handleAlarmInputChange = (text: string) => { setAlarmInput(maskTimeInput(text)); };
+  const handleHabitNotifInputChange = (text: string) => { setHabitNotifInput(maskTimeInput(text)); };
+  const changeDate = (days: number) => { const newDate = new Date(selectedDate); newDate.setDate(selectedDate.getDate() + days); setSelectedDate(newDate); };
+  const toggleHabitDay = (dayId: number) => { if (newHabitDays.includes(dayId)) setNewHabitDays(newHabitDays.filter(d => d !== dayId)); else setNewHabitDays([...newHabitDays, dayId]); };
+  // ... mevcut fonksiyonların arasına ekleyin
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    const newId = Math.random().toString(36).substr(2, 9);
+    
+    const newCategory = { id: newId, name: newCategoryName, color: newCategoryColor };
+    const updatedCategories = [...categories, newCategory];
+    
+    setCategories(updatedCategories);
+    setNewCategoryName("");
+    
+    // FIREBASE KAYDI (ÖNEMLİ)
+    if (user) {
+        try {
+            // 'users' koleksiyonunda kullanıcının dökümanına 'categories' alanını güncelliyoruz
+            await setDoc(doc(db, "users", user.uid), { categories: updatedCategories }, { merge: true });
+        } catch (e) {
+            console.log("Kategori kaydedilemedi", e);
+        }
+    }
+};
+
+// Kategori silerken de updateDoc yapmalısınız:
+const handleDeleteCategory = async (catId: string) => {
+    if (categories.length <= 1) {
+        Alert.alert(t('warning_label'), t('at_least_one_category'));
+        return;
+    }
+    const updatedCategories = categories.filter(c => c.id !== catId);
+    setCategories(updatedCategories);
+    
+    if (user) {
+         await updateDoc(doc(db, "users", user.uid), { categories: updatedCategories });
+    }
+};
+
+  const sendFriendRequest = async () => {
+    if (!searchUsername.trim()) return;
+    try {
+      const q = query(collection(db, "public_users"), where("username", "==", searchUsername.toLowerCase()));
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.empty) { Alert.alert("Bulunamadı", "Kullanıcı bulunamadı."); return; }
+      const targetUser = querySnapshot.docs[0].data();
+      if (targetUser.uid === user.uid) { Alert.alert("Hata", "Kendini ekleyemezsin."); return; }
+      const existingContact = contacts.find(c => c.uid === targetUser.uid);
+      if (existingContact) { Alert.alert("Bilgi", "Bu kişi zaten listende."); return; }
+      await setDoc(doc(db, "users", targetUser.uid, "friend_requests", user.uid), { fromUid: user.uid, fromUsername: user.displayName || user.email, fromEmail: user.email, status: 'pending', createdAt: serverTimestamp() });
+      setSearchUsername(""); Alert.alert("Gönderildi", "İstek gönderildi.");
+    } catch (e) { Alert.alert("Hata", "İstek gönderilemedi."); }
+  };
+  const acceptRequest = async (req: FriendRequest) => {
+    try {
+      await setDoc(doc(db, "users", user.uid, "contacts", req.fromUid), { uid: req.fromUid, username: req.fromUsername, email: req.fromEmail, canAssignToMe: true });
+      await setDoc(doc(db, "users", req.fromUid, "contacts", user.uid), { uid: user.uid, username: user.displayName || user.email, email: user.email, canAssignToMe: false });
+      await deleteDoc(doc(db, "users", user.uid, "friend_requests", req.id)); Alert.alert("Başarılı", "Bağlantı kuruldu!");
+    } catch (e) { Alert.alert("Hata", "İşlem başarısız."); }
+  };
+  const rejectRequest = async (reqId: string) => { try { await deleteDoc(doc(db, "users", user.uid, "friend_requests", reqId)); } catch (e) { } };
+  const togglePermission = async (contact: Contact) => { await updateDoc(doc(db, "users", user.uid, "contacts", contact.uid), { canAssignToMe: !contact.canAssignToMe }); };
+  const setContactCategory = async (contact: Contact, categoryId: string) => { await updateDoc(doc(db, "users", user.uid, "contacts", contact.uid), { defaultCategoryId: categoryId }); };
+  const fetchDeviceContacts = async () => {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status === 'granted') {
+          const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name] });
+          if (data.length > 0) {
+              const formattedContacts: DeviceContact[] = [];
+              for (const contact of data) {
+                  if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+                      let number = contact.phoneNumbers[0].number || "";
+                      number = number.replace(/\s/g, '').replace(/-/g, '').replace(/\(/g, '').replace(/\)/g, '');
+                      formattedContacts.push({ id: contact.id || Math.random().toString(), name: contact.name || "İsimsiz", phoneNumber: number, isAppUser: false });
+                  }
+              }
+              setDeviceContacts(formattedContacts);
+          }
+      } else { Alert.alert("İzin Gerekli", "Rehberinize erişmek için izin vermelisiniz."); }
+  };
+  const inviteContact = async (phoneNumber: string) => {
+      const isAvailable = await SMS.isAvailableAsync();
+      if (isAvailable) { await SMS.sendSMSAsync([phoneNumber], "Merhaba, ben Ommio kullanıyorum! https://ommio.app"); } else { Alert.alert("Hata", "SMS servisi kullanılamıyor."); }
+  };
+const handleDeleteAccount = async () => {
+    console.log("Silme fonksiyonu tetiklendi"); // Konsola log atalım
+
+    // --- SİLME MANTIĞI (Tekrar kullanmak için ayırdık) ---
+    const performDelete = async () => {
+        try {
+            if (!user) return;
+            console.log("Silme işlemi başlıyor...");
+            
+            // 1. Firestore verilerini sil
+            await deleteDoc(doc(db, "users", user.uid));
+            try {
+                await deleteDoc(doc(db, "public_users", user.uid));
+            } catch (e) { console.log("Public user silinemedi veya yok", e); }
+
+            // 2. Auth kullanıcısını sil
+            await user.delete();
+            setTasks([]); 
+            
+            if (Platform.OS === 'web') {
+                alert("Hesabın başarıyla silindi.");
+            } else {
+                Alert.alert("Hoşçakal", "Hesabın başarıyla silindi.");
+            }
+        } catch (error: any) {
+            console.log("Silme hatası:", error);
+            const errMsg = "Hesap silinirken hata oluştu. Lütfen çıkış yapıp tekrar girdikten sonra deneyin.";
+            if (Platform.OS === 'web') alert(errMsg);
+            else Alert.alert("Hata", errMsg);
+        }
+    };
+
+    // --- PLATFORM KONTROLÜ ---
+    if (Platform.OS === 'web') {
+        // WEB İÇİN: Standart tarayıcı onayı
+        const confirmed = confirm("Bu işlem geri alınamaz. Tüm verilerin silinecek. Emin misin?");
+        if (confirmed) {
+            await performDelete();
+        }
+    } else {
+        // MOBİL İÇİN: Native Alert
+        Alert.alert(
+            "Hesabı Sil",
+            "Bu işlem geri alınamaz. Tüm görevlerin, alışkanlıkların ve verilerin silinecek. Emin misin?",
+            [
+                { text: "Vazgeç", style: "cancel" },
+                { 
+                    text: "Sil ve Bitir", 
+                    style: "destructive", 
+                    onPress: performDelete 
+                }
+            ]
+        );
+    }
+};
+  // --- UI HELPERS ---
+  const isSystemDark = systemScheme === 'dark';
+  const isDark = theme === 'system' ? isSystemDark : theme === 'dark';
+  const currentColors = isDark ? { bg: COLORS.darkBg, surface: COLORS.darkSurface, text: '#fff', subText: '#94a3b8' } : { bg: COLORS.background, surface: COLORS.surface, text: COLORS.textDark, subText: COLORS.textLight };
+  const getCategoryColor = (id: string) => CATEGORY_COLORS.find(c => c.id === (categories.find(cat => cat.id === id)?.color)) || CATEGORY_COLORS[0];
+
+  const currentISODate = getISODate(selectedDate);
+  const todaysTasks = tasks.filter(t => {
+      if (t.date === currentISODate) return true;
+      if (t.showEveryDayUntilDue && t.dueDate) return currentISODate >= t.date && currentISODate <= convertDDMMYYYYtoISO(t.dueDate);
+      return false;
+  });
+
+  const activeTasks = todaysTasks.filter(t => !t.completed).sort((a,b) => parseDueDate(a.dueDate) - parseDueDate(b.dueDate));
+  const completedTasks = todaysTasks.filter(t => t.completed);
+  const overdueTasks = tasks.filter(t => !t.completed && !t.showEveryDayUntilDue && t.date < getISODate(new Date()));
+  
+  const todaysHabits = habits.filter(h => {
+      if (h.endDate && h.endDate < currentISODate) return false;
+      if (h.frequency === 'daily') return true;
+      if (h.frequency === 'weekly') return h.selectedDays.includes(selectedDate.getDay());
+      return false;
+  }).sort((a,b) => (a.notificationTime || "24:00").localeCompare(b.notificationTime || "24:00"));
+
+  const filteredContacts = contacts.filter(c => c.username.toLowerCase().includes(assignSearchText.toLowerCase()));
+
+  const renderTask = (task: Task) => {
+    const catInfo = categories.find(c => c.id === task.categoryId) || categories[0];
+    const catColor = CATEGORY_COLORS.find(c => c.id === catInfo.color) || CATEGORY_COLORS[0];
+    const isAssignedByOther = task.assignedBy && task.assignedBy !== user.uid;
+    const isExpanded = expandedTaskId === task.id;
+    const isMultiDay = task.showEveryDayUntilDue;
+
+    return (
+        <View key={task.id} style={[styles.taskCard, { backgroundColor: currentColors.surface, opacity: task.completed ? 0.6 : 1, borderLeftWidth: isAssignedByOther ? 4 : 0, borderLeftColor: COLORS.warning }]}>
+            <TouchableOpacity onPress={() => toggleExpand(task.id)} style={{flexDirection:'row', alignItems:'center'}}>
+                <TouchableOpacity onPress={() => toggleTask(task)} style={[styles.checkBox, task.completed ? { backgroundColor: COLORS.success, borderColor: COLORS.success } : { borderColor: '#cbd5e1' }]}>
+                    {task.completed && <Check size={14} color="#fff" />}
+                </TouchableOpacity>
+                <View style={{flex:1}}>
+                    <Text style={[styles.taskText, { color: currentColors.text, textDecorationLine: task.completed ? 'line-through' : 'none' }]}>{task.text}</Text>
+                    <View style={styles.taskMeta}>
+                        <View style={[styles.miniBadge, { backgroundColor: isDark ? '#334155' : catColor.bg }]}><View style={{width:6, height:6, borderRadius:3, backgroundColor: catColor.hex}} /><Text style={{fontSize:10, color: isDark ? '#fff' : catColor.hex, fontWeight:'bold'}}>{catInfo.name}</Text></View>
+                        {isAssignedByOther && <View style={[styles.miniBadge, { backgroundColor: '#fef3c7' }]}><User size={10} color={COLORS.warning} /><Text style={{fontSize:10, color: COLORS.warning, fontWeight:'bold'}}>{task.assignedByName || 'Patron'}</Text></View>}
+                        {task.dueDate && <View style={styles.metaItem}><CalendarClock size={10} color={COLORS.danger} /><Text style={{fontSize:10, color: COLORS.danger}}>{task.dueDate}</Text></View>}
+                        {isMultiDay && <View style={styles.metaItem}><Repeat size={10} color={COLORS.primary} /><Text style={{fontSize:10, color: COLORS.primary}}>{t('every_day')}</Text></View>}
+                        {task.notificationTime && (<View style={styles.metaItem}><Bell size={10} color={COLORS.primary} /><Text style={{fontSize:10, color: COLORS.primary}}>{task.notificationTime}</Text></View>)}
+                    </View>
+                </View>
+                <View style={{marginLeft:10}}>{isExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}</View>
+            </TouchableOpacity>
+            {isExpanded && (
+                <View style={{marginTop:15, paddingTop:15, borderTopWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}>
+                    {task.description ? (<View style={{flexDirection:'row', gap:5, marginBottom:10}}><AlignLeft size={14} color={currentColors.subText} style={{marginTop:2}} /><Text style={{color: currentColors.text, fontSize:14, flex:1}}>{task.description}</Text></View>) : (<Text style={{color: currentColors.subText, fontSize:12, fontStyle:'italic', marginBottom:10}}>Açıklama yok.</Text>)}
+                    <View style={{flexDirection:'row', justifyContent:'flex-end', gap:15, marginTop:5}}>
+                        <TouchableOpacity onPress={() => deleteTask(task)} style={{flexDirection:'row', alignItems:'center', gap:5, padding:5}}><Trash2 size={16} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontSize:12, fontWeight:'bold'}}>{t('delete')}</Text></TouchableOpacity>
+                        {(task.assignedBy === user.uid || task.assignedTo === user.uid) && (<TouchableOpacity onPress={() => openEditModal(task)} style={{flexDirection:'row', alignItems:'center', gap:5, padding:5, backgroundColor: COLORS.primary + '20', borderRadius:8, paddingHorizontal:10}}><Edit2 size={16} color={COLORS.primary} /><Text style={{color: COLORS.primary, fontSize:12, fontWeight:'bold'}}>{t('edit')}</Text></TouchableOpacity>)}
+                    </View>
+                </View>
+            )}
+        </View>
+    );
+  };
+
+  if (isAuthLoading) return <View style={[styles.container, { justifyContent:'center', alignItems:'center', backgroundColor: currentColors.bg }]}><ActivityIndicator size="large" color={COLORS.primary}/></View>;
+
+  if (!user) {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={[styles.container, { backgroundColor: currentColors.bg, justifyContent:'center', padding: 20 }]}>
+        <View style={{alignItems:'center', marginBottom: 40}}><View style={{width:80, height:80, backgroundColor: COLORS.primary, borderRadius: 20, alignItems:'center', justifyContent:'center', marginBottom:20}}><Trophy size={40} color="#fff" /></View><Text style={{fontSize:32, fontWeight:'900', color: currentColors.text}}>Ommio</Text><Text style={{color: currentColors.subText}}>İşleri yoluna koy.</Text></View>
+<View style={[styles.card, { backgroundColor: currentColors.surface, padding: 20 }]}>
+            
+            {/* 1. ÜST MENÜ: Giriş Yap / Kayıt Ol (Artık E-posta/Telefon seçimi yok) */}
+            <View style={{flexDirection:'row', marginBottom: 20, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#e2e8f0'}}>
+                <TouchableOpacity onPress={()=>setAuthMode('login')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='login'?2:0, borderColor:COLORS.primary}}>
+                    <Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='login'?COLORS.primary:currentColors.subText}}>Giriş Yap</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={()=>setAuthMode('signup')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='signup'?2:0, borderColor:COLORS.primary}}>
+                    <Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='signup'?COLORS.primary:currentColors.subText}}>Kayıt Ol</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* 2. INPUTLAR (Kullanıcı Adı sadece Kayıt modunda görünür) */}
+            {authMode === 'signup' && (
+                <View style={styles.authInputRow}>
+                    <User size={20} color={currentColors.subText} />
+                    <TextInput 
+                        value={username} 
+                        onChangeText={setUsername} 
+                        placeholder="Kullanıcı Adı" 
+                        placeholderTextColor={currentColors.subText} 
+                        style={[styles.authInput, {color: currentColors.text}]} 
+                        autoCapitalize='none' 
+                    />
+                </View>
+            )}
+
+            <View style={styles.authInputRow}>
+                <Mail size={20} color={currentColors.subText} />
+                <TextInput 
+                    value={email} 
+                    onChangeText={setEmail} 
+                    placeholder="E-posta" 
+                    placeholderTextColor={currentColors.subText} 
+                    style={[styles.authInput, {color: currentColors.text}]} 
+                    autoCapitalize='none' 
+                    keyboardType="email-address"
+                />
+            </View>
+
+            <View style={styles.authInputRow}>
+                <Lock size={20} color={currentColors.subText} />
+                <TextInput 
+                    value={password} 
+                    onChangeText={setPassword} 
+                    placeholder="Şifre" 
+                    placeholderTextColor={currentColors.subText} 
+                    style={[styles.authInput, {color: currentColors.text}]} 
+                    secureTextEntry 
+                />
+            </View>
+
+            {/* 3. GİRİŞ BUTONU */}
+            <TouchableOpacity onPress={handleAuth} style={[styles.createBtn, {marginTop: 10}]}>
+                <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>
+                    {authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}
+                </Text>
+            </TouchableOpacity>
+
+            {/* 4. ŞİFREMİ UNUTTUM BUTONU (Sadece Giriş modunda) */}
+            {authMode === 'login' && (
+                <TouchableOpacity onPress={handleForgotPassword} style={{ marginTop: 15, alignSelf: 'center' }}>
+                    <Text style={{ color: currentColors.subText, fontSize: 14 }}>Şifremi unuttum?</Text>
+                </TouchableOpacity>
+            )}
+
+        </View>
+        <View style={{marginTop: 20, gap: 10}}>
+           <TouchableOpacity disabled={!request} onPress={() => promptAsync()} style={[styles.socialBtn, {backgroundColor: currentColors.surface, flexDirection:'row', gap:10, justifyContent: 'center'}]}>
+              <Globe size={20} color={currentColors.text} /> 
+              <Text style={{color: currentColors.text, fontWeight:'600'}}>Google ile Devam Et</Text>
+           </TouchableOpacity>
+           
+           {Platform.OS === 'ios' && (
+             <AppleAuthentication.AppleAuthenticationButton 
+               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN} 
+               buttonStyle={isDark ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK} 
+               cornerRadius={12} 
+               style={{ width: '100%', height: 50 }} 
+               onPress={handleAppleLogin} 
+             />
+           )}
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
+    <SafeAreaView style={[styles.container, { backgroundColor: currentColors.bg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      
+      <View style={[styles.header, { justifyContent: 'center' }]}> 
+        {/* Logoya basınca Ana Sayfaya (Görevler) dön */}
+        <TouchableOpacity onPress={() => setActiveTab('list')} activeOpacity={0.7}>
+            <Image 
+                source={require('../../assets/Logo/Logo.png')} 
+                style={{ width: 150, height: 50, resizeMode: 'contain' }} 
+            />
+        </TouchableOpacity>
+      </View>
+
+      {/* DATE NAVIGATOR */}
+      {activeTab === 'list' && (
+          <View style={{marginBottom: 10}}>
+            <View style={styles.dateNavContainer}><TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}><ChevronLeft size={20} color={currentColors.subText} /></TouchableOpacity><View style={styles.dateDisplay}><Calendar size={14} color={COLORS.primary} style={{marginRight: 6}} /><Text style={[styles.dateText, { color: currentColors.text }]}>{selectedDate.getDate()}/{selectedDate.getMonth()+1} {selectedDate.getFullYear()}</Text>{getISODate(selectedDate) === getISODate(new Date()) && <View style={styles.todayBadge}><Text style={styles.todayText}>{t('today')}</Text></View>}</View><TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}><ChevronRight size={20} color={currentColors.subText} /></TouchableOpacity></View>
+          </View>
+      )}
+
+      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 200 }} showsVerticalScrollIndicator={false}>
+        {/* GÖREV LİSTESİ */}
+        {activeTab === 'list' && (
+            <View style={{gap: 12}}>
+              {overdueTasks.length > 0 && (<View style={{marginBottom: 10}}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsOverdueExpanded(!isOverdueExpanded); }} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', padding:10, backgroundColor: isDark ? '#450a0a' : '#fef2f2', borderRadius:12, marginBottom: isOverdueExpanded ? 10 : 0, borderWidth:1, borderColor: COLORS.danger}}><View style={{flexDirection:'row', alignItems:'center', gap:10}}><AlertCircle size={20} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontWeight:'bold'}}>{t('overdue')} ({overdueTasks.length})</Text></View>{isOverdueExpanded ? <ChevronUp size={20} color={COLORS.danger} /> : <ChevronDown size={20} color={COLORS.danger} />}</TouchableOpacity>{isOverdueExpanded && (<View style={{gap: 8}}>{overdueTasks.map(task => (<View key={task.id} style={[styles.taskCard, { backgroundColor: isDark ? '#450a0a' : '#fff', borderColor: COLORS.danger, borderWidth: 1 }]}><View style={{flex:1}}><Text style={[styles.taskText, { color: currentColors.text }]}>{task.text}</Text><Text style={{fontSize:10, color: COLORS.danger, marginTop:2}}>{task.date}</Text></View><TouchableOpacity onPress={() => deleteTask(task)}><Trash2 size={16} color={COLORS.danger} /></TouchableOpacity></View>))}</View>)}</View>)}
+              
+              {activeTasks.length > 0 ? activeTasks.map(task => renderTask(task)) : null}
+              
+              {completedTasks.length > 0 && (
+                  <View style={{marginTop: 20}}>
+                      {completedTasks.length === 1 ? (renderTask(completedTasks[0])) : (
+                          <View><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsCompletedExpanded(!isCompletedExpanded); }} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', padding:10, backgroundColor: currentColors.surface, borderRadius:12, marginBottom:10}}><View style={{flexDirection:'row', alignItems:'center', gap:10}}><CheckCircle2 size={20} color={COLORS.success} /><Text style={{color: currentColors.text, fontWeight:'bold'}}>{t('completed')} ({completedTasks.length})</Text></View>{isCompletedExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}</TouchableOpacity>{isCompletedExpanded && <View style={{opacity:0.7, gap:8}}>{completedTasks.map(task => renderTask(task))}</View>}</View>
+                      )}
+                  </View>
+              )}
+
+              {activeTasks.length === 0 && completedTasks.length === 0 && overdueTasks.length === 0 && (<View style={styles.emptyState}><View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Check size={32} color={COLORS.primary} /></View><Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('all_good')}</Text><Text style={styles.emptyDesc}>{t('no_tasks_today')}</Text></View>)}
+            </View>
+        )}
+
+        {/* ALIŞKANLIK LİSTESİ */}
+        {activeTab === 'habits' && (
+            <View style={{gap: 15}}>
+                {/* Date Navigator Alışkanlıklar Sekmesinde De Görünsün */}
+                <View style={styles.dateNavContainer}><TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}><ChevronLeft size={20} color={currentColors.subText} /></TouchableOpacity><View style={styles.dateDisplay}><Calendar size={14} color={COLORS.primary} style={{marginRight: 6}} /><Text style={[styles.dateText, { color: currentColors.text }]}>{selectedDate.getDate()}/{selectedDate.getMonth()+1} {selectedDate.getFullYear()}</Text>{getISODate(selectedDate) === getISODate(new Date()) && <View style={styles.todayBadge}><Text style={styles.todayText}>{t('today')}</Text></View>}</View><TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}><ChevronRight size={20} color={currentColors.subText} /></TouchableOpacity></View>
+
+                {todaysHabits.length > 0 ? todaysHabits.map(habit => {
+                    const isDone = habit.completedDates.includes(currentISODate);
+                    const streak = habit.completedDates.length; 
+                    const cat = categories.find(c=>c.id===habit.categoryId);
+                    const cc = getCategoryColor(cat?.color || 'purple');
+
+                    return (
+                        <TouchableOpacity key={habit.id} onPress={() => toggleHabitCompletion(habit, currentISODate)} style={[styles.taskCard, {backgroundColor: currentColors.surface, opacity: isDone?0.8:1}]}>
+                             <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
+                                 <View style={{flexDirection:'row', alignItems:'center', gap:12}}>
+                                     <View style={[styles.checkBox, isDone ? {backgroundColor:COLORS.primary, borderColor:COLORS.primary} : {borderColor: '#cbd5e1'}]}>{isDone && <Check size={14} color="#fff" />}</View>
+                                     <View>
+                                        <Text style={[styles.taskText, {color: currentColors.text, textDecorationLine: isDone?'line-through':'none'}]}>{habit.title}</Text>
+                                        <View style={{flexDirection:'row', gap:5, marginTop:2}}>
+                                            <View style={{flexDirection:'row', alignItems:'center', gap:3, backgroundColor:'#ffedd5', paddingHorizontal:5, borderRadius:4}}><Flame size={10} color="#f97316" /><Text style={{fontSize:10, color:'#f97316', fontWeight:'bold'}}>{streak} Gün</Text></View>
+                                            <View style={{backgroundColor:cc.bg, paddingHorizontal:5, borderRadius:4}}><Text style={{fontSize:10, color:cc.hex}}>{cat?.name}</Text></View>
+                                            {habit.notificationTime && <Text style={{fontSize:10, color:currentColors.subText}}>⏰ {habit.notificationTime}</Text>}
+                                        </View>
+                                     </View>
+                                 </View>
+                                 {/* WEB VE MOBİL İÇİN SİLME BUTONU DÜZELTİLDİ */}
+                                 <TouchableOpacity onPress={() => {
+                                     if (Platform.OS === 'web') {
+                                         if(confirm(t('delete_habit_confirm'))) deleteHabit(habit);
+                                     } else {
+                                         Alert.alert(t('delete'), t('delete_habit_confirm'), [{text:t('cancel')}, {text:t('delete'), style:"destructive", onPress:()=>deleteHabit(habit)}]);
+                                     }
+                                 }}><Trash2 size={16} color={currentColors.subText} /></TouchableOpacity>
+                             </View>
+                        </TouchableOpacity>
+                    )
+                }) : (
+                    <View style={styles.emptyState}><View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Repeat size={32} color={COLORS.primary} /></View><Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('new_habit')}!</Text><Text style={styles.emptyDesc}>{t('motivational_daily')}</Text></View>
+                )}
+            </View>
+        )}
+
+        {/* MESAJLAR LİSTESİ */}
+        {activeTab === 'messages' && (
+             <View style={{gap: 20, padding: 20}}>
+                 {contacts.map(contact => (
+                       <TouchableOpacity key={contact.uid} onPress={() => { setActiveTab('chat_room'); setChatTarget(contact); }} style={[styles.card, {backgroundColor:currentColors.surface, flexDirection:'row', alignItems:'center', marginBottom:10}]}>
+                           <View style={{width:40, height:40, borderRadius:20, backgroundColor:COLORS.secondary, alignItems:'center', justifyContent:'center'}}><Text style={{fontWeight:'bold', color:'#fff'}}>{contact.username[0].toUpperCase()}</Text></View>
+                           <View style={{marginLeft:15}}>
+                               <Text style={{fontSize:16, fontWeight:'bold', color:currentColors.text}}>{contact.username}</Text>
+                               <Text style={{fontSize:12, color:currentColors.subText}}>Sohbet etmek için dokun</Text>
+                           </View>
+                           <ChevronRight size={20} color={currentColors.subText} style={{marginLeft:'auto'}} />
+                       </TouchableOpacity>
+                 ))}
+                 {contacts.length === 0 && <Text style={{textAlign:'center', color:currentColors.subText}}>{t('no_connections')}</Text>}
+             </View>
+        )}
+
+        {/* SOHBET ODASI */}
+        {activeTab === 'chat_room' && chatTarget ? (
+    <View style={{ flex: 1, backgroundColor: currentColors.bg }}>
+        {/* ÜST BAR */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: currentColors.surface }}>
+            <TouchableOpacity onPress={() => setActiveTab('messages')} style={{ paddingRight: 10 }}>
+                <ChevronLeft size={24} color={currentColors.text} />
+            </TouchableOpacity>
+            
+            <View style={{width:36, height:36, borderRadius:18, backgroundColor:COLORS.secondary, alignItems:'center', justifyContent:'center', marginRight:10}}>
+                <Text style={{color:'#fff', fontWeight:'bold'}}>{chatTarget.username[0].toUpperCase()}</Text>
+            </View>
+
+            <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{chatTarget.username}</Text>
+                {/* Yazıyor Animasyonu veya Son Görülme */}
+                {isTyping ? (
+                    <Text style={{ fontSize: 12, color: COLORS.primary, fontStyle: 'italic' }}>yazıyor...</Text>
+                ) : (
+                    <Text style={{ fontSize: 12, color: currentColors.subText }}>Çevrimiçi</Text>
+                )}
+            </View>
+        </View>
+
+        {/* MESAJ LİSTESİ (FLATLIST - INVERTED) */}
+       <FlatList
+    data={chatMessages} // Artık reverse() yapmıyoruz, sorgu zaten 'desc'
+    inverted={true}     // En yeni mesaj en altta (inverted olduğu için aslında en üstte) durur
+    keyExtractor={item => item.id}
+    contentContainerStyle={{ padding: 15 }}
+    showsVerticalScrollIndicator={false}
+    
+    // PAGINATION TETİKLEYİCİSİ
+    onEndReached={() => {
+        // Kullanıcı yukarı kaydırıp listenin ucuna gelince 25 mesaj daha ekle
+        setMsgLimit(prev => prev + 25);
+    }}
+    onEndReachedThreshold={0.5} // Listenin yarısına gelince tetikle
+    
+    renderItem={({ item: msg }) => {
+        const isMe = msg.senderId === user.uid;
+        return (
+            <View style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '75%', marginBottom: 10 }}>
+                <View style={{
+                    backgroundColor: isMe ? COLORS.primary : (isDark ? '#334155' : '#fff'),
+                    padding: 12,
+                    borderRadius: 16,
+                    borderBottomRightRadius: isMe ? 4 : 16,
+                    borderBottomLeftRadius: isMe ? 16 : 4,
+                    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 2, elevation: 1
+                }}>
+                    <Text style={{ color: isMe ? '#fff' : currentColors.text, fontSize: 15 }}>{msg.text}</Text>
+                    
+                    {/* Mesaj Detayları (Saat + Okundu Tikleri) */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
+                        <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.7)' : currentColors.subText }}>
+                            {msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                        </Text>
+                        
+                        {/* OKUNDU TİKLERİ */}
+                        {isMe && (
+                            <View style={{ flexDirection: 'row' }}>
+                                {/* Mesaj okunduysa (#a7f3d0 - açık yeşil/mavi), değilse soluk beyaz */}
+                                <Check size={12} color={msg.read ? '#a7f3d0' : 'rgba(255,255,255,0.6)'} /> 
+                                {msg.read && <Check size={12} color='#a7f3d0' style={{ marginLeft: -8 }} />}
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </View>
+        );
+    }}
+/>
+
+        {/* MESAJ YAZMA ALANI */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+            <View style={{ flexDirection: 'row', padding: 10, paddingHorizontal: 15, alignItems: 'center', gap: 10, backgroundColor: currentColors.surface, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                <TextInput
+                    value={chatInput}
+                    onChangeText={(text) => {
+                        setChatInput(text);
+                        // Burada "Yazıyor" durumunu Firestore'a yazan bir fonksiyon çağrılabilir
+                    }}
+                    placeholder="Mesaj yaz..."
+                    placeholderTextColor={currentColors.subText}
+                    style={{ flex: 1, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 24, paddingHorizontal: 20, paddingVertical: 10, maxHeight: 100, color: currentColors.text }}
+                    multiline
+                />
+                <TouchableOpacity onPress={sendMessage} disabled={!chatInput.trim()} style={{ backgroundColor: chatInput.trim() ? COLORS.primary : (isDark ? '#334155' : '#e2e8f0'), width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}>
+                    <Send size={20} color={chatInput.trim() ? '#fff' : '#94a3b8'} style={{ marginLeft: 2 }} />
+                </TouchableOpacity>
+            </View>
+        </KeyboardAvoidingView>
+    </View>
+) : null}
+
+        {/* SOSYAL SEKME */}
+        {activeTab === 'social' && (
+            <View style={{gap: 20, padding: 20}}>
+                <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
+                    <Text style={{fontSize:20, fontWeight:'bold', color:currentColors.text}}>{t('friends')}</Text>
+                    <TouchableOpacity onPress={() => setIsNetworkModalOpen(true)}><UserPlus size={20} color={COLORS.primary} /></TouchableOpacity>
+                </View>
+                {/* İstekler */}
+                {friendRequests.length > 0 && (
+                  <View>
+                      <Text style={{fontSize:12, fontWeight:'bold', color:currentColors.subText, marginBottom:10}}>GELEN İSTEKLER</Text>
+                      {friendRequests.map(req => (
+                          <View key={req.id} style={{backgroundColor: currentColors.surface, padding:15, borderRadius:16, marginBottom:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center', borderLeftWidth:4, borderLeftColor:COLORS.warning}}>
+                              <View><Text style={{color: currentColors.text, fontWeight:'bold'}}>{req.fromUsername}</Text></View>
+                              <View style={{flexDirection:'row', gap:10}}><TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity><TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity></View>
+                          </View>
+                      ))}
+                  </View>
+                )}
+                {/* Liste */}
+                {contacts.map(contact => (
+                      <View key={contact.uid} style={[styles.card, {backgroundColor:currentColors.surface, flexDirection:'row', alignItems:'center', marginBottom:10}]}>
+                          <View style={{width:40, height:40, borderRadius:20, backgroundColor:COLORS.secondary, alignItems:'center', justifyContent:'center'}}><Text style={{fontWeight:'bold', color:'#fff'}}>{contact.username[0].toUpperCase()}</Text></View>
+                          <View style={{marginLeft:15}}>
+                              <Text style={{fontSize:16, fontWeight:'bold', color:currentColors.text}}>{contact.username}</Text>
+                              <Text style={{fontSize:12, color:currentColors.subText}}>{contact.email}</Text>
+                          </View>
+                      </View>
+                ))}
+                {contacts.length === 0 && friendRequests.length === 0 && <Text style={{textAlign:'center', color:currentColors.subText}}>{t('no_users')}</Text>}
+            </View>
+        )}
+
+        {/* PROFİL SEKME */}
+{activeTab === 'profile' && (
+  <View style={{ gap: 15, padding: 20 }}>
+
+    {/* 1. PROFİL FOTOĞRAFI KARTI */}
+    <View style={[styles.card, { backgroundColor: currentColors.surface, alignItems:'center' }]}>
+      <TouchableOpacity onPress={pickImage} style={{ alignItems: 'center' }}>
+        {user.photoURL ? (
+          <Image source={{uri: user.photoURL}} style={{width:80, height:80, borderRadius:40, marginBottom:10}} />
+        ) : (
+          <View style={{width:80, height:80, borderRadius:40, backgroundColor:COLORS.primary, alignItems:'center', justifyContent:'center', marginBottom:10}}>
+            <User size={40} color="#fff" />
+          </View>
+        )}
+        <Text style={{ color: COLORS.primary, fontWeight:'bold', textAlign:'center' }}>{t('change_photo')}</Text>
+      </TouchableOpacity>
+    </View>
+
+    {/* 2. GENEL AYARLAR KARTI (Hepsi Bir Arada) */}
+    <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
+        <Text style={[styles.cardTitle, { color: currentColors.text }]}>{t('settings')}</Text>
+        
+        {/* A. Kategorileri Düzenle */}
+        <TouchableOpacity 
+            onPress={() => setIsCategoryModalOpen(true)} 
+            style={[styles.settingBtn, { marginBottom: 10, justifyContent: 'space-between' }]}
+        >
+            <View style={{flexDirection:'row', gap:10, alignItems:'center'}}>
+                <Layers size={20} color={COLORS.primary} />
+                <Text style={{ color: currentColors.text }}>{t('edit_categories')}</Text>
+            </View>
+            <ChevronRight size={16} color={currentColors.subText} />
+        </TouchableOpacity>
+
+        {/* B. Dil Seçimi */}
+        <TouchableOpacity 
+             onPress={() => setIsLangModalOpen(true)} 
+             style={[styles.settingBtn, { marginBottom: 15, justifyContent: 'space-between' }]}
+        >
+             <View style={{flexDirection:'row', gap:10, alignItems:'center'}}>
+                 <Globe size={20} color={COLORS.primary} />
+                 <Text style={{ color: currentColors.text }}>Dil / Language</Text>
+             </View>
+             <Text style={{fontSize: 20}}>{LANGUAGES.find(l => l.code === lang)?.flag}</Text>
+        </TouchableOpacity>
+
+        {/* C. Tema (Görünüm) */}
+        <Text style={{fontSize:12, color:currentColors.subText, marginTop:5, marginBottom:10}}>{t('appearance')?.toUpperCase() || 'GÖRÜNÜM'}</Text>
+        <View style={{flexDirection:'row', gap:10, marginBottom:15}}>
+             <TouchableOpacity onPress={() => setTheme('light')} style={[styles.settingBtn, theme === 'light' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
+                <Sun size={16} color={theme === 'light' ? COLORS.primary : currentColors.subText} />
+                <Text style={{color: theme === 'light' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_light')}</Text>
+             </TouchableOpacity>
+             <TouchableOpacity onPress={() => setTheme('dark')} style={[styles.settingBtn, theme === 'dark' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
+                <Moon size={16} color={theme === 'dark' ? COLORS.primary : currentColors.subText} />
+                <Text style={{color: theme === 'dark' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_dark')}</Text>
+             </TouchableOpacity>
+             <TouchableOpacity onPress={() => setTheme('system')} style={[styles.settingBtn, theme === 'system' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
+                <Monitor size={16} color={theme === 'system' ? COLORS.primary : currentColors.subText} />
+                <Text style={{color: theme === 'system' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_system')}</Text>
+             </TouchableOpacity>
+        </View>
+
+        {/* D. Gizlilik Politikası Linki (Mağazalar için zorunlu) */}
+        <TouchableOpacity onPress={() => Linking.openURL('https://ommio.app/privacy')} style={{paddingTop:15, borderTopWidth:1, borderColor: isDark?'#334155':'#f1f5f9'}}>
+             <Text style={{color: COLORS.primary, textAlign:'center', fontSize:12, fontWeight:'600'}}>Gizlilik Politikası ve Şartlar</Text>
+        </TouchableOpacity>
+    </View>
+
+    {/* 3. ÇIKIŞ YAP KARTI */}
+    
+    <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
+      <TouchableOpacity onPress={handleLogout} style={{flexDirection:'row', alignItems:'center', gap:10, padding:15, backgroundColor:'#fee2e2', borderRadius:12, justifyContent:'center'}}>
+        <LogOut size={20} color={COLORS.danger} />
+        <Text style={{color: COLORS.danger, fontWeight:'bold', fontSize:16}}>{t('logout')}</Text>
+      </TouchableOpacity>
+    </View>
+
+    <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+        <TouchableOpacity 
+            onPress={handleDeleteAccount} 
+            style={{
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                gap: 10, 
+                padding: 10, 
+                justifyContent: 'center'
+            }}
+        >
+            <Trash2 size={20} color={currentColors.subText} />
+            <Text style={{ color: currentColors.subText, fontWeight: '600', fontSize: 14 }}>
+                Hesabımı Sil
+            </Text>
+        </TouchableOpacity>
+    </View>
+    
+  </View>
+  
+)}
+      </ScrollView>
+        
+      {/* BOTTOM TABS (YENİ DÜZEN) */}
+      {!isSettingsOpen && (
+      <View style={[styles.tabBar, { backgroundColor: currentColors.surface, borderTopColor: isDark?'#334155':'#e2e8f0' }]}>
+          <TouchableOpacity onPress={() => setActiveTab('list')} style={{alignItems:'center', opacity: activeTab==='list'?1:0.5}}><ListTodo size={24} color={activeTab==='list'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='list'?COLORS.primary:currentColors.subText}}>{t('tasks_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('habits')} style={{alignItems:'center', opacity: activeTab==='habits'?1:0.5}}><Repeat size={24} color={activeTab==='habits'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='habits'?COLORS.primary:currentColors.subText}}>{t('habits_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('messages')} style={{alignItems:'center', opacity: (activeTab==='messages'||activeTab==='chat_room')?1:0.5}}><MessageCircle size={24} color={(activeTab==='messages'||activeTab==='chat_room')?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:(activeTab==='messages'||activeTab==='chat_room')?COLORS.primary:currentColors.subText}}>{t('messages_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('social')} style={{alignItems:'center', opacity: activeTab==='social'?1:0.5}}><Users size={24} color={activeTab==='social'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='social'?COLORS.primary:currentColors.subText}}>{t('social_tab')}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setActiveTab('profile')} style={{alignItems:'center', opacity: activeTab==='profile'?1:0.5}}><User size={24} color={activeTab==='profile'?COLORS.primary:currentColors.subText} /><Text style={{fontSize:10, color:activeTab==='profile'?COLORS.primary:currentColors.subText}}>{t('profile_tab')}</Text></TouchableOpacity>
+      </View>
+      )}
+      
+      {/* YENİ: ALIŞKANLIK EKLEME BUTONU (Sadece Habits sekmesinde) */}
+      {!isSettingsOpen && activeTab === 'habits' && (
+          <View style={[styles.floatingInputWrapper, {alignItems:'flex-end', backgroundColor:'transparent', shadowOpacity:0}]}>
+              <TouchableOpacity onPress={() => { setAddMode('habit'); setIsAddModalOpen(true); }} style={[styles.sendBtn, {backgroundColor: COLORS.primary, width:56, height:56, borderRadius:28, shadowColor:COLORS.primary, shadowOpacity:0.3, shadowRadius:10, elevation:5}]}>
+                  <Plus size={28} color="#fff" />
+              </TouchableOpacity>
+          </View>
+      )}
+
+    {/* GÖREV EKLEME BAR (SADECE GÖREVLER SEKMESİNDE) */}
+{!isSettingsOpen && activeTab === 'list' && (
+    <>
+        {/* 1. DIŞARI TIKLAMA KATMANI (Sadece genişletilmişse görünür) */}
+        {isInputExpanded && (
+            <TouchableWithoutFeedback onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Kapanış animasyonu
+                setIsInputExpanded(false);
+                Keyboard.dismiss();
+            }}>
+                <View style={{
+                    position: 'absolute',
+                    top: 0, bottom: 0, left: 0, right: 0,
+                    backgroundColor: 'rgba(0,0,0,0.2)', // Hafif karartma (İsterseniz 0.0 yapıp görünmez yapabilirsiniz)
+                    zIndex: 40 // İçerikten yüksek, Bardan düşük olmalı
+                }} />
+            </TouchableWithoutFeedback>
+        )}
+
+        {/* 2. GÖREV EKLEME KUTUSU */}
+        <BlurView intensity={Platform.OS === 'ios' ? 80 : 100} // Bulanıklık şiddeti
+          tint={isDark ? 'dark' : 'light'} // Temaya göre cam rengi
+          style={[styles.floatingInputWrapper, { 
+              backgroundColor: isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.65)', // Yarı saydam arka plan
+              borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', // İnce cam kenarlığı
+              borderWidth: 1, overflow: 'hidden', // Blur'un köşelerden taşmaması için şart
+              zIndex: 50}]}>
+
+            {/* ... İÇERİK AYNEN KALIYOR ... */}
+            {isInputExpanded && (
+                <View style={styles.expandedOptions}>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5, marginTop: 5 }}>{t('assign_to')}</Text>
+                    <View style={{ flexDirection: 'row', gap: 5, marginBottom: 10, alignItems: 'center', borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', paddingBottom: 10 }}>
+                        <Search size={16} color={currentColors.subText} />
+                        <TextInput value={assignSearchText} onChangeText={setAssignSearchText} placeholder={t('search_contact')} placeholderTextColor={currentColors.subText} style={{ flex: 1, color: currentColors.text }} onSubmitEditing={addTask} />
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingBottom: 10 }}>
+                        <TouchableOpacity onPress={() => setAssignTarget(null)} style={[styles.pill, !assignTarget ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary } : { borderColor: isDark ? '#334155' : '#e2e8f0' }]}><User size={12} color={!assignTarget ? '#fff' : currentColors.text} /><Text style={{ fontSize: 12, color: !assignTarget ? '#fff' : currentColors.text, fontWeight: '600' }}>{t('me')}</Text></TouchableOpacity>
+                        {filteredContacts.map(contact => (<TouchableOpacity key={contact.uid} onPress={() => setAssignTarget(contact)} style={[styles.pill, assignTarget?.uid === contact.uid ? { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary } : { borderColor: isDark ? '#334155' : '#e2e8f0' }]}><Users size={12} color={assignTarget?.uid === contact.uid ? '#fff' : currentColors.text} /><Text style={{ fontSize: 12, color: assignTarget?.uid === contact.uid ? '#fff' : currentColors.text, fontWeight: '600' }}>{contact.username}</Text></TouchableOpacity>))}
+                    </ScrollView>
+
+                    <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('description')}</Text>
+                        <TextInput value={inputDesc} onChangeText={setInputDesc} placeholder="..." placeholderTextColor={currentColors.subText} style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text }]} onSubmitEditing={addTask} />
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('start_date')}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TextInput value={inputStartDate} onChangeText={handleInputStartDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
+                                <TouchableOpacity onPress={() => openDatePicker('start')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><Calendar size={16} color="#fff" /></TouchableOpacity>
+                            </View>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('due_date')}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TextInput value={inputDueDate} onChangeText={handleInputDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
+                                <TouchableOpacity onPress={() => openDatePicker('due')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><Calendar size={16} color="#fff" /></TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+
+                    {!assignTarget && (<ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>{categories.map(cat => { const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0]; return (<TouchableOpacity key={cat.id} onPress={() => setSelectedCategory(cat)} style={[styles.pill, selectedCategory.id === cat.id ? { backgroundColor: cc.bg, borderColor: cc.hex } : { borderColor: isDark ? '#334155' : '#e2e8f0' }]}><View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cc.hex }} /><Text style={{ fontSize: 12, color: currentColors.text, fontWeight: '600' }}>{cat.name}</Text></TouchableOpacity>) })}</ScrollView>)}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 }}><View style={{ flexDirection: 'row', gap: 5 }}><TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={[styles.iconToggle, isNotifOn && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]}><Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} /></TouchableOpacity><TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={[styles.iconToggle, isAlarmOn && { backgroundColor: '#fef2f2', borderColor: '#ef4444' }]}><AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} /></TouchableOpacity>{inputDueDate && <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={[styles.iconToggle, isEveryDayOn && { backgroundColor: '#f0fdf4', borderColor: '#10b981' }, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}><CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} /><Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>{t('every_day')}</Text></TouchableOpacity>}</View><View style={{ flexDirection: 'row', gap: 5 }}>{isNotifOn && <TextInput value={notifInput} onChangeText={handleNotifInputChange} placeholder="09:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.primary, borderColor: COLORS.primary }]} maxLength={5} onSubmitEditing={addTask} />}{isAlarmOn && <TextInput value={alarmInput} onChangeText={handleAlarmInputChange} placeholder="07:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.danger, borderColor: COLORS.danger }]} maxLength={5} onSubmitEditing={addTask} />}</View></View>
+                </View>
+            )}
+            <View style={styles.inputMainRow}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(!isInputExpanded); }} style={styles.expandBtn}>{isInputExpanded ? <X size={20} color={currentColors.subText} /> : <Sliders size={20} color={currentColors.subText} />}</TouchableOpacity><TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('addTask')} placeholderTextColor={currentColors.subText} style={[styles.mainInput, { color: currentColors.text }]} onFocus={() => { /* Artık oto açılmıyor */ }} onSubmitEditing={addTask} /><TouchableOpacity onPress={addTask} style={[styles.sendBtn, { backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0') }]}><Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} /></TouchableOpacity></View>
+        </BlurView>
+        
+    </>
+)}
+
+     {/* EKLEME MODALI (Alışkanlıklar için) */}
+<Modal visible={isAddModalOpen} animationType="slide" transparent>
+    {/* 1. DIŞ KATMAN: Buraya (arka plana) basınca modal kapanır ve klavye iner */}
+    <TouchableWithoutFeedback onPress={() => { setIsAddModalOpen(false); Keyboard.dismiss(); }}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+
+            {/* 2. İÇ KATMAN: Beyaz alana basınca kapanmayı engellemek için boş bir Touchable ekliyoruz */}
+            <TouchableWithoutFeedback>
+                <View style={{ backgroundColor: currentColors.bg, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, minHeight: 400 }}>
+                    
+                    {/* --- İÇERİK BAŞLANGICI (HİÇBİR ŞEY DEĞİŞMEDİ) --- */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('new_habit')}</Text>
+                        <TouchableOpacity onPress={() => setIsAddModalOpen(false)}><X size={24} color={currentColors.text} /></TouchableOpacity>
+                    </View>
+                    
+                    <View style={{ gap: 15 }}>
+                        <TextInput placeholder={t('habit_name')} placeholderTextColor={currentColors.subText} value={newHabitTitle} onChangeText={setNewHabitTitle} style={[styles.input, { color: currentColors.text }]} />
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity onPress={() => setNewHabitFreq('daily')} style={[styles.pill, newHabitFreq === 'daily' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'daily' ? '#fff' : currentColors.text }}>{t('daily')}</Text></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setNewHabitFreq('weekly')} style={[styles.pill, newHabitFreq === 'weekly' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'weekly' ? '#fff' : currentColors.text }}>{t('weekly')}</Text></TouchableOpacity>
+                        </View>
+                        
+                        {newHabitFreq === 'weekly' && (
+                            <View style={{ marginTop: 10 }}>
+                                <Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 8 }}>{t('which_days')}</Text>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                    {getDaysOfWeek(lang).map((dayObj) => {
+                                        const isSelected = newHabitDays.includes(dayObj.id);
+                                        return (
+                                            <TouchableOpacity
+                                                key={dayObj.id}
+                                                onPress={() => toggleHabitDay(dayObj.id)}
+                                                style={{
+                                                    width: 36, height: 36, borderRadius: 18,
+                                                    backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'),
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                    borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0')
+                                                }}
+                                            >
+                                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: isSelected ? '#fff' : currentColors.text }}>
+                                                    {dayObj.label.substring(0, 2)} {/* Sığması için ilk 2 harf */}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        )}
+
+                        <TextInput placeholder={t('time_placeholder')} placeholderTextColor={currentColors.subText} value={habitNotifInput} onChangeText={(t) => setHabitNotifInput(maskTimeInput(t))} style={[styles.input, { color: currentColors.text }]} maxLength={5} keyboardType="numeric" />
+                        <Text style={{ color: currentColors.subText, fontSize: 10 }}>{t('category')}</Text>
+                        <ScrollView horizontal>{categories.map(c => <TouchableOpacity key={c.id} onPress={() => setSelectedCategory(c)} style={{ padding: 8, marginRight: 5, borderRadius: 8, backgroundColor: selectedCategory.id === c.id ? COLORS.secondary : currentColors.surface }}><Text style={{ color: currentColors.text }}>{c.name}</Text></TouchableOpacity>)}</ScrollView>
+                        <TouchableOpacity onPress={addHabit} style={styles.btn}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('start_habit')}</Text></TouchableOpacity>
+                    </View>
+                    {/* --- İÇERİK BİTİŞİ --- */}
+
+                </View>
+            </TouchableWithoutFeedback>
+        </View>
+    </TouchableWithoutFeedback>
+</Modal>
+
+      {/* DATE PICKER MODAL */}
+      {showDatePicker && (Platform.OS === 'ios' ? (<Modal transparent visible={true} animationType="fade"><View style={{flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'rgba(0,0,0,0.5)'}}><View style={{backgroundColor:'white', padding:20, borderRadius:10}}><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onDateChange} /><TouchableOpacity onPress={()=>setShowDatePicker(false)} style={{padding:10, alignItems:'center'}}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('close')}</Text></TouchableOpacity></View></View></Modal>) : (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onDateChange} />))}
+      {showDetailDatePicker && (Platform.OS === 'ios' ? (<Modal transparent visible={true} animationType="slide"><View style={{flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.3)'}}><View style={{backgroundColor: currentColors.surface, padding:20, borderTopLeftRadius:20, borderTopRightRadius:20}}><View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:10}}><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{color:COLORS.danger}}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onDetailDateChange} /></View></View></Modal>) : (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onDetailDateChange} />))}
+      {showHabitDatePicker && Platform.OS === 'android' && (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onHabitDateChange} />)}
+      <Modal transparent visible={showHabitDatePicker && Platform.OS === 'ios'} animationType="slide"><View style={{flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.3)'}}><View style={{backgroundColor: currentColors.surface, padding:20, borderTopLeftRadius:20, borderTopRightRadius:20}}><View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:10}}><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{color:COLORS.danger}}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onHabitDateChange} /></View></View></Modal>
+      
+      <Modal visible={!!selectedTask} animationType="slide" presentationStyle="pageSheet"><View style={[styles.container, {backgroundColor: currentColors.bg, padding:20}]}><View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}><Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text}}>{t('edit')}</Text><TouchableOpacity onPress={() => setSelectedTask(null)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('close')}</Text></TouchableOpacity></View>{selectedTask && (<View style={{gap:15}}><View><Text style={{color: currentColors.subText, fontSize:12, marginBottom:5}}>{t('title_label')}</Text><TextInput value={detailText} onChangeText={setDetailText} style={[styles.authInput, {backgroundColor: currentColors.surface, color: currentColors.text, height:50, borderRadius:12, paddingHorizontal:15}]} /></View><View><Text style={{color: currentColors.subText, fontSize:12, marginBottom:5}}>{t('description')}</Text><TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder={t('add_note_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {backgroundColor: currentColors.surface, color: currentColors.text, height:100, borderRadius:12, paddingHorizontal:15, paddingTop:15, textAlignVertical:'top'}]} /></View><View><Text style={{color: currentColors.subText, fontSize:12, marginBottom:5}}>{t('due_date')} (DD-MM-YYYY)</Text><View style={{flexDirection:'row', alignItems:'center'}}><TextInput value={detailDueDate} onChangeText={handleDetailDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.authInput, {backgroundColor: currentColors.surface, color: currentColors.text, height:50, borderRadius:12, paddingHorizontal:15, flex:1, borderTopRightRadius:0, borderBottomRightRadius:0}]} /><TouchableOpacity onPress={() => openDatePicker('detail')} style={{backgroundColor: COLORS.primary, padding:10, borderTopRightRadius:12, borderBottomRightRadius:12, height:50, justifyContent:'center'}}><Calendar size={24} color="#fff" /></TouchableOpacity></View></View><TouchableOpacity onPress={saveTaskDetail} style={[styles.createBtn, {backgroundColor: COLORS.primary, marginTop:10}]}><Text style={{color:'#fff', fontWeight:'bold'}}>{t('save')}</Text></TouchableOpacity></View>)}</View></Modal>
+      <Modal visible={isNetworkModalOpen} animationType="slide" presentationStyle="pageSheet"><View style={[styles.container, {backgroundColor: currentColors.bg, padding: 20}]}><View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}><Text style={{fontSize:24, fontWeight:'bold', color: currentColors.text}}>{t('connections')}</Text><TouchableOpacity onPress={() => setIsNetworkModalOpen(false)}><Text style={{color: COLORS.primary, fontWeight:'bold'}}>{t('close')}</Text></TouchableOpacity></View><View style={{flexDirection:'row', marginBottom:20, backgroundColor: currentColors.surface, borderRadius:12, padding:4}}><TouchableOpacity onPress={()=>setNetworkTab('ommio')} style={{flex:1, padding:8, alignItems:'center', borderRadius:10, backgroundColor: networkTab==='ommio'? (isDark?'#334155':'#e2e8f0') : 'transparent'}}><Text style={{fontWeight:'bold', color:currentColors.text}}>Ommio</Text></TouchableOpacity><TouchableOpacity onPress={()=>{ setNetworkTab('contacts'); fetchDeviceContacts(); }} style={{flex:1, padding:8, alignItems:'center', borderRadius:10, backgroundColor: networkTab==='contacts'? (isDark?'#334155':'#e2e8f0') : 'transparent'}}><Text style={{fontWeight:'bold', color:currentColors.text}}>{t('find_from_contacts')}</Text></TouchableOpacity></View>{networkTab === 'ommio' ? (<><View style={{flexDirection:'row', gap:10, marginBottom:20}}><TextInput value={searchUsername} onChangeText={setSearchUsername} placeholder={t('search_username')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {backgroundColor: currentColors.surface, color: currentColors.text, height: 50, flex:1, borderRadius:12, paddingHorizontal:15}]} autoCapitalize='none' /><TouchableOpacity onPress={sendFriendRequest} style={{backgroundColor: COLORS.primary, width:50, borderRadius:12, alignItems:'center', justifyContent:'center'}}><UserPlus size={24} color="#fff" /></TouchableOpacity></View>{friendRequests.length > 0 && <View style={{marginBottom:20}}>{friendRequests.map(req => (<View key={req.id} style={{backgroundColor: currentColors.surface, padding:15, borderRadius:16, marginBottom:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center', borderLeftWidth:4, borderLeftColor:COLORS.warning}}><View><Text style={{color: currentColors.text, fontWeight:'bold'}}>{req.fromUsername}</Text></View><View style={{flexDirection:'row', gap:10}}><TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity><TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity></View></View>))}</View>}<FlatList data={contacts} keyExtractor={item => item.uid} renderItem={({item}) => { const contactCat = categories.find(c => c.id === item.defaultCategoryId); const catColor = contactCat ? CATEGORY_COLORS.find(c => c.id === contactCat.color) : null; return (<View style={{backgroundColor: currentColors.surface, padding:15, borderRadius:16, marginBottom:10}}><View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:10}}><View><Text style={{color: currentColors.text, fontWeight:'bold', fontSize:16}}>{item.username}</Text><Text style={{color: currentColors.subText, fontSize:12}}>Görev Atama İzni:</Text></View><View style={{flexDirection:'row', alignItems:'center', gap:5}}><Text style={{fontSize:12, color: item.canAssignToMe ? COLORS.success : currentColors.subText}}>{item.canAssignToMe ? "AÇIK" : "KAPALI"}</Text><Switch value={item.canAssignToMe} onValueChange={() => togglePermission(item)} trackColor={{false:"#cbd5e1", true:"#10b981"}} /></View></View><Text style={{fontSize:10, color:currentColors.subText, marginBottom:5}}>Bu kişiden gelen görevleri şuraya ekle:</Text><ScrollView horizontal showsHorizontalScrollIndicator={false}>{categories.map(cat => { const cc = CATEGORY_COLORS.find(c=>c.id===cat.color)||CATEGORY_COLORS[0]; const isSelected = item.defaultCategoryId === cat.id; return (<TouchableOpacity key={cat.id} onPress={() => setContactCategory(item, cat.id)} style={{flexDirection:'row', alignItems:'center', gap:5, padding:5, paddingHorizontal:10, borderRadius:12, marginRight:5, backgroundColor: isSelected ? cc.bg : 'transparent', borderWidth:1, borderColor: isSelected ? cc.hex : (isDark?'#334155':'#e2e8f0')}}><View style={{width:6, height:6, borderRadius:3, backgroundColor: cc.hex}} /><Text style={{fontSize:10, color: isSelected ? cc.hex : currentColors.subText, fontWeight:'bold'}}>{cat.name}</Text></TouchableOpacity>)})}</ScrollView></View>)}} ListEmptyComponent={<Text style={{textAlign:'center', color: currentColors.subText, marginTop:20}}>{t('no_users')}</Text>} /></>) : (<FlatList data={deviceContacts} keyExtractor={item => item.id} renderItem={({item}) => (<View style={{backgroundColor: currentColors.surface, padding:15, borderRadius:16, marginBottom:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}><View><Text style={{color: currentColors.text, fontWeight:'bold'}}>{item.name}</Text><Text style={{color: currentColors.subText, fontSize:12}}>{item.phoneNumber}</Text></View><TouchableOpacity onPress={() => inviteContact(item.phoneNumber)} style={{backgroundColor: '#eff6ff', padding:8, borderRadius:8, flexDirection:'row', alignItems:'center', gap:5}}><Share2 size={16} color={COLORS.primary} /><Text style={{color: COLORS.primary, fontSize:12, fontWeight:'bold'}}>Davet Et</Text></TouchableOpacity></View>)} ListEmptyComponent={<Text style={{textAlign:'center', color: currentColors.subText, marginTop:20}}>{t('contacts_loading_or_denied')}</Text>} />)}</View></Modal>
+      <Modal visible={isLangModalOpen} transparent animationType="fade"><View style={styles.modalBackdrop}><View style={[styles.catModal, { backgroundColor: currentColors.surface, maxHeight: '80%' }]}><Text style={[styles.catModalTitle, {color: currentColors.text}]}>{t('language')}</Text><FlatList data={LANGUAGES} keyExtractor={item => item.code} renderItem={({item}) => (<TouchableOpacity onPress={() => { setLang(item.code as LangCode); setIsLangModalOpen(false); }} style={{flexDirection:'row', alignItems:'center', padding:15, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}><Text style={{fontSize:24, marginRight:15}}>{item.flag}</Text><Text style={{fontSize:16, color: currentColors.text, fontWeight: lang === item.code ? 'bold' : 'normal'}}>{item.label}</Text>{lang === item.code && <Check size={18} color={COLORS.success} style={{marginLeft:'auto'}} />}</TouchableOpacity>)} /><TouchableOpacity onPress={() => setIsLangModalOpen(false)} style={{marginTop:15, padding:10, alignItems:'center'}}><Text style={{color:COLORS.danger, fontWeight:'bold'}}>{t('cancel')}</Text></TouchableOpacity></View></View></Modal>
+      <Modal visible={!!activeAlarmTask} transparent animationType="slide"><View style={styles.alarmOverlay}><View style={[styles.alarmCard, { backgroundColor: currentColors.surface }]}><Text style={[styles.alarmTitle, {color: currentColors.text}]}>{t('alarm')}</Text><Text style={{color: currentColors.text}}>{activeAlarmTask?.text}</Text><TouchableOpacity onPress={() => setActiveAlarmTask(null)} style={styles.alarmCloseBtn}><Text style={{color:'#fff'}}>{t('close')}</Text></TouchableOpacity></View></View></Modal>
+     <Modal visible={showOnboarding} animationType="fade">
+    <View style={{flex:1, backgroundColor: COLORS.primary, padding: 20, justifyContent:'center', alignItems:'center'}}>
+        {onboardingStep === 0 && (
+            <View style={{alignItems:'center', gap:20}}>
+                <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
+                    <ListTodo size={60} color="#fff" />
+                </View>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Hoş Geldin!</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Ommio ile görevlerini organize et, hayatını düzene sok. Başlamak için hazırsan kaydır!</Text>
+            </View>
+        )}
+        {onboardingStep === 1 && (
+            <View style={{alignItems:'center', gap:20}}>
+                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
+                    <Repeat size={60} color="#fff" />
+                </View>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Alışkanlıklar Kazan</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Her gün %1 daha iyi ol. Zinciri kırma ve yeni alışkanlıklarını takip et.</Text>
+            </View>
+        )}
+        {onboardingStep === 2 && (
+            <View style={{alignItems:'center', gap:20}}>
+                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
+                    <Users size={60} color="#fff" />
+                </View>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Sosyal Ol</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Arkadaşlarınla görev paylaş, sohbet et ve birbirinizi motive edin.</Text>
+            </View>
+        )}
+
+        {/* İLERLEME BUTONLARI */}
+        <View style={{position:'absolute', bottom: 50, flexDirection:'row', width:'100%', justifyContent:'space-between', alignItems:'center'}}>
+             <View style={{flexDirection:'row', gap:5}}>
+                {[0,1,2].map(i => <View key={i} style={{width:8, height:8, borderRadius:4, backgroundColor: i===onboardingStep?'#fff':'rgba(255,255,255,0.3)'}} />)}
+             </View>
+             <TouchableOpacity onPress={() => {
+                 if(onboardingStep < 2) setOnboardingStep(onboardingStep+1);
+                 else setShowOnboarding(false);
+             }} style={{backgroundColor:'#fff', paddingHorizontal:20, paddingVertical:10, borderRadius:20}}>
+                <Text style={{color:COLORS.primary, fontWeight:'bold'}}>{onboardingStep === 2 ? 'Başla' : 'İleri'}</Text>
+             </TouchableOpacity>
+        </View>
+    </View>
+</Modal>
+      {/* KATEGORİ YÖNETİM MODALI */}
+<Modal visible={isCategoryModalOpen} transparent animationType="fade">
+    <View style={styles.modalBackdrop}>
+        <View style={[styles.catModal, { backgroundColor: currentColors.surface }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }}>
+            
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{t('categories_title')}</Text>
+                <TouchableOpacity onPress={() => setIsCategoryModalOpen(false)}>
+                    <X size={24} color={currentColors.subText} />
+                </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                {categories.map((cat) => (
+                    <View key={cat.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: CATEGORY_COLORS.find(c => c.id === cat.color)?.hex || 'gray' }} />
+                            <Text style={{ fontSize: 16, color: currentColors.text }}>{cat.name}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => handleDeleteCategory(cat.id)} style={{ padding: 5 }}>
+                            <Trash2 size={18} color={COLORS.danger} />
+                        </TouchableOpacity>
+                    </View>
+                ))}
+            </ScrollView>
+
+            {/* Yeni Ekleme Kısmı */}
+            <View style={{ marginTop: 20, flexDirection: 'row', gap: 10 }}>
+                <TextInput
+                    value={newCategoryName}
+                    onChangeText={setNewCategoryName}
+                    placeholder={t('category_name_placeholder')}
+                    placeholderTextColor={currentColors.subText}
+                    style={[styles.input, { flex: 1, height: 45, color: currentColors.text, backgroundColor: isDark ? '#1e293b' : '#f8fafc' }]}
+                />
+                <View style={{marginBottom: 10}}>
+                
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {CATEGORY_PALETTE.map(colorName => {
+                        const colorHex = CATEGORY_COLORS.find(c=>c.id===colorName)?.hex || '#000';
+                        const isSelected = newCategoryColor === colorName;
+                        return (
+                            <TouchableOpacity key={colorName} onPress={()=>setNewCategoryColor(colorName)} style={{width:45, height:45, alignItems: 'center', justifyContent: 'center',borderRadius:24, backgroundColor:colorHex, marginRight:10, borderWidth:2, borderColor: isSelected ? currentColors.text : 'transparent'}}>
+                                {isSelected && <Check size={16} color="#fff" style={{alignSelf:'center', marginTop:5}}/>}
+                            </TouchableOpacity>
+                        )
+                    })}
+                </ScrollView>
+            </View>
+                <TouchableOpacity onPress={handleAddCategory} style={{ backgroundColor: COLORS.success, width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
+                    <Plus size={24} color="#fff" />
+                </TouchableOpacity>
+            </View>
+        </View>
+    </View>
+</Modal>     
+    </SafeAreaView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { padding: 20, flexDirection: 'row', justifyContent:'space-between', alignItems:'center' },
+  card: { padding: 20, borderRadius: 16, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
+  input: { backgroundColor: 'rgba(0,0,0,0.05)', padding: 15, borderRadius: 12, fontSize: 16 },
+  btn: { backgroundColor: COLORS.primary, padding: 15, borderRadius: 12, alignItems: 'center' },
+  greeting: { fontSize: 14, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
+  appTitle: { fontSize: 28, fontWeight: '900' },
+  tabBar: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 20, paddingTop: 10, borderTopWidth: 1, height: 80, alignItems:'center' },
+  checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#cbd5e1' },
+  menuItem: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingVertical:15, borderBottomWidth:1, borderColor:'rgba(0,0,0,0.05)' },
+  menuText: { fontSize:16, fontWeight:'500', marginLeft:10, flex:1 },
+  pill: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', marginRight: 10 },
+  dateNavContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20 },
+  dateDisplay: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(99, 102, 241, 0.1)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  dateText: { fontWeight: '700', fontSize: 14 },
+  todayBadge: { marginLeft: 8, backgroundColor: COLORS.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  todayText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  dateArrow: { padding: 5 },
+  content: { flex: 1, paddingHorizontal: 24 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 60 },
+  emptyIconBox: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  emptyDesc: { textAlign: 'center', color: '#94a3b8', lineHeight: 20 },
+  taskCard: { padding: 16, borderRadius: 24, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  checkBox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
+  taskText: { fontSize: 16, fontWeight: '600' },
+  taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  miniBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+floatingInputWrapper: {position: 'absolute', bottom: 90, left: 20, right: 20, borderRadius: 24, padding: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10, overflow: 'hidden'},  
+  inputMainRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mainInput: { flex: 1, fontSize: 16, height: 40, fontWeight: '500' },
+  sendBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  expandBtn: { padding: 8 },
+  expandedOptions: { paddingBottom: 10, marginBottom: 10 },
+  timeToggle: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  statsHero: { padding: 30, borderRadius: 32, marginBottom: 20 },
+  activeDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: COLORS.primary, marginTop: 4 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
+  settingBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  settingBtnActive: { borderColor: COLORS.primary, backgroundColor: '#e0e7ff' },
+  authInputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 15, marginBottom: 15, height: 50 },
+  authInput: { flex: 1, marginLeft: 10, height: '100%' },
+  createBtn: { backgroundColor: COLORS.primary, padding: 15, borderRadius: 12, alignItems: 'center' },
+  socialBtn: { padding: 15, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+  alarmOverlay: { flex: 1, backgroundColor: 'rgba(99, 102, 241, 0.95)', justifyContent: 'center', alignItems: 'center' },
+  alarmCard: { width: '80%', padding: 30, borderRadius: 30, alignItems: 'center' },
+  alarmTitle: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
+  alarmCloseBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 30, paddingVertical: 12, borderRadius: 16, marginTop: 20 },
+  smallInput: { fontSize: 12, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', height: 36 },
+  iconToggle: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  tinyInput: { fontSize: 12, fontWeight: 'bold', width: 40, padding: 0, textAlign: 'center', borderBottomWidth: 1 },
+  dateBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#eff6ff', padding: 8, borderRadius: 8, marginTop: 5 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+  catModal: { width: '80%', padding: 20, borderRadius: 24 },
+  catModalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+});

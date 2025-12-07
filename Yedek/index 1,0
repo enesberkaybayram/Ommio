@@ -1,0 +1,69 @@
+Kısa cevap: Hayır, Vercel'in kendi içinde yerleşik bir "Mail Yönlendirme" servisi yoktur.
+
+Vercel sadece web sitenizi barındırır ve DNS kayıtlarını yönetmenize izin verir; ancak mail sunucusu hizmeti vermez.
+
+ANCAK, Vercel panelinizden ayrılmadan, ücretsiz 3. parti araçları Vercel DNS ayarlarına ekleyerek bu işi 5 dakikada çözebilirsiniz.
+
+Bunun için en popüler ve Vercel ile en iyi çalışan ücretsiz servis ImprovMX'tir.
+
+İşte adım adım ommio.app için yapmanız gerekenler:
+
+Adım 1: ImprovMX ile Ayarları Alın
+
+ImprovMX sitesine gidin.
+
+Domain Name: ommio.app yazın.
+
+Your Email: kisiselmailiniz@gmail.com (maillerin nereye gitmesini istiyorsanız) yazın.
+
+"Create a free alias" butonuna basın.
+
+Size eklemeniz gereken MX ve TXT (SPF) kayıtlarını verecek. Bu sayfayı açık tutun.
+
+Adım 2: Vercel Paneline Girin
+
+Vercel Dashboard'a gidin ve projenizi seçin.
+
+Settings > Domains sekmesine gelin.
+
+ommio.app alan adınızın yanındaki Edit veya DNS Records bölümüne tıklayın.
+
+Adım 3: Kayıtları Ekleyin
+
+ImprovMX'in size verdiği şu iki kaydı Vercel'e eklemeniz gerekecek:
+
+1. MX Kaydı (Öncelik 10):
+
+Type: MX
+
+Name: @ (veya boş bırakın)
+
+Value: mx1.improvmx.com
+
+Priority: 10
+
+2. MX Kaydı (Öncelik 20):
+
+Type: MX
+
+Name: @ (veya boş bırakın)
+
+Value: mx2.improvmx.com
+
+Priority: 20
+
+3. TXT Kaydı (SPF - Spam'e düşmemek için):
+
+Type: TXT
+
+Name: @
+
+Value: v=spf1 include:spf.improvmx.com ~all
+
+(Not: Eğer daha önce eklenmiş başka MX kayıtları varsa, çakışmaması için onları silmeniz gerekir.)
+
+Sonuç
+
+Bu ayarları yaptıktan sonra (yayılması 1-2 saat sürebilir), iletisim@ommio.app veya *@ommio.app adresine atılan her mail, belirlediğiniz kişisel mail adresinize düşecektir.
+
+Bunu yapmak ister misiniz? Eğer Gmail üzerinden yanıt verirken de "gönderen" kısmında ommio.app görünsün isterseniz (SMTP ayarı), bunun da ücretsiz bir yolu var. İlginizi çekerse anlatabilirim.
