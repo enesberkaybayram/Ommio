@@ -1,77 +1,64 @@
 // scripts/generate-sitemap.ts
 import * as fs from 'fs';
 import * as path from 'path';
-
-// Blog verilerini import ediyoruz
 import { allBlogPosts, SupportedLangs } from '../data/blog';
 
-// Sitenizin CANLI URL'si
-const BASE_URL = 'https://ommio.app';
+const BASE_URL = 'https://www.ommio.app'; // www ekledim, canonical için daha iyidir
 
 function generateSitemap() {
-  console.log('🗺️  SEO dosyaları (Sitemap & Robots) oluşturuluyor...');
+  console.log('🗺️  SEO dosyaları oluşturuluyor...');
 
   const languages = Object.keys(allBlogPosts) as SupportedLangs[];
   let urls: string[] = [];
 
-  // --- 1. Statik Sayfalar ---
-  // Ana sayfa (Root)
+  // --- 1. Linkleri Hazırla ---
   urls.push(`${BASE_URL}`); 
 
   languages.forEach(lang => {
-    urls.push(`${BASE_URL}/${lang}/blog`); // Blog ana sayfası
-    urls.push(`${BASE_URL}/${lang}/privacy`); // Gizlilik politikası
+    urls.push(`${BASE_URL}/${lang}/blog`);
+    urls.push(`${BASE_URL}/${lang}/privacy`);
   });
 
-  // --- 2. Dinamik Blog Yazıları ---
   languages.forEach((lang) => {
     const posts = allBlogPosts[lang];
     if (posts) {
       posts.forEach((post) => {
-        // URL Yapısı: domain.com/tr/blog/zaman-yonetimi
         urls.push(`${BASE_URL}/${lang}/blog/${post.slug}`);
       });
     }
   });
 
-  // --- 3. SITEMAP.XML OLUŞTURMA ---
+  // --- 2. İçerikleri Oluştur ---
   const sitemapContent = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls
-  .map((url) => {
-    return `  <url>
+${urls.map((url) => `  <url>
     <loc>${url}</loc>
     <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
-  </url>`;
-  })
-  .join('\n')}
+  </url>`).join('\n')}
 </urlset>`;
 
-  // --- 4. ROBOTS.TXT OLUŞTURMA ---
-  // Google'a sitemap'in yerini gösteren dosya
   const robotsTxtContent = `User-agent: *
 Allow: /
 
 Sitemap: ${BASE_URL}/sitemap.xml
 `;
 
-  // --- 5. DOSYALARI KAYDETME ---
-  // Expo Router kullanıyorsan genellikle 'public' klasörü kök dizindedir.
-  const publicDir = path.resolve(__dirname, '../public');
+  // --- 3. KRİTİK DEĞİŞİKLİK: 'dist' KLASÖRÜNE YAZMA ---
+  // Expo export işlemi bittikten sonra 'dist' klasörü oluşmuş olacak.
+  // Biz de dosyaları direkt oraya atıyoruz.
+  const distDir = path.resolve(__dirname, '../dist');
 
-  if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir);
+  // Eğer dist klasörü yoksa (export hatası vs.) oluştur ki script patlamasın
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
   }
 
-  // sitemap.xml yaz
-  fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), sitemapContent);
-  console.log(`✅ Sitemap oluşturuldu: ${urls.length} URL.`);
+  fs.writeFileSync(path.join(distDir, 'sitemap.xml'), sitemapContent);
+  fs.writeFileSync(path.join(distDir, 'robots.txt'), robotsTxtContent);
 
-  // robots.txt yaz
-  fs.writeFileSync(path.join(publicDir, 'robots.txt'), robotsTxtContent);
-  console.log(`✅ Robots.txt oluşturuldu.`);
+  console.log(`✅ Başarılı! Dosyalar 'dist' klasörüne yazıldı: ${urls.length} URL.`);
 }
 
 generateSitemap();
