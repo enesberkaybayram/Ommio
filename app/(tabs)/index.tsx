@@ -72,6 +72,7 @@ import {
     View
 } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
+import AnimatedSplash from '../../components/AnimatedSplash'; // Yolunu kendine göre ayarla
 import OmmioAdBanner from '../../components/OmmioAdBanner';
 import { setupCalendarLocales } from '../../constants/calendarConfig';
 // --- FIREBASE ---
@@ -317,6 +318,9 @@ export default function OmmioApp() {
 
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false); // Takvim açık/kapalı kontrolü
 
+  // OmmioApp fonksiyonunun içine, diğer state'lerin yanına ekle
+const [isSplashAnimationComplete, setIsSplashAnimationComplete] = useState(false);
+
   // --- REKLAM VE SAYAÇ STATE'LERİ ---
   // Hangi eylemden kaç tane yapıldı?
   
@@ -513,9 +517,9 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
                       createdAt: serverTimestamp(),
                       photoURL: user.photoURL,
                       categories: [
-                          { id: 'work', name: 'İş', color: 'blue' },
-                          { id: 'home', name: 'Ev', color: 'orange' },
-                          { id: 'personal', name: 'Kişisel', color: 'green' }
+                          { id: 'work', name: t('work'), color: 'blue' },
+                          { id: 'home', name: t('home'), color: 'orange' },
+                          { id: 'personal', name: t('personal'), color: 'green' }
                       ]
                   });
                   
@@ -530,13 +534,13 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
       })
             .catch((error) => {
                 console.log("Google Sign-In Error:", error);
-                showToast("Giriş Hatası", "Google ile giriş yapılamadı: " + error.message, 'error');
+                showToast(t('login_error'), t('google_login_failed') + error.message, 'error');
             })
             .finally(() => {
                 setIsAuthLoading(false);
             });
     } else if (response?.type === 'error') {
-        showToast("Hata", "Google bağlantı hatası.", 'error');
+        showToast(t('warning_title'), t('google_connection_error'), 'error');
     }
 }, [response]);
 // --- GÖREV İÇİ YORUMLARI DİNLEME ---
@@ -606,7 +610,7 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
       setTaskCommentInput(""); 
     } catch (e: any) {
       console.error("Yorum Gönderme Hatası:", e);
-      showToast("Hata", "Yorum gönderilemedi: " + e.message, 'error');
+      showToast(t('warning_title'), t('comment_failed') + e.message, 'error');
     }
   };
   
@@ -660,7 +664,7 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
           console.log("Kullanıcı girişi iptal etti.");
       } else {
           // Gerçek hatayı ekrana bas
-          showToast("Hata", "Apple girişi başarısız: " + e.message, 'error');
+          showToast(t('warning_title'), t('apple_login_failed') + e.message, 'error');
       }
     }
   };
@@ -668,8 +672,8 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
   const checkGuest = (actionName: string) => {
   if (user && user.isAnonymous) {
     askConfirmation(
-      t('auth_guest_title') || "Misafir Modu",
-      `${actionName} özelliğini kullanmak için lütfen ücretsiz kayıt olun veya giriş yapın.`,
+      t('auth_guest_title') || t('auth_guest_title'),
+      tFormat('feature_login_required', { actionName: 'Mesaj Gönderme' }),
       handleLogout // Onayla'ya basınca çıkış yapar (Kayıt ekranına döner)
     );
     return true; // İşlemi durdurur
@@ -721,7 +725,7 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
           errorMsg = "İnternet bağlantınızı kontrol edin.";
       }
 
-      showToast("Giriş Hatası", errorMsg, 'error');
+      showToast(t('login_error'), errorMsg, 'error');
     } finally {
       // 4. İşlem bitti, loading'i kapat
       setIsAuthLoading(false);
@@ -1077,14 +1081,20 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     // @ts-ignore
     return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
   };
-
+    const tFormat = (key: string, params: Record<string, string | number>) => {
+        let text = t(key);
+        Object.entries(params).forEach(([k, v]) => {
+            text = text.replace(`{{${k}}}`, String(v));
+        });
+        return text;
+    };
   // --- FONKSİYONLAR ---
   // --- ARKADAŞ SİLME ---
   const handleRemoveFriend = async (targetUid: string, targetName: string) => {
     // Önce kullanıcıdan onay alalım
     askConfirmation(
         t('remove_friend'),
-        `${targetName} kişisini çıkarmak istediğine emin misin?`,
+         tFormat('friend_remove_confirm', { targetName }),
         async () => {
              try {
                  // Promise.all ile İKİ TARAFTAN DA aynı anda siliyoruz
@@ -1096,7 +1106,7 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
                      deleteDoc(doc(db, "users", targetUid, "contacts", user.uid))
                  ]);
 
-                 showToast("Başarılı", `${targetName} arkadaşlıktan çıkarıldı.`, 'success');
+                 showToast(t('success'), tFormat('friend_removed', { targetName }), 'success');
                  
                  // State'i (Ekranı) güncellememiz lazım ki hemen kaybolsun
                  // (Firestore listener'ı bazen gecikebilir, bu satır anlık tepki verir)
@@ -1104,7 +1114,7 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
 
              } catch(e: any) { 
                  console.log(e);
-                 showToast("Hata", "Silme işlemi tam yapılamadı: " + e.message, 'error');
+                 showToast(t('warning_title'), t('delete_incomplete') + e.message, 'error');
              }
         },
         true // Kırmızı buton (Tehlikeli işlem)
@@ -1118,17 +1128,17 @@ const handleConvertGuest = async () => {
         return;
     }
     if (!email.includes('@') || !email.includes('.')) {
-        showToast(t('missing_info'), "Geçerli bir e-posta girin.", 'warning');
+        showToast(t('missing_info'), t('enter_valid_email'), 'warning');
         return;
     }
     if (password.length < 6) {
-        showToast(t('missing_info'), "Şifre en az 6 karakter olmalı.", 'warning');
+        showToast(t('missing_info'), t('password_min_length'), 'warning');
         return;
     }
 
     // --- HATA ÇÖZÜMÜ: KULLANICI KONTROLÜ ---
     if (!auth.currentUser) {
-        showToast("Hata", "Oturum bulunamadı.", 'error');
+        showToast(t('warning_title'), t('session_not_found'), 'error');
         return;
     }
     // ---------------------------------------
@@ -1147,7 +1157,7 @@ const handleConvertGuest = async () => {
         
         if (!checkUser.empty) {
             setIsAuthLoading(false);
-            showToast("Hata", "Bu kullanıcı adı zaten kullanılıyor.", 'warning');
+            showToast(t('warning_title'), t('profile_username_taken'), 'warning');
             return;
         }
 
@@ -1184,24 +1194,24 @@ const handleConvertGuest = async () => {
         setIsAuthLoading(false);
         // Modalı kapatmak için state'i false yapın (isGuestModalOpen varsa)
         setIsGuestModalOpen(false); 
-        showToast("Başarılı", "Hesabınız başarıyla oluşturuldu ve verileriniz korundu!", 'success');
+        showToast(t('success'), t('account_created_success'), 'success');
 
     } catch (error: any) {
         setIsAuthLoading(false);
         console.error("Link Error:", error);
         
-        let msg = "İşlem başarısız.";
+        let msg = t('process_failed');
         if (error.code === 'auth/email-already-in-use') {
-            msg = "Bu e-posta adresi zaten kullanımda.";
+            msg = t('email_in_use');
         } else if (error.code === 'auth/credential-already-linked') {
-            msg = "Bu hesap zaten bağlanmış.";
+            msg = t('account_already_linked');
         } else if (error.code === 'auth/invalid-email') {
-            msg = "Geçersiz e-posta formatı.";
+            msg = t('invalid_email_again');
         } else if (error.code === 'auth/weak-password') {
-            msg = "Şifre çok zayıf.";
+            msg = t('weak_password');
         }
 
-        showToast("Hata", msg, 'error');
+        showToast(t('error_title'), msg, 'error');
     }
 };
   // --- ENGELLEME (Basitçe siliyoruz ama farklı mesaj veriyoruz, istersen 'blocked' koleksiyonu yapabilirsin) ---
@@ -1230,7 +1240,7 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
                         await deleteDoc(doc(db, "users", targetUid, "contacts", user.uid));
                         showToast(t('friend_block_title'), `${targetName} ${t('friend_blocked_success')}`, 'success');
                     } catch (err) {
-                        showToast("Hata", "İşlem başarısız.", 'error');
+                        showToast(t('error_title'), t('process_failed'), 'error');
                     }
                 }
           },
@@ -1261,8 +1271,8 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
   };
   const handleDeleteChat = async () => {
    askConfirmation(
-        "Sohbeti Sil",
-        "Bu sohbeti ve tüm mesajları silmek istediğine emin misin? Bu işlem geri alınamaz.", 
+        t('delete_chat'),
+        t('delete_chat_confirm'), 
          async () => {
             if (!user || !chatTarget) return;
             const chatId = [user.uid, chatTarget.uid].sort().join('_');
@@ -1275,9 +1285,9 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
               
               setActiveTab('messages'); // Mesajlar sekmesine dön
               setChatTarget(null);
-              showToast("Başarılı", "Sohbet silindi.", 'success');
+              showToast(t('success'), t('chat_deleted'), 'success');
             } catch (e) {
-              showToast("Hata", "Sohbet silinemedi.", 'error');
+              showToast(t('warning_title'), t('chat_delete_failed'), 'error');
             }
           },
           true // Kırmızı buton (isDestructive)
@@ -1290,9 +1300,11 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
   };
 
   // 2. Modal içindeki "Gönder" butonuna basınca çalışır
+  // --- ŞİFRE SIFIRLAMA LİNKİ GÖNDERME (Kullanıcı Adı veya E-posta Destekli) ---
   const handleSendPasswordReset = async () => {
+    // 1. Boş Kontrolü
     if (!resetInput.trim()) {
-      showToast("Uyarı", "Lütfen e-posta veya kullanıcı adı girin.", 'warning');
+      showToast(t('warning_title'), "Lütfen e-posta adresinizi veya kullanıcı adınızı girin.", 'warning');
       return;
     }
 
@@ -1300,40 +1312,46 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
     let targetEmail = resetInput.trim();
 
     try {
-      // EĞER GİRİLEN DEĞER BİR E-POSTA DEĞİLSE (İçinde @ yoksa), KULLANICI ADIDIR
+      // 2. Kullanıcı Adı Çözümleme Mantığı
+      // Eğer girilen değerde '@' işareti yoksa, bunu kullanıcı adı varsayıyoruz.
       if (!targetEmail.includes('@')) {
-        // Kullanıcı adını temizle (küçük harf, boşluksuz vs.)
+        // Kullanıcı adını temizle (Sizin kayıt olurken kullandığınız mantıkla aynı olmalı)
         const cleanUsername = targetEmail.toLowerCase()
             .replace(/\s+/g, '')
             .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
             .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
 
-        // Firestore'dan bu kullanıcı adının e-postasını bul
+        // Firestore 'usernames' koleksiyonundan e-postayı bul
         const usernameRef = doc(db, "usernames", cleanUsername);
         const docSnap = await getDoc(usernameRef);
 
         if (docSnap.exists()) {
           targetEmail = docSnap.data().email;
+          console.log("Kullanıcı adı çözümlendi, e-posta:", targetEmail);
         } else {
           throw new Error("USER_NOT_FOUND");
         }
       }
 
-      // Firebase'e sıfırlama e-postası gönder
+      // 3. Firebase Şifre Sıfırlama E-postası Gönder
       await sendPasswordResetEmail(auth, targetEmail);
       
-      showToast("Başarılı", "Sıfırlama bağlantısı e-posta adresinize gönderildi.", 'success');
+      // 4. Başarılı İşlem
+      showToast(t('success'), t('reset_link_sent') || "Sıfırlama bağlantısı e-posta adresinize gönderildi.", 'success');
       setResetModalVisible(false); // Modalı kapat
-      setResetInput(""); 
+      setResetInput(""); // Inputu temizle
 
     } catch (e: any) {
-      console.log(e);
-      let errorMsg = "İşlem başarısız.";
-      if (e.message === "USER_NOT_FOUND") errorMsg = "Bu kullanıcı adı ile kayıtlı üye bulunamadı.";
-      else if (e.code === 'auth/user-not-found') errorMsg = "Bu e-posta ile kayıtlı kullanıcı bulunamadı.";
-      else if (e.code === 'auth/invalid-email') errorMsg = "Geçersiz e-posta formatı.";
+      console.log("Reset Error:", e);
+      let errorMsg = t('process_failed') || "İşlem başarısız.";
       
-      showToast("Hata", errorMsg, 'error');
+      // Hata Yönetimi
+      if (e.message === "USER_NOT_FOUND") errorMsg = "Bu kullanıcı adı ile kayıtlı bir hesap bulunamadı.";
+      else if (e.code === 'auth/user-not-found') errorMsg = "Bu e-posta adresiyle kayıtlı kullanıcı bulunamadı.";
+      else if (e.code === 'auth/invalid-email') errorMsg = "Geçersiz e-posta formatı.";
+      else if (e.code === 'auth/too-many-requests') errorMsg = "Çok fazla deneme yaptınız, lütfen daha sonra tekrar deneyin.";
+      
+      showToast(t('error_title'), errorMsg, 'error');
     } finally {
       setIsResetLoading(false);
     }
@@ -1343,7 +1361,7 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
   const handlePasswordChange = async () => {
       // 1. Validasyon
       if (!newPasswordInput.trim() || newPasswordInput.length < 6) {
-          showToast(t('warning_title'), "Şifre en az 6 karakter olmalıdır.", 'warning');
+          showToast(t('warning_title'), t('password_min_length'), 'warning');
           return;
       }
 
@@ -1353,7 +1371,7 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
           // 2. Firebase Şifre Güncelleme (Google hesabı olsa bile bu fonksiyon şifre ekler)
           await updatePassword(user, newPasswordInput);
           
-          showToast(t('success'), "Şifreniz başarıyla ayarlandı.", 'success');
+          showToast(t('success'), t('password_set_success'), 'success');
           setIsPasswordModalOpen(false);
           setNewPasswordInput("");
 
@@ -1363,13 +1381,13 @@ const handleBlockFriend = async (targetUid: string, targetName: string) => {
           // Önemli Hata Yönetimi:
           if (error.code === 'auth/requires-recent-login') {
                 askConfirmation(
-                    t('security_warning_title') || "Güvenlik Uyarısı",
-                    "Bu işlemi yapabilmek için oturumunuzun taze olması gerekiyor. Lütfen çıkış yapıp tekrar giriş yapın.",
+                    t('security_warning_title') || t('security_warning_title'),
+                    t('security_relogin_msg'),
                     handleLogout, // Onayla basınca çıkış yapar
                     false 
                 );
             } else {
-              showToast(t('error_title'), "İşlem başarısız: " + error.message, 'error');
+              showToast(t('error_title'), t('process_failed') + error.message, 'error');
           }
       }
   };
@@ -1382,7 +1400,7 @@ const handleAuth = async () => {
     // --- LOGIN İŞLEMİ ---
     if (authMode === 'login') {
         if (!inputVal || !cleanPassword) {
-            showToast(t('warning_title'), "Lütfen tüm alanları doldurun.", 'warning');
+            showToast(t('warning_title'), t('fill_all_fields'), 'warning');
             return;
         }
 
@@ -1430,7 +1448,7 @@ const handleAuth = async () => {
             console.error("Login Error:", e);
             
             let errorMsg = "Giriş başarısız.";
-            if (e.message === "USER_NOT_FOUND") errorMsg = "Bu kullanıcı adı ile kayıtlı üye bulunamadı.";
+            if (e.message === "USER_NOT_FOUND") errorMsg = t('username_not_found');
             else if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') errorMsg = "Şifre veya kullanıcı bilgisi hatalı.";
             else if (e.code === 'auth/user-not-found') errorMsg = "Kullanıcı bulunamadı.";
             else if (e.code === 'auth/too-many-requests') errorMsg = "Çok fazla deneme yaptınız, lütfen bekleyin.";
@@ -1447,11 +1465,11 @@ const handleAuth = async () => {
         }
         // Basit e-posta doğrulama
         if (!inputVal.includes('@') || !inputVal.includes('.')) {
-             showToast(t('missing_info'), "Lütfen geçerli bir e-posta adresi girin.", 'warning');
+             showToast(t('missing_info'), t('enter_email_username'), 'warning');
              return;
         }
         if (!cleanPassword) {
-            showToast(t('missing_info'), "Lütfen bir şifre belirleyin.", 'warning');
+            showToast(t('missing_info'), t('enter_password'), 'warning');
             return;
         }
 
@@ -1468,7 +1486,7 @@ const handleAuth = async () => {
             const checkUser = await getDocs(q);
             if(!checkUser.empty) {
                 setIsAuthLoading(false);
-                showToast("Hata", "Bu kullanıcı adı zaten kullanılıyor.", 'warning');
+                showToast("Hata", t('profile_username_taken'), 'warning');
                 return;
             }
 
@@ -1515,9 +1533,9 @@ const handleAuth = async () => {
             setIsAuthLoading(false);
             console.error("Signup Error:", e);
             let errorMsg = t('auth_process_failed');
-            if (e.code === 'auth/email-already-in-use') errorMsg = "Bu e-posta zaten kullanımda.";
-            else if (e.code === 'auth/invalid-email') errorMsg = "Geçersiz e-posta formatı.";
-            else if (e.code === 'auth/weak-password') errorMsg = "Şifre çok zayıf (en az 6 karakter).";
+            if (e.code === 'auth/email-already-in-use') errorMsg = t('email_in_use');
+            else if (e.code === 'auth/invalid-email') errorMsg = t('invalid_email_again');
+            else if (e.code === 'auth/weak-password') errorMsg = t('weak_password');
             
             showToast(t('error_title'), errorMsg, 'error');
         }
@@ -1601,12 +1619,12 @@ const handleUpdateProfile = async () => {
 
     // 2. Validasyon (Kontrol)
     if (!cleanDisplayName) {
-        showToast("Uyarı", "Görünen isim boş bırakılamaz.", 'warning');
+        showToast(t('warning_title'), "Görünen isim boş bırakılamaz.", 'warning');
         return;
     }
 
     if (cleanUsername.length < 3) {
-        showToast("Uyarı", "Kullanıcı adı en az 3 karakter olmalı.", 'warning');
+        showToast(t('warning_title'), t('profile_username_short'), 'warning');
         return;
     }
 
@@ -1633,7 +1651,7 @@ const handleUpdateProfile = async () => {
 
             // 3. State'i Güncelle (Anlık değişim için)
             setUser((prev: any) => ({ ...prev, displayName: cleanDisplayName }));
-            showToast("Başarılı", "İsminiz güncellendi.", 'success');
+            showToast(t('success_label'), "İsminiz güncellendi.", 'success');
         }
 
         // --- SENARYO B: Kullanıcı Adı Değişiyor (Zor olan) ---
@@ -1643,7 +1661,7 @@ const handleUpdateProfile = async () => {
             const check = await getDocs(q);
             
             if (!check.empty) {
-                showToast("Hata", "Bu kullanıcı adı alınmış.", 'error');
+                showToast("Hata", t('profile_username_taken'), 'error');
                 return;
             }
 
@@ -1659,14 +1677,14 @@ const handleUpdateProfile = async () => {
 
             // State Güncelle
             setUser((prev: any) => ({ ...prev, ...updates }));
-            showToast("Başarılı", "Profiliniz tamamen güncellendi.", 'success');
+            showToast(t('success_label'), "Profiliniz tamamen güncellendi.", 'success');
         }
 
         setIsEditProfileVisible(false); // Modalı kapat
 
     } catch (e: any) {
         console.error(e);
-        showToast("Hata", "Güncelleme yapılamadı.", 'error');
+        showToast(t('error_title'), "Güncelleme yapılamadı.", 'error');
     }
 };
 
@@ -1912,7 +1930,7 @@ const handleUpdateProfile = async () => {
 
   const toggleExpand = (taskId: string) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedTaskId(expandedTaskId === taskId ? null : taskId); };
   const openEditModal = (task: Task) => { if (task.assignedBy !== user.uid && task.assignedTo !== user.uid) { showToast(t('error_title'), t('task_unauth_edit'), 'error'); return; } setSelectedTask(task); setDetailText(task.text); setDetailDesc(task.description || ""); setDetailDueDate(task.dueDate || ""); };
-  const saveTaskDetail = async () => { if (!selectedTask) return; try { const targetUid = selectedTask.assignedTo || user.uid; const taskRef = doc(db, "users", targetUid, "tasks", selectedTask.id); await updateDoc(taskRef, { text: detailText, description: detailDesc, dueDate: detailDueDate }); setSelectedTask(null); showToast(t('success'), t('task_updated'), 'success'); } catch (e) { showToast("Hata", "Güncelleme başarısız.", 'error'); } };
+  const saveTaskDetail = async () => { if (!selectedTask) return; try { const targetUid = selectedTask.assignedTo || user.uid; const taskRef = doc(db, "users", targetUid, "tasks", selectedTask.id); await updateDoc(taskRef, { text: detailText, description: detailDesc, dueDate: detailDueDate }); setSelectedTask(null); showToast(t('success'), t('task_updated'), 'success'); } catch (e) { showToast(t('error_title'), "Güncelleme başarısız.", 'error'); } };
   
   const onDateChange = (event: any, selected: Date | undefined) => { 
       // Sadece Android'de seçim yapınca otomatik kapat (Web ve iOS'ta butonla kapatacağız)
@@ -1993,7 +2011,7 @@ const handleDeleteCategory = async (catId: string) => {
   const sendFriendRequest = async () => {
     // 1. Boş kontrolü
     if (!searchUsername.trim()) {
-        showToast("Uyarı", "Lütfen bir kullanıcı adı girin.", 'warning');
+        showToast(t('warning_title'), t('auth_username_required'), 'warning');
         return;
     }
 
@@ -2007,7 +2025,7 @@ const handleDeleteCategory = async (catId: string) => {
 
         // A. KULLANICI BULUNAMADI
         if (querySnapshot.empty) { 
-            showToast("Hata", `@${targetUsername} kullanıcısı bulunamadı.`, 'error'); 
+            showToast(t('error_title'), tFormat('user_not_found', { targetUsername }), 'error'); 
             return; 
         }
 
@@ -2019,7 +2037,7 @@ const handleDeleteCategory = async (catId: string) => {
 
         // B. KENDİNE İSTEK ATMA
         if (targetUid === user.uid) { 
-            showToast("Uyarı", "Kendinizi arkadaş olarak ekleyemezsiniz.", 'warning'); 
+            showToast(t('warning_title'), t('self_add_error'), 'warning'); 
             return; 
         }
 
@@ -2027,7 +2045,7 @@ const handleDeleteCategory = async (catId: string) => {
         const contactRef = doc(db, "users", user.uid, "contacts", targetUid);
         const contactSnap = await getDoc(contactRef);
         if (contactSnap.exists()) { 
-            showToast("Bilgi", `${targetDisplayName} zaten listenizde ekli.`, 'info'); 
+            showToast(t('info_title'), tFormat('already_friend', { targetDisplayName }) , 'info'); 
             setSearchUsername(""); 
             return; 
         }
@@ -2048,11 +2066,13 @@ const handleDeleteCategory = async (catId: string) => {
         
         // D. BAŞARILI (Kullanıcıya Display Name ile geri bildirim veriyoruz)
         setSearchUsername(""); 
-        showToast("İstek Gönderildi", `${targetDisplayName} (@${targetUsername}) kişisine istek gitti.`, 'success');
+        showToast(t('social_request_sent'),  tFormat('request_sent', { 
+    targetDisplayName, 
+    targetUsername  }), 'success');
 
     } catch (e: any) { 
         console.error("İstek gönderme hatası:", e);
-        showToast("Hata", "İstek gönderilemedi.", 'error');
+        showToast(t('error_title'), "İstek gönderilemedi.", 'error');
     }
 };
 // --- ŞİFRE SIFIRLAMA MODALINI AÇ ---
@@ -2065,30 +2085,7 @@ const handleDeleteCategory = async (catId: string) => {
     }
     setIsForgotPasswordModalOpen(true);
   };
-
-  // --- ŞİFRE SIFIRLAMA LİNKİ GÖNDER ---
-  const handleSendResetEmail = async () => {
-    const emailToSend = resetEmailInput.trim();
-
-    if (!emailToSend || !emailToSend.includes('@')) {
-        showToast(t('warning_title'), "Lütfen geçerli bir e-posta adresi girin.", 'warning');
-        return;
-    }
-
-    try {
-        await sendPasswordResetEmail(auth, emailToSend);
-        showToast(t('success'), t('auth_reset_sent'), 'success'); // "Bağlantı gönderildi"
-        setIsForgotPasswordModalOpen(false); // Modalı kapat
-        setResetEmailInput(""); // Temizle
-    } catch (e: any) {
-        console.log(e);
-        let errMsg = e.message;
-        if (e.code === 'auth/user-not-found') errMsg = "Bu e-posta ile kayıtlı kullanıcı bulunamadı.";
-        if (e.code === 'auth/invalid-email') errMsg = "Geçersiz e-posta formatı.";
-        
-        showToast(t('error_title'), errMsg, 'error');
-    }
-  };
+  
 
   const acceptRequest = async (req: FriendRequest) => {
     if (!user) return;
@@ -2144,11 +2141,12 @@ const handleDeleteCategory = async (catId: string) => {
             deleteDoc(doc(db, "users", user.uid, "friend_requests", req.id || req.fromUid))
         ]);
         
-        showToast("Başarılı", `${senderDisplayName} ile artık arkadaşsınız!`, 'success');
+        showToast(t('success_label'),
+  tFormat('success_friend', { senderDisplayName }), 'success');
         
     } catch (e: any) { 
         console.error("Kabul hatası:", e);
-        showToast("Hata", "Bağlantı kurulamadı.", 'error'); 
+        showToast(t('error_title'), t('connection_failed'), 'error'); 
     }
 };
   const showTasksAssignedToFriend = async (friendUid: string, friendName: string) => {
@@ -2165,7 +2163,7 @@ const handleDeleteCategory = async (catId: string) => {
         
         setFriendTasksModal({ visible: true, tasks: sentTasks, friendName });
     } catch (e) {
-        showToast(t('error_title'), "Görevler alınamadı.", 'error');
+        showToast(t('error_title'), t('tasks_fetch_error'), 'error');
     }
   };
   const rejectRequest = async (reqId: string) => { try { await deleteDoc(doc(db, "users", user.uid, "friend_requests", reqId)); } catch (e) { } };
@@ -2186,11 +2184,11 @@ const handleDeleteCategory = async (catId: string) => {
               }
               setDeviceContacts(formattedContacts);
           }
-        } else { showToast("İzin Gerekli", "Rehberinize erişmek için izin vermelisiniz.", 'warning'); }  };
+        } else { showToast(t('permission_required'), t('contacts_permission'), 'warning'); }  };
   
   const inviteContact = async (phoneNumber: string) => {
       const isAvailable = await SMS.isAvailableAsync();
-      if (isAvailable) { await SMS.sendSMSAsync([phoneNumber], "Merhaba, ben Ommio kullanıyorum! https://ommio.app"); } else { showToast("Hata", "SMS servisi kullanılamıyor.", 'error'); }
+      if (isAvailable) { await SMS.sendSMSAsync([phoneNumber], t('social_invite_sms')); } else { showToast(t('error_title'), t('sms_error'), 'error'); }
   };
 const handleDeleteAccount = async () => {
     // Silme Mantığı
@@ -2203,12 +2201,12 @@ const handleDeleteAccount = async () => {
             setTasks([]);
             
             // Başarılı Mesajı
-            showToast("Hoşçakal", "Hesabın başarıyla silindi.", 'success');
+            showToast( t('delete_account_success_title'), t('delete_account_success_msg'), 'success');
 
         } catch (error: any) {
             console.log("Silme hatası:", error);
             // Hata Mesajı
-            showToast("Hata", "Hesap silinirken hata oluştu. Lütfen çıkış yapıp tekrar girdikten sonra deneyin.", 'error');
+            showToast( t('error_title'), t('account_delete_error'), 'error');
         }
     };
 
@@ -2275,7 +2273,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     @{chatTarget?.username}
                 </Text>
 
-                {isTyping && <Text style={{ fontSize: 10, color: COLORS.primary }}>yazıyor...</Text>}
+                {isTyping && <Text style={{ fontSize: 10, color: COLORS.primary }}>{t('typing')}</Text>}
             </View>
             </View>
 
@@ -2498,7 +2496,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             </TouchableOpacity>
             {isExpanded && (
                 <View style={{marginTop:15, paddingTop:15, borderTopWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}>
-                    {task.description ? (<View style={{flexDirection:'row', gap:5, marginBottom:10}}><AlignLeft size={14} color={currentColors.subText} style={{marginTop:2}} /><Text style={{color: currentColors.text, fontSize:14, flex:1}}>{task.description}</Text></View>) : (<Text style={{color: currentColors.subText, fontSize:12, fontStyle:'italic', marginBottom:10}}>Açıklama yok.</Text>)}
+                    {task.description ? (<View style={{flexDirection:'row', gap:5, marginBottom:10}}><AlignLeft size={14} color={currentColors.subText} style={{marginTop:2}} /><Text style={{color: currentColors.text, fontSize:14, flex:1}}>{task.description}</Text></View>) : (<Text style={{color: currentColors.subText, fontSize:12, fontStyle:'italic', marginBottom:10}}>{t('task_no_desc')}</Text>)}
                     <View style={{flexDirection:'row', justifyContent:'flex-end', gap:15, marginTop:5}}>
                         <TouchableOpacity onPress={() => {askConfirmation( t('delete_btn'), t('task_delete_confirm'), () => deleteTask(task), true );
 }}><Trash2 size={16} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontSize:12, fontWeight:'bold'}}>{t('delete')}</Text></TouchableOpacity>
@@ -2510,8 +2508,8 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
     );
   };
 
-  if (isAuthLoading) return <View style={[styles.container, { justifyContent:'center', alignItems:'center', backgroundColor: currentColors.bg }]}><ActivityIndicator size="large" color={COLORS.primary}/></View>;
-
+// Eğer Splash animasyonu daha bitmediyse, Auth yüklense bile Splash göster.
+if (!isSplashAnimationComplete) { return (<AnimatedSplash onAnimationFinish={() => {setIsSplashAnimationComplete(true); setShowAuth(true);}} />  );}
   if (!user) {
     if (!showAuth) {
         // LandingPage'e artık rememberMe props'larını göndermiyoruz:
@@ -2546,7 +2544,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             {authMode === 'signup' && (
                 <View style={styles.authInputRow}>
                     <User size={20} color={currentColors.subText} />
-                    <TextInput value={username} onChangeText={setUsername} placeholder="Kullanıcı Adı" placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} autoCapitalize='none' />
+                    <TextInput value={username} onChangeText={setUsername} placeholder={t('social_search_tab_username')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} autoCapitalize='none' />
                 </View>
             )}
 
@@ -2556,7 +2554,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     value={email} 
                     onChangeText={setEmail} 
                     // Placeholder'ı değiştirdik:
-                    placeholder={authMode === 'login' ? "E-posta veya Kullanıcı Adı" : "E-posta"} 
+                    placeholder={authMode === 'login' ? t('auth_email_username_placeholder') : t('email')} 
                     placeholderTextColor={currentColors.subText} 
                     style={[styles.authInput, {color: currentColors.text}]} 
                     autoCapitalize='none' 
@@ -2567,7 +2565,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
 
             <View style={styles.authInputRow}>
                 <Lock size={20} color={currentColors.subText} />
-                <TextInput value={password} onChangeText={setPassword} placeholder="Şifre" placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} secureTextEntry />
+                <TextInput value={password} onChangeText={setPassword} placeholder={t('auth_password_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} secureTextEntry />
             </View>
 
             {/* --- YENİ YER: BENİ HATIRLA (Sadece Giriş Modunda) --- */}
@@ -2592,16 +2590,14 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             {/* 3. GİRİŞ BUTONU */}
             <TouchableOpacity onPress={handleAuth} style={[styles.createBtn, {marginTop: 10}]}>
                 <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>
-                    {authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}
+                    {authMode === 'login' ? t('auth_login_tab') : t('auth_signup_tab')}
                 </Text>
             </TouchableOpacity>
 
             {/* 4. ŞİFREMİ UNUTTUM BUTONU */}
                 {authMode === 'login' && (
                     <TouchableOpacity onPress={openResetModal} style={{ marginTop: 15, alignSelf: 'center', padding: 5 }}>
-                        <Text style={{ color: currentColors.subText, fontSize: 14, fontWeight: '500' }}>
-                            {t('forgot_password')}
-                        </Text>
+                        <Text style={{ color: currentColors.subText, fontSize: 14, fontWeight: '500' }}>{t('forgot_password')}</Text>
                     </TouchableOpacity>
                 )}
 
@@ -2609,7 +2605,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
         <View style={{marginTop: 20, gap: 10}}>
            <TouchableOpacity disabled={!request} onPress={() => promptAsync()} style={[styles.socialBtn, {backgroundColor: currentColors.surface, flexDirection:'row', gap:10, justifyContent: 'center'}]}>
               <Globe size={20} color={currentColors.text} /> 
-              <Text style={{color: currentColors.text, fontWeight:'600'}}>Google ile Devam Et</Text>
+              <Text style={{color: currentColors.text, fontWeight:'600'}}>{t('auth_google_continue')}</Text>
            </TouchableOpacity>
            
            {Platform.OS === 'ios' && (
@@ -2633,6 +2629,37 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 </TouchableOpacity>
             )}
         </View>
+        {/* --- CUSTOM TOAST (GÜNCELLENDİ) --- */}
+{customToast.visible && (
+    <View style={{ 
+        position: 'absolute', bottom: 100, left: 20, right: 20, 
+        backgroundColor: '#1e293b', padding: 15, borderRadius: 16, 
+        flexDirection: 'row', alignItems: 'center', gap: 12, 
+        shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10, zIndex: 9999 
+    }}>
+        <View style={{ 
+            width: 36, height: 36, borderRadius: 18, 
+            // Warning için renk koşulu eklendi (#f59e0b)
+            backgroundColor: customToast.type === 'error' ? '#ef4444' : 
+                           (customToast.type === 'warning' ? '#f59e0b' : 
+                           (customToast.type === 'info' ? '#3b82f6' : '#10b981')), 
+            alignItems: 'center', justifyContent: 'center' 
+        }}>
+            {customToast.type === 'success' && <Check size={18} color="#fff" />}
+            {customToast.type === 'error' && <X size={18} color="#fff" />}
+            {customToast.type === 'info' && <Bell size={18} color="#fff" />}
+            {/* Warning için ikon eklendi */}
+            {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
+        </View>
+        <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 11 }}>{customToast.message}</Text>
+        </View>
+        <TouchableOpacity onPress={() => setCustomToast({...customToast, visible: false})} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#334155', alignItems:'center', justifyContent:'center' }}>
+            <X size={14} color="#fff" />
+        </TouchableOpacity>
+    </View>
+)}
       </KeyboardAvoidingView>
     );
   }
@@ -2800,7 +2827,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     </ScrollView>
                 ) : (
                     <Text style={{ fontSize: 12, color: currentColors.subText, fontStyle: 'italic', paddingHorizontal: 5 }}>
-                    Planlanmış görev yok.
+                    {t('no_planned_tasks')}
                     </Text>
                 )}
                 </View>
@@ -3014,11 +3041,11 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                  // MİSAFİR İÇİN BOŞ EKRAN UYARISI
                  <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, marginTop:50}}>
                     <MessageCircle size={60} color={COLORS.primary} style={{opacity:0.5, marginBottom:20}}/>
-                    <Text style={{textAlign:'center', fontWeight:'bold', fontSize:18, color:currentColors.text, marginBottom:10}}>Mesajlaşma</Text>
-                    <Text style={{textAlign:'center', color:currentColors.subText, marginBottom:20}}>Arkadaşlarınla mesajlaşmak için kayıt olmalısın.</Text>
+                    <Text style={{textAlign:'center', fontWeight:'bold', fontSize:18, color:currentColors.text, marginBottom:10}}>{t('profile_edit_desc')}</Text>
+                    <Text style={{textAlign:'center', color:currentColors.subText, marginBottom:20}}>{t('messaging_guest_desc')}</Text>
                     {/* BURASI DEĞİŞTİ: handleLogout YERİNE Modal Açılıyor */}
                     <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, {paddingHorizontal:30}]}>
-                        <Text style={{color:'#fff', fontWeight:'bold'}}>Hesabı Oluştur</Text>
+                        <Text style={{color:'#fff', fontWeight:'bold'}}>{t('create_ac')}</Text>
                     </TouchableOpacity>
                  </View>
             ) : (
@@ -3140,7 +3167,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 {/* Gelen İstekler (Değişmedi) */}
                 {friendRequests.length > 0 && (
                     <View>
-                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>GELEN İSTEKLER</Text>
+                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>{t('social_pending_requests')}</Text>
                         {friendRequests.map(req => (
                             <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
                                 <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
@@ -3209,7 +3236,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                                         </View>
                                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                             <Text style={{ fontSize: 12, fontWeight: 'bold', color: contact.canAssignToMe ? COLORS.success : currentColors.subText }}>
-                                                {contact.canAssignToMe ? "AÇIK" : "KAPALI"}
+                                                {contact.canAssignToMe ? t('open_label') : t('closed_label')}
                                             </Text>
                                             <Switch 
                                                 value={contact.canAssignToMe} 
@@ -3373,15 +3400,15 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         <View style={{flex: 1}}>
                             <View style={{flexDirection:'row', alignItems:'center', gap: 6, marginBottom: 4}}>
                                 <Trophy size={18} color="#d97706" fill="#d97706" />
-                                <Text style={{fontSize: 12, fontWeight:'800', color: '#d97706', letterSpacing: 1}}>PREMIUM</Text>
+                                <Text style={{fontSize: 12, fontWeight:'800', color: '#d97706', letterSpacing: 1}}>{t('premium_short_desc')}</Text>
                             </View>
-                            <Text style={{fontSize: 16, fontWeight: 'bold', color: isDark ? '#fcd34d' : '#92400e'}}>Sınırları Kaldır</Text>
-                            <Text style={{fontSize: 12, color: isDark ? '#fde68a' : '#b45309', marginTop: 2}}>Reklamsız deneyim ve sınırsız özellikler.</Text>
+                            <Text style={{fontSize: 16, fontWeight: 'bold', color: isDark ? '#fcd34d' : '#92400e'}}>{t('premium_unlock')}</Text>
+                            <Text style={{fontSize: 12, color: isDark ? '#fde68a' : '#b45309', marginTop: 2}}>{t('premium_short_desc')}</Text>
                         </View>
                         <View style={{
                             backgroundColor: '#d97706', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20
                         }}>
-                            <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Yükselt</Text>
+                            <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>{t('premium_upgrade_btn')}</Text>
                         </View>
                     </View>
                 </TouchableOpacity>
@@ -3461,8 +3488,8 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                              </Text>
                              <Text style={{ color: currentColors.subText, fontSize: 11 }}>
                                 {hasPasswordProvider 
-                                    ? "Güvenliğin için düzenli değiştir" 
-                                    : "E-posta ile de giriş yapabilmek için"}
+                                    ? t('security_change_regular')
+                                    : t('login_with_email_info')}
                              </Text>
                         </View>
                     </View>
@@ -3743,10 +3770,11 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                             /* BAŞKASINA ATANIYORSA GÖSTERİLECEK UYARI */
                             <View style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
                                 <Text style={{ fontSize: 11, color: COLORS.warning, fontStyle: 'italic' }}>
-                                    ⓘ Bu görev {assignTarget.username} kişisinin varsayılan kategorisine düşecek.
+                                   {assignTarget && tFormat("task_assign_info", { name: assignTarget.username })}
                                 </Text>
                             </View>
-                        )}                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 }}><View style={{ flexDirection: 'row', gap: 5 }}><TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={[styles.iconToggle, isNotifOn && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]}><Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} /></TouchableOpacity><TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={[styles.iconToggle, isAlarmOn && { backgroundColor: '#fef2f2', borderColor: '#ef4444' }]}><AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} /></TouchableOpacity>{inputDueDate && <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={[styles.iconToggle, isEveryDayOn && { backgroundColor: '#f0fdf4', borderColor: '#10b981' }, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}><CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} /><Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>{t('every_day')}</Text></TouchableOpacity>}</View><View style={{ flexDirection: 'row', gap: 5 }}>{isNotifOn && <TextInput value={notifInput} onChangeText={handleNotifInputChange} placeholder="09:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.primary, borderColor: COLORS.primary }]} maxLength={5} onSubmitEditing={addTask} />}{isAlarmOn && <TextInput value={alarmInput} onChangeText={handleAlarmInputChange} placeholder="07:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.danger, borderColor: COLORS.danger }]} maxLength={5} onSubmitEditing={addTask} />}</View></View>
+                        )}                   
+                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 }}><View style={{ flexDirection: 'row', gap: 5 }}><TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={[styles.iconToggle, isNotifOn && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]}><Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} /></TouchableOpacity><TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={[styles.iconToggle, isAlarmOn && { backgroundColor: '#fef2f2', borderColor: '#ef4444' }]}><AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} /></TouchableOpacity>{inputDueDate && <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={[styles.iconToggle, isEveryDayOn && { backgroundColor: '#f0fdf4', borderColor: '#10b981' }, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}><CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} /><Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>{t('every_day')}</Text></TouchableOpacity>}</View><View style={{ flexDirection: 'row', gap: 5 }}>{isNotifOn && <TextInput value={notifInput} onChangeText={handleNotifInputChange} placeholder="09:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.primary, borderColor: COLORS.primary }]} maxLength={5} onSubmitEditing={addTask} />}{isAlarmOn && <TextInput value={alarmInput} onChangeText={handleAlarmInputChange} placeholder="07:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.danger, borderColor: COLORS.danger }]} maxLength={5} onSubmitEditing={addTask} />}</View></View>
                 </View>
             )}
             <View style={styles.inputMainRow}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(!isInputExpanded); }} style={styles.expandBtn}>{isInputExpanded ? <X size={20} color={currentColors.subText} /> : <Sliders size={20} color={currentColors.subText} />}</TouchableOpacity><TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('addTask')} placeholderTextColor={currentColors.subText} style={[styles.mainInput, { color: currentColors.text }]} onFocus={() => { /* Artık oto açılmıyor */ }} onSubmitEditing={addTask} /><TouchableOpacity onPress={addTask} style={[styles.sendBtn, { backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0') }]}><Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} /></TouchableOpacity></View>
@@ -3825,14 +3853,14 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             <View style={{backgroundColor: currentColors.surface, borderRadius:24, padding:25}}>
                 
                 <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}>
-                    <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text}}>Hesabı Oluştur</Text>
+                    <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text}}>{t('create_ac')}</Text>
                     <TouchableOpacity onPress={() => setIsGuestModalOpen(false)}>
                         <X size={24} color={currentColors.subText} />
                     </TouchableOpacity>
                 </View>
 
                 <Text style={{color:currentColors.subText, marginBottom:20}}>
-                    Verilerinizi korumak için bir kullanıcı adı, e-posta ve şifre belirleyin. Mevcut verileriniz silinmeyecek.
+                    {t('protect_data_msg')}
                 </Text>
 
                 <View style={{gap:15}}>
@@ -3842,7 +3870,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         <TextInput 
                             value={username} 
                             onChangeText={setUsername} 
-                            placeholder="Kullanıcı Adı" 
+                            placeholder={t('social_search_tab_username')}
                             placeholderTextColor={currentColors.subText} 
                             style={[styles.authInput, {color: currentColors.text}]} 
                             autoCapitalize='none' 
@@ -3869,7 +3897,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         <TextInput 
                             value={password} 
                             onChangeText={setPassword} 
-                            placeholder="Şifre" 
+                            placeholder={t('auth_password_placeholder')}
                             placeholderTextColor={currentColors.subText} 
                             style={[styles.authInput, {color: currentColors.text}]} 
                             secureTextEntry 
@@ -3883,7 +3911,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         {isAuthLoading ? (
                             <ActivityIndicator color="#fff" />
                         ) : (
-                            <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>Kaydı Tamamla</Text>
+                            <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>{t('complete_profile')}</Text>
                         )}
                     </TouchableOpacity>
                 </View>
@@ -3992,9 +4020,9 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     
                     <View style={{ marginBottom: 20 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>Gorev Detayi</Text>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{t('task_detail_title')}</Text>
                         <TouchableOpacity onPress={() => setSelectedTask(null)}>
-                        <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>Kapat</Text>
+                        <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('close_btn')}</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -4002,12 +4030,12 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         <TouchableOpacity 
                         onPress={() => setTaskModalTab('details')} 
                         style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'details' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}>
-                        <Text style={{ fontWeight: '600', color: taskModalTab === 'details' ? currentColors.text : currentColors.subText }}>Duzenle</Text>
+                        <Text style={{ fontWeight: '600', color: taskModalTab === 'details' ? currentColors.text : currentColors.subText }}>{t('edit_label')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
                         onPress={() => setTaskModalTab('chat')} 
                         style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'chat' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}>
-                        <Text style={{ fontWeight: '600', color: taskModalTab === 'chat' ? currentColors.text : currentColors.subText }}>Tartisma</Text>
+                        <Text style={{ fontWeight: '600', color: taskModalTab === 'chat' ? currentColors.text : currentColors.subText }}>{t('messaging_title')}</Text>
                         </TouchableOpacity>
                     </View>
                     </View>
@@ -4018,22 +4046,22 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         <ScrollView showsVerticalScrollIndicator={false}>
                             <View style={{ gap: 15 }}>
                             <View>
-                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>Baslik</Text>
+                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('title_label')}</Text>
                                 <TextInput value={detailText} onChangeText={setDetailText} multiline={true} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, minHeight: 60, borderRadius: 12, paddingHorizontal: 15, paddingTop:15 }]} />
                             </View>
                             <View>
-                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>Aciklama</Text>
-                                <TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder="Not ekle..." placeholderTextColor={currentColors.subText} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 100, borderRadius: 12, paddingHorizontal: 15, paddingTop: 15, textAlignVertical: 'top' }]} />
+                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('description_label')}</Text>
+                                <TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder= {t('add_note_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 100, borderRadius: 12, paddingHorizontal: 15, paddingTop: 15, textAlignVertical: 'top' }]} />
                             </View>
                             <View>
-                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>Son Tarih</Text>
+                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('due_date_label')}</Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TextInput value={detailDueDate} onChangeText={handleDetailDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, borderRadius: 12, paddingHorizontal: 15, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} />
+                                <TextInput value={detailDueDate} onChangeText={handleDetailDueDateChange} placeholder="dd-mm-yyyy" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, borderRadius: 12, paddingHorizontal: 15, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} />
                                 <TouchableOpacity onPress={() => openDatePicker('detail')} style={{ backgroundColor: COLORS.primary, padding: 10, borderTopRightRadius: 12, borderBottomRightRadius: 12, height: 50, justifyContent: 'center' }}><CalendarIcon size={24} color="#fff" /></TouchableOpacity>
                                 </View>
                             </View>
                             <TouchableOpacity onPress={saveTaskDetail} style={[styles.createBtn, { backgroundColor: COLORS.primary, marginTop: 10 }]}>
-                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Kaydet</Text>
+                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save')}</Text>
                             </TouchableOpacity>
                             </View>
                         </ScrollView>
@@ -4072,7 +4100,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                             ListEmptyComponent={
                                 <View style={{ alignItems: 'center', marginTop: 50, opacity: 0.5 }}>
                                 <MessageCircle size={40} color={currentColors.subText} />
-                                <Text style={{ color: currentColors.subText, marginTop: 10 }}>Henuz yorum yok.</Text>
+                                <Text style={{ color: currentColors.subText, marginTop: 10 }}>{t('no_comments_yet')}</Text>
                                 </View>
                             }
                             />
@@ -4081,7 +4109,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                             <TextInput
                                 value={taskCommentInput}
                                 onChangeText={setTaskCommentInput}
-                                placeholder="Yorum yaz..."
+                                placeholder={t('add_comment_placeholder')}
                                 placeholderTextColor={currentColors.subText}
                                 style={{ flex: 1, backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderRadius: 20, paddingHorizontal: 15, height: 40, color: currentColors.text }}
                             />
@@ -4145,7 +4173,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             {/* TABLAR (Ommio / Rehber) */}
             <View style={{ flexDirection: 'row', marginBottom: 20, backgroundColor: currentColors.surface, borderRadius: 12, padding: 4 }}>
                 <TouchableOpacity onPress={() => setNetworkTab('ommio')} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'ommio' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}>
-                    <Text style={{ fontWeight: 'bold', color: currentColors.text }}>Kullanıcı Adı</Text>
+                    <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('auth_username_placeholder')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => { setNetworkTab('contacts'); fetchDeviceContacts(); }} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'contacts' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}>
                     <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('find_from_contacts')}</Text>
@@ -4155,7 +4183,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             {/* --- OMMIO ARAMA SEKMESİ --- */}
             {networkTab === 'ommio' ? (
                 <>
-                    <Text style={{ color: currentColors.subText, marginBottom: 10 }}>Yeni bir arkadaş eklemek için kullanıcı adını gir:</Text>
+                    <Text style={{ color: currentColors.subText, marginBottom: 10 }}>{t('add_friend_prompt')}</Text>
 
                     {/* ARAMA KUTUSU VE BUTONU */}
                     <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
@@ -4175,7 +4203,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     {/* GELEN İSTEKLER LİSTESİ */}
                     {friendRequests.length > 0 && (
                         <View style={{ marginBottom: 20 }}>
-                            <Text style={{ fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>GELEN İSTEKLER</Text>
+                            <Text style={{ fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>{t('social_pending_requests')}</Text>
                             {friendRequests.map(req => (
                                 <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
                                     <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
@@ -4213,7 +4241,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
       
       <Modal visible={isLangModalOpen} transparent animationType="fade"><View style={styles.modalBackdrop}><View style={[styles.catModal, { backgroundColor: currentColors.surface, maxHeight: '80%' }]}><Text style={[styles.catModalTitle, {color: currentColors.text}]}>{t('language')}</Text><FlatList data={LANGUAGES} keyExtractor={item => item.code} renderItem={({item}) => (<TouchableOpacity onPress={() => { setLang(item.code as LangCode); setIsLangModalOpen(false); }} style={{flexDirection:'row', alignItems:'center', padding:15, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}><Text style={{fontSize:24, marginRight:15}}>{item.flag}</Text><Text style={{fontSize:16, color: currentColors.text, fontWeight: lang === item.code ? 'bold' : 'normal'}}>{item.label}</Text>{lang === item.code && <Check size={18} color={COLORS.success} style={{marginLeft:'auto'}} />}</TouchableOpacity>)} /><TouchableOpacity onPress={() => setIsLangModalOpen(false)} style={{marginTop:15, padding:10, alignItems:'center'}}><Text style={{color:COLORS.danger, fontWeight:'bold'}}>{t('cancel')}</Text></TouchableOpacity></View></View></Modal>
       <Modal visible={!!activeAlarmTask} transparent animationType="slide"><View style={styles.alarmOverlay}><View style={[styles.alarmCard, { backgroundColor: currentColors.surface }]}><Text style={[styles.alarmTitle, {color: currentColors.text}]}>{t('alarm')}</Text><Text style={{color: currentColors.text}}>{activeAlarmTask?.text}</Text><TouchableOpacity onPress={() => setActiveAlarmTask(null)} style={styles.alarmCloseBtn}><Text style={{color:'#fff'}}>{t('close')}</Text></TouchableOpacity></View></View></Modal>
-      {/* --- ŞİFRE SIFIRLAMA MODALI --- */}
+      {/* --- ŞİFRE SIFIRLAMA MODALI (GÜNCELLENDİ) --- */}
         <Modal visible={isResetModalVisible} transparent animationType="fade">
             {/* Arka planı karartma ve tıklayınca kapatma */}
             <TouchableOpacity 
@@ -4221,7 +4249,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 onPress={() => { setResetModalVisible(false); Keyboard.dismiss(); }} 
                 style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}
             >
-                {/* Modal İçeriği (Tıklamayı engellemek için TouchableWithoutFeedback kullanıyoruz) */}
+                {/* Modal İçeriği */}
                 <TouchableWithoutFeedback>
                     <View style={{ width: '100%', maxWidth: 360, backgroundColor: currentColors.surface, padding: 25, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
                         
@@ -4230,10 +4258,10 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                                 <Lock size={30} color={COLORS.primary} />
                             </View>
                             <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text, textAlign:'center' }}>
-                                Şifreni mi Unuttun?
+                                {t('auth_forgot_pass_modal_title') || "Şifreni Sıfırla"}
                             </Text>
                             <Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 10, fontSize: 14, lineHeight: 20 }}>
-                                Hesabına ait <b>E-posta adresini</b> veya <b>Kullanıcı Adını</b> gir. Sana sıfırlama bağlantısı göndereceğiz.
+                                {t('auth_forgot_pass_desc') || "Hesabına bağlı e-posta adresini veya kullanıcı adını gir."}
                             </Text>
                         </View>
 
@@ -4250,6 +4278,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                                     value={resetInput}
                                     onChangeText={setResetInput}
                                     style={{ flex: 1, paddingHorizontal: 12, color: currentColors.text, fontSize: 16 }}
+                                    // Placeholder burası önemli:
                                     placeholder="E-posta veya Kullanıcı Adı"
                                     placeholderTextColor={currentColors.subText}
                                     autoCapitalize="none"
@@ -4264,7 +4293,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                                 onPress={() => setResetModalVisible(false)} 
                                 style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
                             >
-                                <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>İptal</Text>
+                                <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{t('cancel_btn')}</Text>
                             </TouchableOpacity>
                             
                             <TouchableOpacity 
@@ -4274,7 +4303,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                             >
                                 {isResetLoading && <ActivityIndicator size="small" color="#fff" />}
                                 <Text style={{ color: '#fff', fontWeight: 'bold' }}>
-                                    {isResetLoading ? "Gönderiliyor" : "Gönder"}
+                                    {isResetLoading ? "Gönderiliyor..." : "Gönder"}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -4282,56 +4311,6 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     </View>
                 </TouchableWithoutFeedback>
             </TouchableOpacity>
-        </Modal>
-     {/* --- ŞİFRE SIFIRLAMA MODALI --- */}
-        <Modal visible={isForgotPasswordModalOpen} transparent animationType="fade">
-            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-                <View style={{ width: '100%', maxWidth: 350, backgroundColor: currentColors.surface, padding: 25, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
-                    
-                    <View style={{alignItems:'center', marginBottom:20}}>
-                        <View style={{width:50, height:50, borderRadius:25, backgroundColor:'#e0e7ff', alignItems:'center', justifyContent:'center', marginBottom:10}}>
-                            <Lock size={24} color={COLORS.primary} />
-                        </View>
-                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('forgot_password')}</Text>
-                        <Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 5, fontSize: 13 }}>
-                            Hesabınıza kayıtlı e-posta adresini girin. Size şifre sıfırlama bağlantısı göndereceğiz.
-                        </Text>
-                    </View>
-
-                    <View style={{ marginBottom: 20 }}>
-                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5, marginLeft: 4 }}>E-Posta Adresi</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 12, paddingHorizontal: 15, height: 50, backgroundColor: isDark ? '#1e293b' : '#f8fafc' }}>
-                            <Mail size={18} color={currentColors.subText} />
-                            <TextInput
-                                value={resetEmailInput}
-                                onChangeText={setResetEmailInput}
-                                style={{ flex: 1, paddingHorizontal: 10, color: currentColors.text, fontSize: 15 }}
-                                placeholder="ornek@email.com"
-                                placeholderTextColor={currentColors.subText}
-                                autoCapitalize="none"
-                                keyboardType="email-address"
-                            />
-                        </View>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                        <TouchableOpacity 
-                            onPress={() => setIsForgotPasswordModalOpen(false)} 
-                            style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
-                        >
-                            <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{t('cancel_btn')}</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity 
-                            onPress={handleSendResetEmail} 
-                            style={{ flex: 1, padding: 15, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center' }}
-                        >
-                            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Gönder</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                </View>
-            </View>
         </Modal>
      <Modal visible={showOnboarding} animationType="fade">
     <View style={{flex:1, backgroundColor: COLORS.primary, padding: 20, justifyContent:'center', alignItems:'center'}}>
@@ -4341,8 +4320,8 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
                     <ListTodo size={60} color="#fff" />
                 </View>
-                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Hoş Geldin!</Text>
-                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Ommio ile görevlerini organize et, hayatını düzene sok. Başlamak için hazırsan kaydır!</Text>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>{t('welcome')}</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>{t('onboard_step1_desc')}</Text>
             </View>
         )}
         {onboardingStep === 1 && (
@@ -4350,8 +4329,8 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                  <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
                     <Repeat size={60} color="#fff" />
                 </View>
-                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Alışkanlıklar Kazan</Text>
-                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Her gün %1 daha iyi ol. Zinciri kırma ve yeni alışkanlıklarını takip et.</Text>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>{t('onboard_step2_title')}</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>{t('onboard_step2_desc')}</Text>
             </View>
         )}
         {onboardingStep === 2 && (
@@ -4359,8 +4338,8 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                  <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
                     <Users size={60} color="#fff" />
                 </View>
-                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>Sosyal Ol</Text>
-                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>Arkadaşlarınla görev paylaş, sohbet et ve birbirinizi motive edin.</Text>
+                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>{t('onboard_step3_title')}</Text>
+                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>{t('onboard_step3_desc')}</Text>
             </View>
         )}
 
@@ -4376,7 +4355,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     await updateDoc(doc(db, "users", user.uid), { hasSeenOnboarding: true });
                 }
              }} style={{backgroundColor:'#fff', paddingHorizontal:20, paddingVertical:10, borderRadius:20}}>
-                <Text style={{color:COLORS.primary, fontWeight:'bold'}}>{onboardingStep === 2 ? 'Başla' : 'İleri'}</Text>
+                <Text style={{color:COLORS.primary, fontWeight:'bold'}}>{onboardingStep === 2 ? t('start_btn') : t('next_btn')}</Text>
              </TouchableOpacity>
         </View>
     </View>
@@ -4477,7 +4456,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                                 flexShrink: 0 // Alt kısım sıkışmasın
                             }}>
                                 <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10, textTransform: 'uppercase' }}>
-                                    Yeni Kategori Oluştur
+                                    {t('create_new_category')}
                                 </Text>
 
                                 {/* Input */}
@@ -4545,7 +4524,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                                     }}
                                 >
                                     <Plus size={20} color="#fff" strokeWidth={3} />
-                                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Kategori Ekle</Text>
+                                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>{t('create_new_category')}</Text>
                                 </TouchableOpacity>
                             </View>
 
@@ -4559,11 +4538,11 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
         <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
            {/* --- PROFİL DÜZENLEME MODALI İÇERİĞİ --- */}
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{width:'85%', backgroundColor: currentColors.surface, padding: 25, borderRadius: 24}}>
-                <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text, marginBottom: 5, textAlign:'center'}}>Profili Düzenle</Text>
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 20, textAlign:'center'}}>Arkadaşlarınız sizi bu isimle görecek.</Text>
+                <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text, marginBottom: 5, textAlign:'center'}}>{t('profile_edit_title')}</Text>
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 20, textAlign:'center'}}>{t('profile_edit_desc')}</Text>
                 
                 {/* 1. GÖRÜNEN İSİM (DISPLAY NAME) */}
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>Görünen İsim</Text>
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>{t('profile_display_name')}</Text>
                 <View style={{flexDirection:'row', alignItems:'center', backgroundColor: isDark?'#334155':'#f8fafc', borderWidth:1, borderColor: isDark?'#475569':'#e2e8f0', borderRadius:12, paddingHorizontal:15, marginBottom:15}}>
                     <User size={18} color={COLORS.primary} />
                     <TextInput 
@@ -4578,7 +4557,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 </View>
 
                 {/* 2. KULLANICI ADI (USERNAME) */}
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>Kullanıcı Adı (Benzersiz)</Text>
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>{t('profile_username_label')}</Text>
                 <View style={{flexDirection:'row', alignItems:'center', backgroundColor: isDark?'#1e293b':'#f1f5f9', borderWidth:1, borderColor: isDark?'#334155':'#cbd5e1', borderRadius:12, paddingHorizontal:15, marginBottom:25}}>
                     <Text style={{color: currentColors.subText, fontWeight:'bold', fontSize:16}}>@</Text>
                     <TextInput 
@@ -4593,10 +4572,10 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
 
                 <View style={{flexDirection:'row', gap: 12}}>
                     <TouchableOpacity onPress={() => setIsEditProfileVisible(false)} style={{flex:1, padding:15, alignItems:'center', borderRadius:14, backgroundColor: isDark?'#334155':'#f1f5f9'}}>
-                        <Text style={{color: currentColors.text, fontWeight:'bold'}}>İptal</Text>
+                        <Text style={{color: currentColors.text, fontWeight:'bold'}}>{t('cancel_btn')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleUpdateProfile} style={{flex:1, padding:15, alignItems:'center', borderRadius:14, backgroundColor: COLORS.primary, shadowColor: COLORS.primary, shadowOpacity:0.3, shadowRadius:5}}>
-                        <Text style={{color: '#fff', fontWeight:'bold'}}>Kaydet</Text>
+                        <Text style={{color: '#fff', fontWeight:'bold'}}>{t('save')}</Text>
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
@@ -4608,7 +4587,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 <View style={[styles.catModal, { backgroundColor: currentColors.surface, height: '70%' }]}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15}}>
                         <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text}}>
-                            {friendTasksModal.friendName} - Durum
+                            {friendTasksModal.friendName} {t('status_label')}
                         </Text>
                         <TouchableOpacity onPress={()=>setFriendTasksModal({...friendTasksModal, visible:false})}>
                             <X size={24} color={currentColors.text} />
@@ -4616,7 +4595,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     </View>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {friendTasksModal.tasks.length === 0 ? (
-                            <Text style={{textAlign:'center', color:currentColors.subText, marginTop:20}}>t('no_tasks_assigned')</Text>
+                            <Text style={{textAlign:'center', color:currentColors.subText, marginTop:20}}>{t('no_tasks_assigned')}</Text>
                         ) : (
                             friendTasksModal.tasks.map(t => (
                                 <View key={t.id} style={{padding:15, borderRadius:12, backgroundColor: isDark?'#334155':'#f8fafc', marginBottom:10, borderLeftWidth:4, borderLeftColor: t.completed ? COLORS.success : COLORS.warning}}>
@@ -4638,9 +4617,9 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
       <Modal visible={isPasswordModalOpen} transparent animationType="fade">
         <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
             <View style={{width:'85%', backgroundColor: currentColors.surface, padding: 20, borderRadius: 20}}>
-                <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text, marginBottom: 15}}>Yeni Şifre Belirle</Text>
+                <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text, marginBottom: 15}}>{t('new_password_title')}</Text>
                 
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 5}}>Yeni Şifreniz</Text>
+                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 5}}>{t('new_password_title')}</Text>
                 <View style={{flexDirection:'row', alignItems:'center', borderWidth:1, borderColor: isDark?'#334155':'#e2e8f0', borderRadius:12, paddingHorizontal:10, marginBottom:20}}>
                     <Lock size={16} color={currentColors.subText} />
                     <TextInput 
@@ -4664,38 +4643,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             </View>
         </View>
       </Modal>
-        {/* --- CUSTOM TOAST (LANDING PAGE STİLİ) --- */}
-{/* --- CUSTOM TOAST (GÜNCELLENDİ) --- */}
-{customToast.visible && (
-    <View style={{ 
-        position: 'absolute', bottom: 100, left: 20, right: 20, 
-        backgroundColor: '#1e293b', padding: 15, borderRadius: 16, 
-        flexDirection: 'row', alignItems: 'center', gap: 12, 
-        shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10, zIndex: 9999 
-    }}>
-        <View style={{ 
-            width: 36, height: 36, borderRadius: 18, 
-            // Warning için renk koşulu eklendi (#f59e0b)
-            backgroundColor: customToast.type === 'error' ? '#ef4444' : 
-                           (customToast.type === 'warning' ? '#f59e0b' : 
-                           (customToast.type === 'info' ? '#3b82f6' : '#10b981')), 
-            alignItems: 'center', justifyContent: 'center' 
-        }}>
-            {customToast.type === 'success' && <Check size={18} color="#fff" />}
-            {customToast.type === 'error' && <X size={18} color="#fff" />}
-            {customToast.type === 'info' && <Bell size={18} color="#fff" />}
-            {/* Warning için ikon eklendi */}
-            {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
-        </View>
-        <View style={{ flex: 1 }}>
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
-            <Text style={{ color: '#94a3b8', fontSize: 11 }}>{customToast.message}</Text>
-        </View>
-        <TouchableOpacity onPress={() => setCustomToast({...customToast, visible: false})} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#334155', alignItems:'center', justifyContent:'center' }}>
-            <X size={14} color="#fff" />
-        </TouchableOpacity>
-    </View>
-)}
+
 {/* --- CUSTOM CONFIRM MODAL --- */}
 <Modal visible={confirmModal.visible} transparent animationType="fade">
     <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
@@ -4713,7 +4661,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))} 
                     style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
                 >
-                    <Text style={{ color: currentColors.text, fontWeight: '600' }}>Vazgeç</Text>
+                    <Text style={{ color: currentColors.text, fontWeight: '600' }}>{t('cancel_btn')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -4724,7 +4672,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: confirmModal.isDestructive ? COLORS.danger : COLORS.primary, alignItems: 'center' }}
                 >
                     <Text style={{ color: '#fff', fontWeight: 'bold' }}>
-                        {confirmModal.isDestructive ? 'Sil' : 'Onayla'}
+                        {confirmModal.isDestructive ? t('delete') : t('confirm_btn')}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -4741,7 +4689,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             <View style={[premiumStyles.adContainer, {backgroundColor: '#000'}]}>
                 
                 <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}>
-                   <Text style={{color:'#fff', fontSize:12, fontWeight:'bold', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>REKLAM / AD</Text>
+                   <Text style={{color:'#fff', fontSize:12, fontWeight:'bold', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>{t('ad_label_full')}</Text>
                 </View>
 
                 {/* --- BURASI GOOGLE ADS ALANI --- */}
@@ -4765,9 +4713,9 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     ]}
                 >
                     {adCountdown > 0 ? (
-                        <Text style={{color:'#aaa', fontWeight:'bold'}}>Reklamı Atla: {adCountdown}</Text>
+                        <Text style={{color:'#aaa', fontWeight:'bold'}}>{t('ad_skip')} , {adCountdown}</Text>
                     ) : (
-                        <Text style={{color:'#000', fontWeight:'bold'}}>Reklamı Kapat ✕</Text>
+                        <Text style={{color:'#000', fontWeight:'bold'}}>{t('ad_close')} ✕</Text>
                     )}
                 </TouchableOpacity>
             </View>
@@ -4787,10 +4735,10 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                         <Trophy size={40} color="#d97706" fill="#d97706" />
                     </View>
                     <Text style={[premiumStyles.title, { color: isDark ? '#fff' : '#1e293b' }]}>
-                        Sınırları Kaldır
+                        {t('premium_unlock')}
                     </Text>
                     <Text style={[premiumStyles.subtitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>
-                        Ommio Premium ile tam potansiyeline ulaş.
+                        {t('premium_subtitle')}
                     </Text>
                 </View>
 
@@ -4799,22 +4747,22 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     {/* Madde 1 */}
                     <View style={premiumStyles.featureItem}>
                         <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Reklamsız deneyim</Text>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_ads')}</Text>
                     </View>
                     {/* Madde 2 */}
                     <View style={premiumStyles.featureItem}>
                         <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Sınırsız alışkanlık takibi</Text>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_habits')}</Text>
                     </View>
                     {/* Madde 3 */}
                     <View style={premiumStyles.featureItem}>
                         <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Gelişmiş istatistikler</Text>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_stats')}</Text>
                     </View>
                     {/* Madde 4 */}
                     <View style={premiumStyles.featureItem}>
                         <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>Özel temalar ve ikonlar</Text>
+                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_themes')}</Text>
                     </View>
                 </View>
 
@@ -4826,20 +4774,20 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                              try {
                                 if(user) {
                                     await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
-                                    showToast("Harika!", "Premium üyelik aktif edildi.", 'success');
+                                    showToast(t('great_label'), t('premium_activated_msg'), 'success');
                                     setIsUpsellVisible(false);
                                 }
                             } catch(e) { console.log(e); }
                         }}
                         style={premiumStyles.ctaButton}
                     >
-                        <Text style={premiumStyles.ctaText}>Premium'a Geç</Text>
-                        <Text style={premiumStyles.ctaSubText}>sadece 29.99₺ / ay</Text>
+                        <Text style={premiumStyles.ctaText}>{t('premium_cta')}</Text>
+                        <Text style={premiumStyles.ctaSubText}>{t('premium_price')}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={() => setIsUpsellVisible(false)} style={premiumStyles.secondaryButton}>
                         <Text style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: 13, fontWeight: '600' }}>
-                            Şimdilik reklamlarla devam et
+                            {t('keep_ads')}
                         </Text>
                     </TouchableOpacity>
                 </View>

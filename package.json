@@ -3,12 +3,12 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-  "start": "expo start",
-  "android": "expo run:android",
-  "ios": "expo run:ios",
-  "web": "expo start --web",
-  
-"build": "npx expo export -p web --output-dir dist && npx ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/generate-sitemap.ts"},
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "build": "npx expo export -p web --output-dir dist && npx ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/generate-sitemap.ts"
+  },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -48,7 +48,6 @@
     "react-native-android-widget": "^0.17.2",
     "react-native-calendars": "^1.1313.0",
     "react-native-gesture-handler": "~2.28.0",
-    "react-native-google-mobile-ads": "^16.0.0",
     "react-native-markdown-display": "^7.0.2",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",

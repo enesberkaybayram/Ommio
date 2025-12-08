@@ -5,23 +5,24 @@
     "scheme": "ommioapp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "../../assets/Logo/Icon.png",
+    "icon": "./assets/Logo/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F8FAFC"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.seninadin.ommio",
-      "googleMobileAdsAppId": "ca-app-pub-3940256099942544~1458002511"
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "../../assets/Logo/Icon.png",
-        "backgroundColor": "#ffffff",
-        "googleMobileAdsAppId": "ca-app-pub-3940256099942544~3347511713"
+        "foregroundImage": "./assets/Logo/Icon.png",
+        "backgroundColor": "#ffffff"
       },
       "package": "com.seninadin.ommio"
     },
@@ -34,10 +35,8 @@
       "backgroundColor": "#ffffff",
       "description": "Ommio: Zaman Yönetimi ve Görev Takibi"
     },
-    "react-native-google-mobile-ads": {
-      "android_app_id": "ca-app-pub-3940256099942544~3347511713",
-      "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
-    },
+
+    
     "plugins": [
       [
         "react-native-android-widget",
@@ -52,9 +51,11 @@
           ]
         }
       ],
-      "react-native-google-mobile-ads",
       "expo-localization",
       "expo-router",
+        {
+          "origin": "https://www.ommio.app"
+        },
       "expo-web-browser"
     ],
     "extra": {
