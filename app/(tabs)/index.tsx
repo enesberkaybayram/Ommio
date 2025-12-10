@@ -9,7 +9,7 @@ import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import * as SMS from 'expo-sms';
 import { WidgetTaskHandler } from '../../components/widget-task-handler'; // Dosya yolunuza göre düzeltin
-// AŞAĞIDAKİ GİBİ Prompt'u ekleyin:
+// AŞAĞIDAKİ GİBİ Prompt'u ekleyin
 import { Prompt } from 'expo-auth-session';
 import * as Localization from 'expo-localization';
 import {
@@ -85,6 +85,7 @@ import { initializeApp } from "firebase/app";
 import {
     createUserWithEmailAndPassword,
     EmailAuthProvider, // YENİ: getAuth yerine bunu kullanacağız
+
 
 
 
