@@ -3,28 +3,38 @@
     "name": "Ommio",
     "slug": "ommio",
     "scheme": "ommioapp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/Logo/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F8FAFC"
+      "backgroundColor": "#6366F1"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.seninadin.ommio",
+      "userInterfaceStyle": "automatic",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["remote-notification", "fetch"]
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/Logo/Icon.png",
+        "userInterfaceStyle": "automatic",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.seninadin.ommio"
+      "package": "com.seninadin.ommio",
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK"
+      ]
     },
     "web": {
       "name": "Ommio",
@@ -35,27 +45,37 @@
       "backgroundColor": "#ffffff",
       "description": "Ommio: Zaman Yönetimi ve Görev Takibi"
     },
-
-    
     "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/Logo/icon.png",
+          "color": "#6366F1",
+          "sounds": []
+        }
+      ],
       [
         "react-native-android-widget",
         {
           "widgets": [
             {
               "name": "OmmioWidget",
-              "label": "Ommio Günlük",
-              "minWidth": "280dp",
-              "minHeight": "140dp"
+              "label": "Ommio Günlük Özet",
+              "minWidth": "320dp",
+              "minHeight": "200dp",
+              "description": "Bugünkü görevlerini ve alışkanlıklarını gör.",
+              "previewImage": "./assets/widget-preview.png"
             }
           ]
         }
       ],
       "expo-localization",
-      "expo-router",
+      [
+        "expo-router",
         {
-          "origin": "https://www.ommio.app"
-        },
+          "origin": "https://ommio.app"
+        }
+      ],
       "expo-web-browser"
     ],
     "extra": {

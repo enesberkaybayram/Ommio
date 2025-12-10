@@ -1,0 +1,391 @@
+2. Premium Ödeme Sistemi Nasıl Yapılır?
+
+Bu işin en kritik ve "kurumsal" kısmıdır.
+
+KURAL: Apple App Store ve Google Play Store, uygulama içindeki dijital özelliklerin (Premium üyelik gibi) satışı için kendi ödeme sistemlerini (In-App Purchase - IAP) kullanmanı zorunlu kılar.
+
+Uygulama içine "Kredi Kartı Gir" veya "Stripe ile Öde" koyarsan uygulaman reddedilir.
+
+Apple/Google her satıştan %15-%30 komisyon alır.
+
+En Kolay Çözüm: RevenueCat In-App Purchase (IAP) kodlamak çok zordur (Sunucu doğrulama, makbuz okuma vs.). Bu yüzden sektör standardı RevenueCat kullanmaktır. Hem iOS hem Android'i tek bir kodla yönetirsin.
+
+Adım Adım Yol Haritası:
+
+Hesap Kurulumları:
+
+RevenueCat hesabı aç.
+
+Apple App Store Connect'te "Agreements, Tax, and Banking" bölümünü doldur (Banka hesabı girmezsen ödeme alamazsın).
+
+Google Play Console'da ödeme profilini oluştur.
+
+Paket Yükleme:
+
+Bash
+npx expo install react-native-purchases
+App.json Ayarı (Eğer Expo kullanıyorsan): app.json dosyana şu plugin'i ekle:
+
+JSON
+"plugins": [
+  ["react-native-purchases", { "googlePlayApiKey": "...", "iosApiKey": "..." }]
+]
+Kod Entegrasyonu:
+
+Aşağıda, uygulamanın Premium satın alma ekranı için hazırladığım (RevenueCat mantığına uygun) örnek bir Paywall (Ödeme Duvarı) kodu var.
+
+Bunu mevcut kodundaki "Premium'a Geç" butonuna bağlayacağız.
+
+TypeScript
+// --- GEREKLİ IMPORTLAR ---
+import Purchases, { PurchasesPackage } from 'react-native-purchases';
+
+// --- UYGULAMA BAŞLARKEN (useEffect içinde) ---
+useEffect(() => {
+    // RevenueCat'ten aldığın API Key'ler
+    const setupPurchases = async () => {
+        if (Platform.OS === 'ios') {
+            await Purchases.configure({ apiKey: "appl_Senin_RevenueCat_iOS_Keyin" });
+        } else if (Platform.OS === 'android') {
+            await Purchases.configure({ apiKey: "goog_Senin_RevenueCat_Android_Keyin" });
+        }
+        
+        // Kullanıcının mevcut durumunu kontrol et (Daha önce almış mı?)
+        try {
+            const customerInfo = await Purchases.getCustomerInfo();
+            if (customerInfo.entitlements.active['pro_uyelik']) {
+                // Veritabanını güncelle (Eğer senkronize değilse)
+                if (!isPremium) {
+                    await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
+                    setIsPremium(true);
+                }
+            }
+        } catch (e) {
+            console.log("Satın alma geçmişi alınamadı", e);
+        }
+    };
+    
+    setupPurchases();
+}, []);
+
+
+// --- SATIN ALMA FONKSİYONU ---
+const handlePurchase = async () => {
+    try {
+        // 1. RevenueCat'ten paketleri çek
+        const offerings = await Purchases.getOfferings();
+        
+        if (offerings.current !== null && offerings.current.availablePackages.length !== 0) {
+            const packageToBuy = offerings.current.availablePackages[0]; // Genelde Aylık/Yıllık paket
+            
+            // 2. Satın alma işlemini başlat (Apple/Google popup'ı açılır)
+            const { customerInfo } = await Purchases.purchasePackage(packageToBuy);
+            
+            // 3. Başarılı oldu mu?
+            if (customerInfo.entitlements.active['pro_uyelik']) { // 'pro_uyelik' RevenueCat'te tanımladığın isim
+                
+                // Firebase'e kaydet
+                await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
+                setIsPremium(true);
+                
+                Alert.alert("Teşekkürler!", "Premium üyelik başarıyla aktif edildi. Reklamlar kaldırıldı.");
+            }
+        }
+    } catch (e: any) {
+        if (!e.userCancelled) {
+            Alert.alert("Hata", "Satın alma işlemi başarısız: " + e.message);
+        }
+    }
+};
+Özet: Şu an ne yapmalısın?
+
+Henüz şirket/banka hesabı ayarlarını yapmadıysan ve uygulamayı sadece test ediyorsan, şu anki "Yalandan Satın Alma" butonun kalabilir.
+
+Ancak uygulamayı mağazaya (App Store / Play Store) göndermeden önce:
+
+RevenueCat'i kurman şart.
+
+Web sürümü için ise Stripe kullanman gerekir (Çünkü Web'de Apple/Google zorunluluğu yoktur, komisyon daha azdır).
+
+Eğer "Ben şimdilik sadece kodun çalışır halini göreyim, parayı sonra hallederim" diyorsan, mevcut kodundaki setIsPremium(true) yapan basit butonu kullanmaya devam et. Mağazaya yüklerken o butonu gerçek kodla değiştirirsin.
+
+
+
+
+görüntülü ve sesli AudioParamMap
+Bu uygulamaya **Görüntülü ve Sesli Arama (Video & Voice Call)** özelliği eklemek harika bir fikir ancak teknik olarak önemli bir detayı bilmeniz gerekiyor:
+
+**⚠️ ÖNEMLİ UYARI:**
+Görüntülü ve sesli görüşme (WebRTC veya Native SDK'lar) **standart Expo Go uygulamasında (App Store'dan indirilen) çalışmaz.**
+Bu özelliği eklemek için projenizi **"Development Build" (Geliştirme Derlemesi)** moduna geçirmeniz gerekir. Yani `npx expo run:android` veya `npx expo run:ios` komutlarıyla kendi uygulamanızı derlemeniz lazımdır.
+
+Bu özelliği en kolay ve hızlı şekilde **Agora** kütüphanesi ve onun hazır UI kiti (`agora-rn-uikit`) ile yapabiliriz.
+
+İşte adım adım yapmanız gerekenler:
+
+### 1\. Gerekli Kütüphanelerin Kurulumu
+
+Terminalde şu komutları çalıştırın:
+
+```bash
+npm install agora-rn-uikit react-native-agora expo-camera expo-av
+```
+
+### 2\. app.json İzin Ayarları
+
+`app.json` dosyanıza kamera ve mikrofon izinlerini ekleyin:
+
+```json
+"ios": {
+  "infoPlist": {
+    "NSCameraUsageDescription": "Görüntülü arama için kameranıza erişim gerekiyor.",
+    "NSMicrophoneUsageDescription": "Sesli arama için mikrofonunuza erişim gerekiyor."
+  }
+},
+"android": {
+  "permissions": [
+    "android.permission.CAMERA",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.MODIFY_AUDIO_SETTINGS"
+  ]
+}
+```
+
+### 3\. Agora Hesabı ve App ID
+
+1.  [Agora.io](https://www.agora.io/) adresine gidip ücretsiz hesap açın.
+2.  Yeni bir proje oluşturun.
+3.  **App ID**'nizi kopyalayın (Birazdan kodda `AGORA_APP_ID` yerine yazacağız).
+
+### 4\. Koda Eklenecek Bölümler
+
+Mevcut dosyanızın içine parça parça şu kodları ekleyin:
+
+#### A. Import Kısmı (En Üste)
+
+Mevcut importlarınızın arasına şunları ekleyin:
+
+```typescript
+// En üste ekleyin:
+import AgoraUIKit from 'agora-rn-uikit'; 
+// Lucide ikonlarına 'Video' ikonunu ekleyin:
+import { 
+    // ... diğer ikonlar
+    Video, Phone // Phone ve Video ikonlarını ekleyin
+} from 'lucide-react-native';
+```
+
+#### B. State Tanımları (OmmioApp içine)
+
+`OmmioApp` fonksiyonunun içindeki `useState` tanımlarının olduğu yere şunları ekleyin:
+
+```typescript
+  // --- GÖRÜNTÜLÜ ARAMA STATE'LERİ ---
+  const [inCall, setInCall] = useState(false); // Aramada mıyız?
+  const [channelName, setChannelName] = useState(""); // Kanal adı (Oda ismi)
+  const [incomingCallData, setIncomingCallData] = useState<any>(null); // Gelen arama bilgisi
+  
+  // Agora App ID (Buraya kendi ID'nizi yapıştırın)
+  const agoraConnectionData = {
+    appId: 'BURAYA_AGORA_APP_ID_YAZIN', 
+    channel: channelName,
+  };
+```
+
+#### C. Arama Fonksiyonları (OmmioApp içine)
+
+Fonksiyonların olduğu yere (örneğin `sendMessage` fonksiyonunun altına) bu mantığı ekleyin. Bu kısım, karşı tarafa "Seni arıyorum" sinyali göndermek içindir (Firebase üzerinden).
+
+```typescript
+  // 1. ARAMA BAŞLATMA
+  const startVideoCall = async (isVideo: boolean = true) => {
+    if (!chatTarget || !user) return;
+
+    // Sohbet ID'sini kanal adı olarak kullan (Benzersiz olması için)
+    const callChannel = [user.uid, chatTarget.uid].sort().join('_');
+    setChannelName(callChannel);
+
+    // Karşı tarafın 'incoming_call' belgesine yaz (Sinyalleşme)
+    try {
+      await setDoc(doc(db, "users", chatTarget.uid, "incoming_call", "current"), {
+        callerId: user.uid,
+        callerName: user.displayName || user.username,
+        callerPhoto: user.photoURL,
+        channelId: callChannel,
+        type: isVideo ? 'video' : 'voice',
+        status: 'ringing',
+        timestamp: serverTimestamp()
+      });
+
+      // Kendini aramaya al
+      setInCall(true); 
+      
+      // Bildirim Gönder (Opsiyonel ama önerilir)
+      const targetUserDoc = await getDoc(doc(db, "public_users", chatTarget.uid));
+      if(targetUserDoc.exists() && targetUserDoc.data().pushToken){
+          await sendPushNotification(
+              targetUserDoc.data().pushToken,
+              t('incoming_call_title') || "Gelen Arama",
+              `${user.displayName} sizi arıyor...`,
+              { type: 'call', channelId: callChannel }
+          );
+      }
+
+    } catch (e) {
+      console.error("Arama başlatılamadı:", e);
+      showToast("Hata", "Arama başlatılamadı.", 'error');
+    }
+  };
+
+  // 2. ARAMAYI SONLANDIRMA
+  const endCall = async () => {
+    setInCall(false);
+    setIncomingCallData(null);
+    
+    // Eğer karşı tarafı arıyorsam onun sinyalini temizle
+    if (chatTarget) {
+        try {
+            await deleteDoc(doc(db, "users", chatTarget.uid, "incoming_call", "current"));
+        } catch(e) {}
+    }
+    // Eğer bana gelen aramayı kapatıyorsam kendi sinyalimi temizle
+    if (user) {
+        try {
+            await deleteDoc(doc(db, "users", user.uid, "incoming_call", "current"));
+        } catch(e) {}
+    }
+  };
+
+  // 3. GELEN ARAMAYI KABUL ETME
+  const answerCall = () => {
+      if(incomingCallData) {
+          setChannelName(incomingCallData.channelId);
+          setInCall(true);
+          setIncomingCallData(null); // Modalı kapat, videoya geç
+      }
+  };
+```
+
+#### D. Gelen Aramayı Dinleme (useEffect)
+
+`useEffect` bloklarınızın olduğu yere şunu ekleyin. Bu kod, başkası sizi aradığında otomatik olarak haberdar olmanızı sağlar.
+
+```typescript
+  // --- GELEN ARAMALARI DİNLEME ---
+  useEffect(() => {
+    if (!user) return;
+
+    // Kendi 'incoming_call' koleksiyonumu dinle
+    const unsub = onSnapshot(doc(db, "users", user.uid, "incoming_call", "current"), (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Eğer durum 'ringing' ise ve arama yeniyse (son 1 dakika)
+            // (Timestamp kontrolü eklenebilir, şimdilik basit tutuyoruz)
+            setIncomingCallData(data);
+        } else {
+            // Arama kapandıysa veya belge silindiyse
+            setIncomingCallData(null);
+            if(!inCall) { 
+                // Eğer görüşmede değilsem ve belge silindiyse ekranı temizle
+            }
+        }
+    });
+
+    return () => unsub();
+  }, [user, inCall]);
+```
+
+#### E. Arama Butonunu Eklemek (UI)
+
+`renderChatRoom` fonksiyonunu bulun. Header (Başlık) kısmında `handleDeleteChat` (Çöp kutusu) butonunun yanına Kamera ikonunu ekleyin.
+
+```typescript
+{/* renderChatRoom fonksiyonunun içindeki Header View'ı */}
+<View style={{ /* Mevcut header style'ı */ }}>
+    {/* ... Sol taraf (Geri butonu, profil fotosu, isim) ... */}
+
+    <View style={{flexDirection:'row', alignItems:'center', gap: 15}}>
+        {/* YENİ EKLENEN VİDEO ARAMA BUTONU */}
+        <TouchableOpacity onPress={() => startVideoCall(true)}>
+            <Video size={24} color={COLORS.primary} />
+        </TouchableOpacity>
+
+        {/* Mevcut Silme Butonu */}
+        <TouchableOpacity onPress={handleDeleteChat} style={{padding: 5}}>
+            <Trash2 size={20} color={COLORS.danger} />
+        </TouchableOpacity>
+    </View>
+</View>
+```
+
+#### F. Arama Ekranı ve Gelen Arama Modalı (En Alta)
+
+`return` bloğunun içine, en alta (diğer Modalların yanına) şu iki bileşeni ekleyin:
+
+```typescript
+      {/* 1. AGORA VİDEO ARAMA EKRANI */}
+      {inCall && (
+          <Modal visible={true} animationType="slide" onRequestClose={endCall}>
+              <View style={{flex: 1, backgroundColor: '#000'}}>
+                  {channelName ? (
+                      <AgoraUIKit 
+                          connectionData={agoraConnectionData} 
+                          rtcCallbacks={{
+                              EndCall: endCall,
+                          }}
+                          styleProps={{
+                              localBtnContainer: { backgroundColor: COLORS.primary },
+                              localBtnStyles: { borderColor: 'transparent' }
+                          }}
+                      />
+                  ) : (
+                      <ActivityIndicator size="large" color="#fff" style={{marginTop: 100}} />
+                  )}
+              </View>
+          </Modal>
+      )}
+
+      {/* 2. GELEN ARAMA MODALI (WhatsApp Tarzı) */}
+      <Modal visible={!!incomingCallData && !inCall} transparent animationType="slide">
+          <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.8)', justifyContent:'center', alignItems:'center'}}>
+              <View style={{alignItems:'center', gap: 20}}>
+                  <View style={{width:100, height:100, borderRadius:50, backgroundColor:COLORS.secondary, alignItems:'center', justifyContent:'center', overflow:'hidden', borderWidth:2, borderColor:'#fff'}}>
+                      {incomingCallData?.callerPhoto ? (
+                          <Image source={{uri: incomingCallData.callerPhoto}} style={{width:100, height:100}} />
+                      ) : (
+                          <User size={50} color="#fff" />
+                      )}
+                  </View>
+                  <Text style={{color:'#fff', fontSize:24, fontWeight:'bold'}}>{incomingCallData?.callerName}</Text>
+                  <Text style={{color:'#ddd', fontSize:16}}>Görüntülü Arıyor...</Text>
+                  
+                  <View style={{flexDirection:'row', gap: 40, marginTop: 30}}>
+                      {/* REDDET */}
+                      <TouchableOpacity onPress={endCall} style={{alignItems:'center', gap:5}}>
+                          <View style={{width:60, height:60, borderRadius:30, backgroundColor:'#ef4444', alignItems:'center', justifyContent:'center'}}>
+                              <Phone size={30} color="#fff" style={{transform: [{rotate: '135deg'}]}} /> 
+                          </View>
+                          <Text style={{color:'#fff'}}>Reddet</Text>
+                      </TouchableOpacity>
+
+                      {/* KABUL ET */}
+                      <TouchableOpacity onPress={answerCall} style={{alignItems:'center', gap:5}}>
+                          <View style={{width:60, height:60, borderRadius:30, backgroundColor:'#22c55e', alignItems:'center', justifyContent:'center'}}>
+                              <Video size={30} color="#fff" />
+                          </View>
+                          <Text style={{color:'#fff'}}>Yanıtla</Text>
+                      </TouchableOpacity>
+                  </View>
+              </View>
+          </View>
+      </Modal>
+```
+
+### Özetle Mantık Nasıl Çalışacak?
+
+1.  **Arama Başlatma:** Sohbet ekranındaki video ikonuna bastığınızda, Firebase'de karşı tarafın `incoming_call` alanına bir belge oluşturursunuz. Bu belge oda ismini (channelId) içerir.
+2.  **Karşı Taraf:** Uygulaması açık olan kullanıcı, `useEffect` sayesinde bu belgeyi anında fark eder ve "Gelen Arama Modalı" açılır.
+3.  **Yanıtla:** Yeşil butona basıldığında `AgoraUIKit` bileşeni açılır ve her iki taraf da aynı `channelId` ile Agora sunucularına bağlanır.
+4.  **Bitiş:** Kırmızı butona veya arama içindeki kapat tuşuna basıldığında Firebase belgesi silinir ve modal kapanır.
+
+**Not:** Bu özelliği test etmek için **iki farklı fiziksel cihaz** kullanmanız ve uygulamanın `development build` versiyonunu oluşturup her iki cihaza kurmanız en sağlıklısıdır. Emülatörlerde kamera çalışmayabilir.
