@@ -3,7 +3,7 @@
     "name": "Ommio",
     "slug": "ommio",
     "scheme": "ommioapp",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/Logo/icon.png",
     "userInterfaceStyle": "automatic",
