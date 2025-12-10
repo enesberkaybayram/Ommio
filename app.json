@@ -5,7 +5,7 @@
     "scheme": "ommioapp",
     "version": "1.0.2",
     "orientation": "portrait",
-    "icon": "./assets/Logo/icon.png",
+    "icon": "./assets/Logo/Icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/splash.png",
@@ -17,6 +17,7 @@
       "buildNumber": "2",
       "bundleIdentifier": "com.seninadin.ommio",
       "userInterfaceStyle": "automatic",
+      "newArchEnabled": true, 
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": ["remote-notification", "fetch"]
@@ -28,6 +29,7 @@
         "foregroundImage": "./assets/Logo/Icon.png",
         "backgroundColor": "#ffffff"
       },
+      "newArchEnabled": true,
       "package": "com.seninadin.ommio",
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM",
@@ -50,7 +52,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/Logo/icon.png",
+          "icon": "./assets/Logo/Icon.png",
           "color": "#6366F1",
           "sounds": []
         }

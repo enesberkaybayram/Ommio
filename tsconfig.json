@@ -2,7 +2,12 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+"allowJs": true,          // JS dosyalarına izin ver
+    "jsx": "react-native",
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
     "paths": {
       "@/*": [
         "./*"
@@ -12,5 +17,11 @@
   "include": [
     "**/*.ts",
     "**/*.tsx"
-, "Yedek/index 1,0.xtsx", "app/(tabs)/index copy.tsxj"  ]
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js"
+  ]
 }
