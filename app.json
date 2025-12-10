@@ -14,6 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "2",
       "bundleIdentifier": "com.seninadin.ommio",
       "userInterfaceStyle": "automatic",
       "infoPlist": {
@@ -22,6 +23,7 @@
       }
     },
     "android": {
+      "buildNumber": "2",
       "adaptiveIcon": {
         "foregroundImage": "./assets/Logo/Icon.png",
         "userInterfaceStyle": "automatic",
