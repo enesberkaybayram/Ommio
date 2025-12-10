@@ -16,6 +16,16 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-services.json",
+        "track": "production" 
+      },
+      "ios": {
+        "appleId": "limerayayinlari@gmail.com",
+        "ascAppId": "6756255534",
+        "appleTeamId": "328K8252M3"
+      }
+    }
   }
 }

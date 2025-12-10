@@ -23,10 +23,9 @@
       }
     },
     "android": {
-      "buildNumber": "2",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/Logo/Icon.png",
-        "userInterfaceStyle": "automatic",
         "backgroundColor": "#ffffff"
       },
       "package": "com.seninadin.ommio",

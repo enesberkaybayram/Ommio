@@ -1,30 +1,64 @@
 // utils/crypto.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto'; // <-- BU EKLENDİ
 import * as SecureStore from 'expo-secure-store';
 import { doc, updateDoc } from 'firebase/firestore';
+import { Platform } from 'react-native';
 import nacl from 'tweetnacl';
-// DÜZELTME BURADA: 'as' ifadesi kaldırıldı, direkt orijinal isimler kullanıldı
 import { decodeBase64, encodeBase64 } from 'tweetnacl-util';
 import { db } from '../app/(tabs)/index';
+
+// --- KRİTİK DÜZELTME: PRNG (Rastgele Sayı Üreticisi) TANIMLAMASI ---
+// Tweetnacl'e rastgele sayıları expo-crypto'dan almasını söylüyoruz.
+nacl.setPRNG((x, n) => {
+  const randomBytes = Crypto.getRandomBytes(n);
+  for (let i = 0; i < n; i++) {
+    x[i] = randomBytes[i];
+  }
+});
+// -------------------------------------------------------------------
+
+// --- YARDIMCI FONKSİYONLAR (Web ve Mobil Ayrımı) ---
+const secureSave = async (key: string, value: string) => {
+  if (Platform.OS === 'web') {
+    await AsyncStorage.setItem(key, value);
+  } else {
+    await SecureStore.setItemAsync(key, value);
+  }
+};
+
+const secureGet = async (key: string) => {
+  if (Platform.OS === 'web') {
+    return await AsyncStorage.getItem(key);
+  } else {
+    return await SecureStore.getItemAsync(key);
+  }
+};
 
 // 1. ANAHTARLARI OLUŞTUR VE KAYDET
 export const generateAndStoreKeys = async (userId: string) => {
   try {
-    const existingKey = await SecureStore.getItemAsync('my_private_key');
-    if (existingKey) return; 
+    const existingKey = await secureGet('my_private_key');
+    if (existingKey) {
+        console.log("Anahtarlar zaten mevcut.");
+        return; 
+    }
 
+    // Artık setPRNG yaptığımız için burası hata vermeyecek
     const keyPair = nacl.box.keyPair();
 
     const privateKeyBase64 = encodeBase64(keyPair.secretKey);
-    await SecureStore.setItemAsync('my_private_key', privateKeyBase64);
+    await secureSave('my_private_key', privateKeyBase64);
 
     const publicKeyBase64 = encodeBase64(keyPair.publicKey);
     
+    // Firestore'a kaydet
     await updateDoc(doc(db, "users", userId), { publicKey: publicKeyBase64 });
     try {
         await updateDoc(doc(db, "public_users", userId), { publicKey: publicKeyBase64 });
     } catch(e) {}
 
-    console.log("Şifreleme anahtarları oluşturuldu.");
+    console.log("Şifreleme anahtarları oluşturuldu (Platform: " + Platform.OS + ")");
   } catch (error) {
     console.error("Anahtar oluşturma hatası:", error);
   }
@@ -33,8 +67,8 @@ export const generateAndStoreKeys = async (userId: string) => {
 // 2. MESAJ ŞİFRELEME
 export const encryptMessage = async (text: string, receiverPublicKeyB64: string) => {
   try {
-    const myPrivateKeyB64 = await SecureStore.getItemAsync('my_private_key');
-    if (!myPrivateKeyB64) throw new Error("Gizli anahtar bulunamadı!");
+    const myPrivateKeyB64 = await secureGet('my_private_key');
+    if (!myPrivateKeyB64) throw new Error("Gizli anahtar bulunamadı! Lütfen önce giriş yapın.");
 
     const myPrivateKey = decodeBase64(myPrivateKeyB64);
     const receiverPublicKey = decodeBase64(receiverPublicKeyB64);
@@ -69,7 +103,7 @@ export const decryptMessage = async (encryptedDataString: string, senderPublicKe
 
     if (!encryptedData.ciphertext || !encryptedData.nonce) return "Şifreleme hatası";
 
-    const myPrivateKeyB64 = await SecureStore.getItemAsync('my_private_key');
+    const myPrivateKeyB64 = await secureGet('my_private_key');
     if (!myPrivateKeyB64) return "Anahtar yok";
 
     const myPrivateKey = decodeBase64(myPrivateKeyB64);

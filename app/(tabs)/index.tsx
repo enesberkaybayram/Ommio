@@ -11,7 +11,9 @@ import * as SMS from 'expo-sms';
 import { WidgetTaskHandler } from '../../components/widget-task-handler'; // Dosya yolunuza göre düzeltin
 // AŞAĞIDAKİ GİBİ Prompt'u ekleyin
 import { Prompt } from 'expo-auth-session';
+// getAuth'u da eklemeyi unutma
 import * as Localization from 'expo-localization';
+import { Auth, browserLocalPersistence } from "firebase/auth";
 import {
     AlarmClock,
     AlertCircle,
@@ -73,9 +75,9 @@ import {
     View
 } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
-import PagerView from 'react-native-pager-view';
 import AnimatedSplash from '../../components/AnimatedSplash'; // Yolunu kendine göre ayarla
 import OmmioAdBanner from '../../components/OmmioAdBanner';
+import PagerView from "../../components/OmmioPager";
 import { setupCalendarLocales } from '../../constants/calendarConfig';
 import { decryptMessage, encryptMessage, generateAndStoreKeys } from '../../utils/crypto';
 // --- FIREBASE ---
@@ -85,6 +87,12 @@ import { initializeApp } from "firebase/app";
 import {
     createUserWithEmailAndPassword,
     EmailAuthProvider, // YENİ: getAuth yerine bunu kullanacağız
+
+
+
+
+
+
 
 
 
@@ -170,8 +178,10 @@ async function registerForPushNotificationsAsync() {
       finalStatus = status;
     }
     if (finalStatus !== 'granted') {
-      alert('notification_permission_denied');
-      return;
+      if (Platform.OS !== 'web') {
+            alert('notification_permission_denied');
+        }
+        return;
     }
     
     // Expo Push Token al (Proje ID'si otomatik algılanır)
@@ -224,13 +234,26 @@ const firebaseConfig = {
   appId: "1:677937409612:web:09e17f70f5e1a8904d0ee9",
   measurementId: "G-V7WP221WRP"
 };
+// YENİ KISIM (Standart Yöntem)
 const app = initializeApp(firebaseConfig);
 
-// YENİ KISIM (Standart Yöntem)
-const auth = initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage)});
-// Veritabanı başlatma
+// DÜZELTME BURADA: Değişkene tip atadık 👇
+let auth: Auth;
+
+if (Platform.OS === 'web') {
+  auth = initializeAuth(app, {
+    persistence: browserLocalPersistence
+  });
+} else {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+}
+
+export { auth };
+
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true, // WEB İÇİN BU AYAR ŞART (Fetch hatasını çözer)
+    experimentalForceLongPolling: true, 
 });
 const CATEGORY_COLORS = [
   { id: 'blue', hex: '#3b82f6', bg: '#eff6ff' },
@@ -653,6 +676,41 @@ const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
         showToast(t('warning_title'), t('google_connection_error'), 'error');
     }
 }, [response]);
+// --- EKSİK OLAN PARÇA: SEÇİLİ SOHBETİN MESAJLARINI DİNLEME ---
+  useEffect(() => {
+    // Eğer bir sohbet seçilmediyse veya kullanıcı yoksa işlem yapma
+    if (!chatTarget || !user) return;
+
+    // Chat ID oluştur (Alfabetik sıraya göre, böylece her iki tarafta da aynı ID olur)
+    const chatId = [user.uid, chatTarget.uid].sort().join('_');
+
+    // Sorguyu hazırla: Mesajları tarihe göre tersten sırala (en yeni en altta)
+    const q = query(
+      collection(db, "chats", chatId, "messages"),
+      orderBy("timestamp", "desc")
+    );
+
+    // Dinlemeyi başlat
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ChatMessage[];
+      
+      setChatMessages(msgs);
+      
+      // Okundu bilgisini güncelle (Karşı tarafın attığı mesajları okundu yap)
+      snapshot.docs.forEach(async (docSnap) => {
+         const msgData = docSnap.data();
+         if (msgData.senderId !== user.uid && !msgData.read) {
+             await updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
+         }
+      });
+    });
+
+    // Sohbetten çıkınca dinlemeyi durdur
+    return () => unsubscribe();
+  }, [chatTarget, user]); // chatTarget değiştiğinde (başka sohbete girince) tekrar çalışır
 // --- GÖREV İÇİ YORUMLARI DİNLEME ---
   // --- GÖREV İÇİ YORUMLARI DİNLEME (GÜNCELLENDİ) ---
   useEffect(() => {
@@ -1863,77 +1921,49 @@ const handleUpdateProfile = async () => {
     }
 };
 
- const addTask = async () => {
-    // 1. BOŞ KONTROLÜ
+const addTask = async () => {
     if (!inputValue.trim()) {
         showToast(t('warning_title'), t('missing_info'), 'warning');
         return;
     }
-
-    // 2. GİRİŞ KONTROLÜ
     if (!user) {
-        showToast(t('error_title'), "Oturum hatası. Lütfen uygulamayı kapatıp açın.", 'error');
+        showToast(t('error_title'), "Oturum hatası.", 'error');
         return;
     }
 
     setIsAuthLoading(true);
 
     try {
-        // 3. TARİH KONTROLÜ
         let finalStartDate = inputStartDate;
         if (!finalStartDate || finalStartDate.length < 10) {
             finalStartDate = formatDateDDMMYYYY(selectedDate);
         }
         const formattedStart = convertDDMMYYYYtoISO(finalStartDate);
-
-        // 4. KATEGORİ VE İZİN KONTROLÜ
         let finalCategoryId = selectedCategory.id;
 
+        // --- ATAMA MANTIĞI ---
         if (assignTarget) {
-            
-            // Misafir Kontrolü
-            if (checkGuest("Görev Atama")) return; // finally bloğu loading'i kapatır
+            if (checkGuest("Görev Atama")) return;
 
-            // A. Karşı tarafın "users" dokümanını çek
             const targetUserDoc = await getDoc(doc(db, "users", assignTarget.uid));
             if (!targetUserDoc.exists()) throw new Error("Kullanıcı bulunamadı.");
-            const targetUserData = targetUserDoc.data();
-
-            // B. Karşı tarafın listesinde BENİM ayarlarımı çek
+            
             const targetContactRef = doc(db, "users", assignTarget.uid, "contacts", user.uid);
             const targetContactDoc = await getDoc(targetContactRef);
 
-            if (!targetContactDoc.exists()) {
-                throw new Error("Bu kullanıcı ile bağlantınız kopmuş.");
+            if (!targetContactDoc.exists() || targetContactDoc.data().canAssignToMe === false) {
+                showToast(t('assignment_failed_title'), `${assignTarget.username} ${t('assign_permission_denied_msg')}`, 'error');
+                setIsAuthLoading(false);
+                return;
             }
 
             const targetSettings = targetContactDoc.data();
-
-            // --- KRİTİK DÜZELTME BURADA ---
-            // KONTROL 1: İZİN (canAssignToMe)
-            if (targetSettings.canAssignToMe === false) {
-                showToast(
-                    t('assignment_failed_title'), 
-                    `${assignTarget.username} ${t('assign_permission_denied_msg')}`, 
-                    'error'
-                );
-                return; // <--- BU SATIR EKSİKTİ! ARTIK BURADA DURACAK VE KAYDETMEYECEK.
-            }
-            // -----------------------------
-
-            // KONTROL 2: KATEGORİ (defaultCategoryId)
             if (targetSettings.defaultCategoryId) {
                 finalCategoryId = targetSettings.defaultCategoryId;
-            } else {
-                if (targetUserData.categories && targetUserData.categories.length > 0) {
-                    finalCategoryId = targetUserData.categories[0].id;
-                } else {
-                    finalCategoryId = 'work';
-                }
             }
         }
 
-        // 5. BİLDİRİM & ALARM (Sadece kendime atıyorsam)
+        // --- BİLDİRİM & ALARM ---
         let notifId = null, alarmId = null;
         if (!assignTarget) {
             if (isNotifOn && notifInput.length === 5) {
@@ -1944,7 +1974,7 @@ const handleUpdateProfile = async () => {
             }
         }
 
-        // 6. GÖREV OBJESİ
+        // --- GÖREV OBJESİ ---
         const newTask = {
             text: inputValue,
             description: inputDesc,
@@ -1963,51 +1993,41 @@ const handleUpdateProfile = async () => {
             assignedTo: assignTarget ? assignTarget.uid : user.uid
         };
 
-        // 7. KAYIT İŞLEMİ
+        // --- KAYIT İŞLEMİ (DÜZELTİLDİ) ---
         if (assignTarget) {
+            // 1. Karşı tarafa kaydet
             await addDoc(collection(db, "users", assignTarget.uid, "tasks"), newTask);
-            if (assignTarget) {
-                await addDoc(collection(db, "users", assignTarget.uid, "tasks"), newTask);
-                
-                // --- BİLDİRİM GÖNDERME KODU ---
-                // 1. Hedef kullanıcının Token'ını almamız lazım. 
-                // (Bunu contacts listesinden çekmek yerine public_users'dan anlık çekmek daha sağlıklıdır)
-                const targetPublicDoc = await getDoc(doc(db, "public_users", assignTarget.uid));
-                if (targetPublicDoc.exists()) {
-                    const targetData = targetPublicDoc.data();
-                    if (targetData.pushToken) {
-                        await sendPushNotification(
-                            targetData.pushToken,
-                            t('new_task_assigned'), // "Yeni Görev Atandı"
-                            `${user.displayName || user.username} ${t('assigned_task_msg')}: ${inputValue}`,
-                            { type: 'task', taskId: newTask.assignedBy } // Data
-                        );
-                    }
+            
+            // 2. Bildirim Gönder
+            const targetPublicDoc = await getDoc(doc(db, "public_users", assignTarget.uid));
+            if (targetPublicDoc.exists()) {
+                const targetData = targetPublicDoc.data();
+                if (targetData.pushToken) {
+                    await sendPushNotification(
+                        targetData.pushToken,
+                        t('new_task_assigned'),
+                        `${user.displayName || user.username} ${t('assigned_task_msg')}: ${inputValue}`,
+                        { type: 'task', taskId: newTask.assignedBy }
+                    );
                 }
-                // ------------------------------
-
-                showToast(t('task_assigned_title'), `${t('task_assigned_msg')} ${assignTarget.username}`, 'success');
-                checkAdTrigger('assigned');
             }
             showToast(t('task_assigned_title'), `${t('task_assigned_msg')} ${assignTarget.username}`, 'success');
             checkAdTrigger('assigned');
         } else {
+            // Kendime kaydet
             await addDoc(collection(db, "users", user.uid, "tasks"), newTask);
         }
 
-        // 8. TEMİZLİK
+        // --- TEMİZLİK ---
         setIsAddModalOpen(false);
         setInputValue("");
         setInputDesc("");
-        setInputDueDate("");
         setNotifInput("");
         setAlarmInput("");
         setIsNotifOn(false);
         setIsAlarmOn(false);
         setIsEveryDayOn(false);
         setAssignTarget(null);
-
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setIsInputExpanded(false);
         Keyboard.dismiss();
 
@@ -2018,7 +2038,6 @@ const handleUpdateProfile = async () => {
         setIsAuthLoading(false);
     }
 };
-
  const addHabit = async () => {
       // 1. GİRİŞ KONTROLÜ
       if (!user) {
@@ -2439,7 +2458,14 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
             height: 60, zIndex: 10
         }}>
             <View style={{flexDirection:'row', alignItems:'center'}}>
-                <TouchableOpacity onPress={() => setActiveTab('messages')} style={{ marginRight: 10 }}>
+                <TouchableOpacity 
+                    onPress={() => {
+                        setChatTarget(null);       // 1. Hedef kişiyi boşalt (Sohbeti kapat)
+                        setActiveTab('messages');  // 2. Sekmeyi Mesajlar yap
+                        setChatMessages([]);       // 3. Mesaj listesini temizle (Eski mesajlar gözükmesin)
+                    }} 
+                    style={{ marginRight: 10 }}
+                >
                     <ChevronLeft size={28} color={COLORS.primary} />
                 </TouchableOpacity>
 
@@ -2642,10 +2668,6 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
     const isExpanded = expandedTaskId === task.id;
     const isMultiDay = task.showEveryDayUntilDue;
     // ... diğer kodlar ...
-
- 
-
-
     return (
         <View key={task.id} style={[styles.taskCard, { backgroundColor: currentColors.surface, opacity: task.completed ? 0.6 : 1, borderLeftWidth: isAssignedByOther ? 4 : 0, borderLeftColor: COLORS.warning }]}>
             <TouchableOpacity onPress={() => toggleExpand(task.id)} style={{flexDirection:'row', alignItems:'center'}}>
@@ -2669,7 +2691,7 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     {task.description ? (<View style={{flexDirection:'row', gap:5, marginBottom:10}}><AlignLeft size={14} color={currentColors.subText} style={{marginTop:2}} /><Text style={{color: currentColors.text, fontSize:14, flex:1}}>{task.description}</Text></View>) : (<Text style={{color: currentColors.subText, fontSize:12, fontStyle:'italic', marginBottom:10}}>{t('task_no_desc')}</Text>)}
                     <View style={{flexDirection:'row', justifyContent:'flex-end', gap:15, marginTop:5}}>
                         <TouchableOpacity onPress={() => {askConfirmation( t('delete_btn'), t('task_delete_confirm'), () => deleteTask(task), true );
-}}><Trash2 size={16} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontSize:12, fontWeight:'bold'}}>{t('delete')}</Text></TouchableOpacity>
+                            }}><Trash2 size={16} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontSize:12, fontWeight:'bold'}}>{t('delete')}</Text></TouchableOpacity>
                         {(task.assignedBy === user.uid || task.assignedTo === user.uid) && (<TouchableOpacity onPress={() => openEditModal(task)} style={{flexDirection:'row', alignItems:'center', gap:5, padding:5, backgroundColor: COLORS.primary + '20', borderRadius:8, paddingHorizontal:10}}><Edit2 size={16} color={COLORS.primary} /><Text style={{color: COLORS.primary, fontSize:12, fontWeight:'bold'}}>{t('edit')}</Text></TouchableOpacity>)}
                     </View>
                 </View>
@@ -2679,39 +2701,34 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
   };
 
 // Eğer Splash animasyonu daha bitmediyse, Auth yüklense bile Splash göster.
-if (!isSplashAnimationComplete) { return (<AnimatedSplash onAnimationFinish={() => {setIsSplashAnimationComplete(true); setShowAuth(true);}} />  );}
+// --- A) SPLASH EKRANI ---
+  if (!isSplashAnimationComplete) { 
+      return (<AnimatedSplash onAnimationFinish={() => {setIsSplashAnimationComplete(true); setShowAuth(true);}} /> );
+  }
+
+  // --- B) KULLANICI YOKSA (Giriş / Kayıt Ekranı) ---
   if (!user) {
+    // 1. Landing Page mi gösterilsin?
     if (!showAuth) {
-        // LandingPage'e artık rememberMe props'larını göndermiyoruz:
         return <LandingPage lang={lang} isDark={isDark} onGetStarted={(mode) => {setShowAuth(true); setAuthMode(mode); }} onLanguageChange={(newLang) => setLang(newLang as LangCode)}/>;    
     }
+
+    // 2. HAYIR, GİRİŞ EKRANI (Login/Signup) GÖSTERİLSİN
+    // (Senin kodunda eksik veya karışık olan kısım burasıydı)
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={[styles.container, { backgroundColor: currentColors.bg, justifyContent:'center', padding: 20 }]}>
-        <View style={{alignItems:'center', marginBottom: 40}}>
-            {/* LOGO GÖRSELİ */}
-            <Image 
-                source={require('../../assets/Logo/Icon.png')} 
-                style={{width: 100, height: 100, borderRadius: 20, marginBottom: 20}} 
-                resizeMode="contain"
-            />
-            {/* İsim zaten logoda yazıyorsa alttaki Text'i silebilirsin, yazmıyorsa kalsın */}
-            <Text style={{fontSize:32, fontWeight:'900', color: currentColors.text}}>Ommio</Text>
-            <Text style={{color: currentColors.subText}}>{t('get_things_done')}</Text>
-        </View>
-        <View style={[styles.card, { backgroundColor: currentColors.surface, padding: 20 }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ flex: 1, backgroundColor: currentColors.bg, justifyContent: 'center', padding: 20 }}>
             
-            {/* 1. ÜST MENÜ */}
-            <View style={{flexDirection:'row', marginBottom: 20, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#e2e8f0'}}>
-                <TouchableOpacity onPress={()=>setAuthMode('login')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='login'?2:0, borderColor:COLORS.primary}}>
-                    <Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='login'?COLORS.primary:currentColors.subText}}>{t('login')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={()=>setAuthMode('signup')} style={{flex:1, paddingBottom:10, borderBottomWidth: authMode==='signup'?2:0, borderColor:COLORS.primary}}>
-                    <Text style={{textAlign:'center', fontWeight:'bold', color: authMode==='signup'?COLORS.primary:currentColors.subText}}>{t('register')}</Text>
-                </TouchableOpacity>
+            {/* LOGO */}
+            <View style={{ alignItems: 'center', marginBottom: 40 }}>
+               <Image source={require('../../assets/Logo/Logo.png')} style={{ width: 200, height: 60, resizeMode: 'contain' }} />
             </View>
 
-            {/* 2. INPUTLAR */}
-            {authMode === 'signup' && (
+            {/* INPUTLAR (Kullanıcı Adı / Şifre) */}
+            <View style={{ gap: 15 }}>
+               {/* Kayıt Modundaysa Kullanıcı Adı Inputu */}
+               {authMode === 'signup' && (
                 <View style={styles.authInputRow}>
                     <User size={20} color={currentColors.subText} />
                     <TextInput value={username} onChangeText={setUsername} placeholder={t('social_search_tab_username')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} autoCapitalize='none' />
@@ -2774,11 +2791,7 @@ if (!isSplashAnimationComplete) { return (<AnimatedSplash onAnimationFinish={() 
         </View>
         <View style={{marginTop: 20, gap: 10}}>
            <TouchableOpacity disabled={!request} onPress={() => promptAsync()} style={[styles.socialBtn, {backgroundColor: currentColors.surface, flexDirection:'row', gap:10, justifyContent: 'center'}]}>
-              <Image 
-                    source={{ uri: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png" }}
-                    style={{ width: 20, height: 20 }}
-                    resizeMode="contain"
-                /> 
+              <Globe size={20} color={currentColors.text} /> 
               <Text style={{color: currentColors.text, fontWeight:'600'}}>{t('auth_google_continue')}</Text>
            </TouchableOpacity>
            
@@ -2802,2257 +2815,852 @@ if (!isSplashAnimationComplete) { return (<AnimatedSplash onAnimationFinish={() 
                     </Text>
                 </TouchableOpacity>
             )}
-        </View>
-        {/* --- CUSTOM TOAST (GÜNCELLENDİ) --- */}
-{customToast.visible && (
-    <View style={{ 
-        position: 'absolute', bottom: 100, left: 20, right: 20, 
-        backgroundColor: '#1e293b', padding: 15, borderRadius: 16, 
-        flexDirection: 'row', alignItems: 'center', gap: 12, 
-        shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10, zIndex: 9999 
-    }}>
-        <View style={{ 
-            width: 36, height: 36, borderRadius: 18, 
-            // Warning için renk koşulu eklendi (#f59e0b)
-            backgroundColor: customToast.type === 'error' ? '#ef4444' : 
-                           (customToast.type === 'warning' ? '#f59e0b' : 
-                           (customToast.type === 'info' ? '#3b82f6' : '#10b981')), 
-            alignItems: 'center', justifyContent: 'center' 
-        }}>
-            {customToast.type === 'success' && <Check size={18} color="#fff" />}
-            {customToast.type === 'error' && <X size={18} color="#fff" />}
-            {customToast.type === 'info' && <Bell size={18} color="#fff" />}
-            {/* Warning için ikon eklendi */}
-            {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
-        </View>
-        <View style={{ flex: 1 }}>
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
-            <Text style={{ color: '#94a3b8', fontSize: 11 }}>{customToast.message}</Text>
-        </View>
-        <TouchableOpacity onPress={() => setCustomToast({...customToast, visible: false})} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#334155', alignItems:'center', justifyContent:'center' }}>
-            <X size={14} color="#fff" />
-        </TouchableOpacity>
-    </View>
-)}
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     );
   }
+  
 
-  return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
-    <SafeAreaView style={[styles.container, { backgroundColor: currentColors.bg }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      
-      {activeTab !== 'chat_room' && (
-        <View style={[styles.header, { justifyContent: 'center' }]}> 
+        {/* ================================================================================= */}
+        {/* 1. HEADER (LOGO) - Chat odası hariç her yerde görünür */}
+        {/* ================================================================================= */}
+        return (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <SafeAreaView style={[styles.container, { backgroundColor: currentColors.bg }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+        {activeTab !== 'chat_room' && (
+          <View style={[styles.header, { justifyContent: 'center', paddingBottom: 5 }]}>
             <TouchableOpacity onPress={() => setActiveTab('list')} activeOpacity={0.7}>
-                <Image 
-                    source={require('../../assets/Logo/Logo.png')} 
-                    style={{ width: 150, height: 50, resizeMode: 'contain' }} 
-                />
-            </TouchableOpacity>
-        </View>
-        )}
-      
-      {/* --- TARİH NAVİGASYONU VE AÇILIR TAKVİM --- */}
-      {activeTab === 'list' && (
-        <View style={{ marginBottom: 15 }}>
-          
-          {/* Üst Bar: Sol Ok - Tarih (Tıklanabilir) - Sağ Ok */}
-          <View style={styles.dateNavContainer}>
-            <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}>
-              <ChevronLeft size={20} color={currentColors.subText} />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => {
-                // Animasyonlu açılış/kapanış
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setIsCalendarExpanded(!isCalendarExpanded);
-              }}
-              style={styles.dateDisplay}
-              activeOpacity={0.7}
-            >
-              <CalendarIcon size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
-              <Text style={[styles.dateText, { color: currentColors.text }]}>
-                {selectedDate.getDate()} {getGreeting(lang) === 'tr' ? ' ' : '/'} {selectedDate.getMonth() + 1} {'/ '}{selectedDate.getFullYear()}
-              </Text>
-              
-              {/* Açık/Kapalı Durumuna Göre Ok İkonu */}
-              {isCalendarExpanded ? (
-                 <ChevronUp size={14} color={COLORS.primary} style={{marginLeft: 5}} />
-              ) : (
-                 <ChevronDown size={14} color={currentColors.subText} style={{marginLeft: 5}} />
-              )}
-
-              {getISODate(selectedDate) === getISODate(new Date()) && (
-                <View style={styles.todayBadge}>
-                  <Text style={styles.todayText}>{t('today')}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}>
-              <ChevronRight size={20} color={currentColors.subText} />
+              <Image
+                source={require('../../assets/Logo/Logo.png')}
+                style={{ width: 150, height: 50, resizeMode: 'contain' }}
+              />
             </TouchableOpacity>
           </View>
+        )}
 
-          {/* --- AÇILIR TAKVİM (AKORDEON) --- */}
-          {isCalendarExpanded && (
-            <View style={{ 
-                marginTop: 10, 
-                backgroundColor: currentColors.surface, 
-                borderRadius: 16, 
-                padding: 10,
-                borderWidth: 1,
-                borderColor: isDark ? '#334155' : '#f1f5f9',
-                overflow: 'hidden' 
-            }}>
-              <Calendar
-                // Seçili tarih
-                current={getISODate(selectedDate)}
-                
-                // Animasyonlu geçiş için key
-                key={`${lang}-${theme}`} 
-                
-                // Custom Stiller
-                markingType={'custom'}
-                markedDates={{
-                  [getISODate(selectedDate)]: {
-                    selected: true,
-                    customStyles: {
-                      container: {
-                        backgroundColor: COLORS.primary,
-                        borderRadius: 8,
-                        elevation: 2
-                      },
-                      text: {
-                        color: '#fff',
-                        fontWeight: 'bold'
-                      }
-                    }
-                  },
-                  // Bugünün işaretlenmesi
-                  [getISODate(new Date())]: {
-                    customStyles: {
-                      text: {
-                        color: COLORS.primary,
-                        fontWeight: 'bold'
-                      }
-                    }
-                  }
-                }}
+        {/* ================================================================================= */}
+        {/* 2. TARİH NAVİGASYONU (Sadece List ve Habits sekmelerinde) */}
+        {/* ================================================================================= */}
+        {(activeTab === 'list' || activeTab === 'habits') && (
+          <View style={{ marginBottom: 5, zIndex: 20 }}>
+            <View style={styles.dateNavContainer}>
+              <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}>
+                <ChevronLeft size={20} color={currentColors.subText} />
+              </TouchableOpacity>
 
-                // Gün seçilince
-                onDayPress={(day: any) => {
-                  const newDate = new Date(day.timestamp);
-                  newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset());
-                  setSelectedDate(newDate);
-                  
-                  // Seçim yapınca kapat (İstersen açık bırakmak için bu satırı silebilirsin)
+              <TouchableOpacity
+                onPress={() => {
                   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                  setIsCalendarExpanded(false);
+                  setIsCalendarExpanded(!isCalendarExpanded);
                 }}
-
-                // Tema Ayarları
-                theme={{
-                  backgroundColor: 'transparent',
-                  calendarBackground: 'transparent',
-                  textSectionTitleColor: currentColors.subText,
-                  selectedDayBackgroundColor: COLORS.primary,
-                  selectedDayTextColor: '#ffffff',
-                  todayTextColor: COLORS.primary,
-                  dayTextColor: currentColors.text,
-                  textDisabledColor: isDark ? '#475569' : '#d9e1e8',
-                  dotColor: COLORS.primary,
-                  arrowColor: COLORS.primary,
-                  monthTextColor: currentColors.text,
-                  indicatorColor: COLORS.primary,
-                  textDayFontWeight: '500',
-                  textMonthFontWeight: 'bold',
-                  textDayHeaderFontWeight: 'bold',
-                  textDayFontSize: 14,
-                  textMonthFontSize: 16,
-                  textDayHeaderFontSize: 12
-                }}
-              />
-              {/* --- TEMIZLENMIS: ONUMUZDEKI 7 GUN --- */}
-                <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
-                <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10, paddingHorizontal: 5 }}>
-                    {t('next_7_days')}
+                style={styles.dateDisplay}
+                activeOpacity={0.7}
+              >
+                <CalendarIcon size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.dateText, { color: currentColors.text }]}>
+                  {selectedDate.getDate()} {getGreeting(lang) === 'tr' ? ' ' : '/'} {selectedDate.getMonth() + 1} {selectedDate.getFullYear()}
                 </Text>
-                
-                {upcomingTasks.length > 0 ? (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 5 }}>
-                    {upcomingTasks.map(task => (
-                        <View key={task.id} style={{
-                        width: 140, padding: 10, borderRadius: 12,
-                        backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
-                        borderLeftWidth: 3, borderLeftColor: getCategoryColor(task.categoryId).hex
-                        }}>
-                        <Text style={{ fontSize: 10, color: currentColors.subText, marginBottom: 4 }}>
-                            {task.date}
-                        </Text>
-                        <Text numberOfLines={2} style={{ fontSize: 12, fontWeight: '600', color: currentColors.text }}>
-                            {task.text}
-                        </Text>
-                        </View>
-                    ))}
-                    </ScrollView>
-                ) : (
-                    <Text style={{ fontSize: 12, color: currentColors.subText, fontStyle: 'italic', paddingHorizontal: 5 }}>
-                    {t('no_planned_tasks')}
-                    </Text>
-                )}
-                </View>
+                {isCalendarExpanded ?
+                  <ChevronUp size={14} color={COLORS.primary} style={{ marginLeft: 5 }} /> :
+                  <ChevronDown size={14} color={currentColors.subText} style={{ marginLeft: 5 }} />
+                }
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}>
+                <ChevronRight size={20} color={currentColors.subText} />
+              </TouchableOpacity>
             </View>
-          )}
 
-        </View>
-      )}
-      {/* --- ANA İÇERİK MANTIĞI --- */}
-      {/* DURUM 1: Eğer Chat Odası açıksa ScrollView YOK, direkt fonksiyon çalışsın */}
-      {activeTab === 'chat_room' && chatTarget ? (
-          
+            {/* AÇILIR TAKVİM (AKORDEON) */}
+            {isCalendarExpanded && (
+              <View style={{ backgroundColor: currentColors.surface, marginHorizontal: 20, borderRadius: 16, padding: 10, borderWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', elevation: 5 }}>
+                <Calendar
+                  current={getISODate(selectedDate)}
+                  key={`${lang}-${theme}`}
+                  markingType={'custom'}
+                  markedDates={calendarMarks}
+                  onDayPress={(day: any) => {
+                    const newDate = new Date(day.timestamp);
+                    newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset());
+                    setSelectedDate(newDate);
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setIsCalendarExpanded(false);
+                  }}
+                  theme={{
+                    backgroundColor: 'transparent',
+                    calendarBackground: 'transparent',
+                    textSectionTitleColor: currentColors.subText,
+                    selectedDayBackgroundColor: COLORS.primary,
+                    selectedDayTextColor: '#ffffff',
+                    todayTextColor: COLORS.primary,
+                    dayTextColor: currentColors.text,
+                    textDisabledColor: isDark ? '#475569' : '#d9e1e8',
+                    arrowColor: COLORS.primary,
+                    monthTextColor: currentColors.text,
+                    indicatorColor: COLORS.primary,
+                    textDayFontWeight: '500',
+                    textMonthFontWeight: 'bold',
+                    textDayHeaderFontWeight: 'bold'
+                  }}
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ================================================================================= */}
+        {/* 3. ANA İÇERİK (PAGER VIEW veya CHAT ROOM) */}
+        {/* ================================================================================= */}
+        {activeTab === 'chat_room' && chatTarget ? (
           renderChatRoom()
-
-      ) : (
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 200 }} showsVerticalScrollIndicator={false}>
-        {/* --- BURASI ARTIK PAGERVIEW --- */}
-            <PagerView 
-                ref={pagerRef}
-                style={{ flex: 1 }} 
-                initialPage={0}
-                onPageSelected={handlePageScroll}
+        ) : (
+          <View style={{ flex: 1 }}>
+            <PagerView
+              ref={pagerRef}
+              style={{ flex: 1,width: '100%', height: '100%' }}
+              initialPage={0}
+              onPageSelected={handlePageScroll}
+              scrollEnabled={Platform.OS !== 'web'}
             >
-                {/* SAYFA 0: GÖREVLER (LIST) */}
-                            <View key="0">
-                                <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-                                    <View style={{gap: 12}}>
-                            {/* --- GÖREVLER PROGRESS BAR --- */}
-                                {totalTodaysTasks > 0 && (
-                                    <View style={{ backgroundColor: COLORS.primary, borderRadius: 20, padding: 20, marginBottom: 15, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 }}>
-                                        <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 5 }}>{t('daily_progress')}</Text>
-                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
-                                            <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>%{Math.round(taskProgress)}</Text>
-                                            <Text style={{ color: '#fff', fontSize: 12 }}>{completedTodaysTasks}/{totalTodaysTasks} {t('task_progress_label')}</Text>
-                                        </View>
-                                        <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 3 }}>
-                                            <View style={{ width: `${taskProgress}%`, height: '100%', backgroundColor: '#fff', borderRadius: 3 }} />
-                                        </View>
-                                    </View>
-                                )}
-                        {overdueTasks.length > 0 && (<View style={{marginBottom: 10}}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsOverdueExpanded(!isOverdueExpanded); }} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', padding:10, backgroundColor: isDark ? '#450a0a' : '#fef2f2', borderRadius:12, marginBottom: isOverdueExpanded ? 10 : 0, borderWidth:1, borderColor: COLORS.danger}}><View style={{flexDirection:'row', alignItems:'center', gap:10}}><AlertCircle size={20} color={COLORS.danger} /><Text style={{color: COLORS.danger, fontWeight:'bold'}}>{t('overdue')} ({overdueTasks.length})</Text></View>{isOverdueExpanded ? <ChevronUp size={20} color={COLORS.danger} /> : <ChevronDown size={20} color={COLORS.danger} />}</TouchableOpacity>{isOverdueExpanded && (<View style={{gap: 8}}>{overdueTasks.map(task => (<View key={task.id} style={[styles.taskCard, { backgroundColor: isDark ? '#450a0a' : '#fff', borderColor: COLORS.danger, borderWidth: 1 }]}><View style={{flex:1}}><Text style={[styles.taskText, { color: currentColors.text }]}>{task.text}</Text><Text style={{fontSize:10, color: COLORS.danger, marginTop:2}}>{task.date}</Text></View><TouchableOpacity onPress={() => deleteTask(task)}><Trash2 size={16} color={COLORS.danger} /></TouchableOpacity></View>))}</View>)}</View>)}
-                        
-                        {activeTasks.length > 0 ? activeTasks.map((task, index) => (
-                            <React.Fragment key={task.id}>
-                                {/* 1. Görevi Bas */}
-                                {renderTask(task)}
-
-                                {/* 2. Her 5. görevden sonra Reklam Bas (Premium değilse) */}
-                                {!isPremium && (index + 1) % 5 === 0 && (
-                                    <View style={{ marginVertical: 10, alignItems: 'center' }}>
-                                        {/* Buraya reklam bileşeninizi koyun */}
-                                        <OmmioAdBanner isPremium={false} />
-                                    </View>
-                                )}
-                            </React.Fragment>
-                        )) : null}
-                        
-                        {completedTasks.length > 0 && (
-                            <View style={{marginTop: 20}}>
-                                {completedTasks.length === 1 ? (renderTask(completedTasks[0])) : (
-                                    <View><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsCompletedExpanded(!isCompletedExpanded); }} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', padding:10, backgroundColor: currentColors.surface, borderRadius:12, marginBottom:10}}><View style={{flexDirection:'row', alignItems:'center', gap:10}}><CheckCircle2 size={20} color={COLORS.success} /><Text style={{color: currentColors.text, fontWeight:'bold'}}>{t('completed')} ({completedTasks.length})</Text></View>{isCompletedExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}</TouchableOpacity>{isCompletedExpanded && <View style={{opacity:0.7, gap:8}}>{completedTasks.map(task => renderTask(task))}</View>}</View>
-                                )}
-                            </View>
-                        )}
-
-                        {activeTasks.length === 0 && completedTasks.length === 0 && overdueTasks.length === 0 && (<View style={styles.emptyState}><View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Check size={32} color={COLORS.primary} /></View><Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('all_good')}</Text><Text style={styles.emptyDesc}>{t('no_tasks_today')}</Text></View>)}
-                        </View>
-                    </ScrollView>
-                </View>
-
-                {/* SAYFA 1: ALIŞKANLIKLAR (HABITS) */}
-                <View key="1">
-                    <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-                        <View style={{gap: 15}}>
-                
-                {/* --- YENİ TARİH NAVİGASYONU VE AÇILIR TAKVİM (HABITS İÇİN) --- */}
-                <View style={{ marginBottom: 5 }}>
-                  <View style={styles.dateNavContainer}>
-                    <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateArrow}>
-                      <ChevronLeft size={20} color={currentColors.subText} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                      onPress={() => {
-                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                        setIsCalendarExpanded(!isCalendarExpanded);
-                      }}
-                      style={styles.dateDisplay}
-                      activeOpacity={0.7}
-                    >
-                      <CalendarIcon size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
-                      <Text style={[styles.dateText, { color: currentColors.text }]}>
-                        {selectedDate.getDate()} {getGreeting(lang) === 'tr' ? ' ' : '/'} {selectedDate.getMonth() + 1} {selectedDate.getFullYear()}
-                      </Text>
-                      
-                      {isCalendarExpanded ? (
-                         <ChevronUp size={14} color={COLORS.primary} style={{marginLeft: 5}} />
-                      ) : (
-                         <ChevronDown size={14} color={currentColors.subText} style={{marginLeft: 5}} />
-                      )}
-
-                      {getISODate(selectedDate) === getISODate(new Date()) && (
-                        <View style={styles.todayBadge}>
-                          <Text style={styles.todayText}>{t('today')}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => changeDate(1)} style={styles.dateArrow}>
-                      <ChevronRight size={20} color={currentColors.subText} />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* AÇILIR TAKVİM */}
-                  {isCalendarExpanded && (
-                    <View style={{ 
-                        marginTop: 10, 
-                        backgroundColor: currentColors.surface, 
-                        borderRadius: 16, 
-                        padding: 10,
-                        borderWidth: 1,
-                        borderColor: isDark ? '#334155' : '#f1f5f9',
-                        overflow: 'hidden',
-                        marginBottom: 10 // Alttaki elemanlarla mesafe
-                    }}>
-                      <Calendar
-                        current={getISODate(selectedDate)}
-                        key={`${lang}-${theme}-habits`} // Benzersiz key
-                        markingType={'custom'}
-                        markedDates={{
-                          [getISODate(selectedDate)]: {
-                            selected: true,
-                            customStyles: {
-                              container: { backgroundColor: COLORS.primary, borderRadius: 8, elevation: 2 },
-                              text: { color: '#fff', fontWeight: 'bold' }
-                            }
-                          },
-                          [getISODate(new Date())]: {
-                            customStyles: { text: { color: COLORS.primary, fontWeight: 'bold' } }
-                          }
-                        }}
-                        onDayPress={(day: any) => {
-                          const newDate = new Date(day.timestamp);
-                          newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset());
-                          setSelectedDate(newDate);
-                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                          setIsCalendarExpanded(false);
-                        }}
-                        theme={{
-                          backgroundColor: 'transparent',
-                          calendarBackground: 'transparent',
-                          textSectionTitleColor: currentColors.subText,
-                          selectedDayBackgroundColor: COLORS.primary,
-                          selectedDayTextColor: '#ffffff',
-                          todayTextColor: COLORS.primary,
-                          dayTextColor: currentColors.text,
-                          textDisabledColor: isDark ? '#475569' : '#d9e1e8',
-                          dotColor: COLORS.primary,
-                          arrowColor: COLORS.primary,
-                          monthTextColor: currentColors.text,
-                          indicatorColor: COLORS.primary,
-                          textDayFontWeight: '500',
-                          textMonthFontWeight: 'bold',
-                          textDayHeaderFontWeight: 'bold',
-                          textDayFontSize: 14,
-                          textMonthFontSize: 16,
-                          textDayHeaderFontSize: 12
-                        }}
-                      />
+              {/* --- SAYFA 0: GÖREVLER (TASKS) --- */}
+              <View key="0" style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+                  
+                  {/* Progress Bar */}
+                  {totalTodaysTasks > 0 && (
+                    <View style={{ backgroundColor: COLORS.primary, borderRadius: 20, padding: 20, marginBottom: 15, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 5 }}>{t('daily_progress')}</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
+                        <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>%{Math.round(taskProgress)}</Text>
+                        <Text style={{ color: '#fff', fontSize: 12 }}>{completedTodaysTasks}/{totalTodaysTasks}</Text>
+                      </View>
+                      <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 3 }}>
+                        <View style={{ width: `${taskProgress}%`, height: '100%', backgroundColor: '#fff', borderRadius: 3 }} />
+                      </View>
                     </View>
                   )}
-                </View>
-                {/* --- ALISKANLIKLAR PROGRESS BAR (GÜNCELLENDİ) --- */}
-                <View style={{ 
-                    backgroundColor: COLORS.primary, // <-- DEĞİŞTİ (Eskisi: COLORS.secondary)
-                    borderRadius: 20, 
-                    padding: 20, 
-                    marginBottom: 15, 
-                    shadowColor: COLORS.primary,     // <-- DEĞİŞTİ (Eskisi: COLORS.secondary)
-                    shadowOpacity: 0.3, 
-                    shadowRadius: 10, 
-                    elevation: 5 
-                }}>
-                    <Text style={{ color: '#fff', fontSize: 12, marginBottom: 5, fontWeight:'600' }}>{t('daily_progress')}</Text>
+
+                  {/* Geciken Görevler */}
+                  {overdueTasks.length > 0 && (
+                    <View style={{ marginBottom: 15 }}>
+                      <TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsOverdueExpanded(!isOverdueExpanded); }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, backgroundColor: isDark ? '#450a0a' : '#fef2f2', borderRadius: 12, borderWidth: 1, borderColor: COLORS.danger }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <AlertCircle size={20} color={COLORS.danger} />
+                          <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>{t('overdue')} ({overdueTasks.length})</Text>
+                        </View>
+                        {isOverdueExpanded ? <ChevronUp size={20} color={COLORS.danger} /> : <ChevronDown size={20} color={COLORS.danger} />}
+                      </TouchableOpacity>
+                      {isOverdueExpanded && (
+                        <View style={{ gap: 8, marginTop: 10 }}>
+                          {overdueTasks.map(task => (
+                            <View key={task.id} style={[styles.taskCard, { backgroundColor: isDark ? '#2a0a0a' : '#fff', borderColor: COLORS.danger, borderWidth: 1 }]}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.taskText, { color: currentColors.text }]}>{task.text}</Text>
+                                <Text style={{ fontSize: 10, color: COLORS.danger, marginTop: 2 }}>{task.date}</Text>
+                              </View>
+                              <TouchableOpacity onPress={() => deleteTask(task)}><Trash2 size={16} color={COLORS.danger} /></TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Aktif Görevler */}
+                  <View style={{ gap: 10 }}>
+                    {activeTasks.length > 0 ? activeTasks.map((task, index) => (
+                      <React.Fragment key={task.id}>
+                        {renderTask(task)}
+                        {/* Her 5 görevde bir reklam */}
+                        {!isPremium && (index + 1) % 5 === 0 && (
+                          <View style={{ marginVertical: 10, alignItems: 'center' }}>
+                            <OmmioAdBanner isPremium={false} />
+                          </View>
+                        )}
+                      </React.Fragment>
+                    )) : (
+                      completedTasks.length === 0 && overdueTasks.length === 0 && (
+                        <View style={styles.emptyState}>
+                          <View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}>
+                            <Check size={32} color={COLORS.primary} />
+                          </View>
+                          <Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('all_good')}</Text>
+                          <Text style={styles.emptyDesc}>{t('no_tasks_today')}</Text>
+                        </View>
+                      )
+                    )}
+                  </View>
+
+                  {/* Tamamlanan Görevler */}
+                  {completedTasks.length > 0 && (
+                    <View style={{ marginTop: 20 }}>
+                      <TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsCompletedExpanded(!isCompletedExpanded); }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, backgroundColor: currentColors.surface, borderRadius: 12, marginBottom: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <CheckCircle2 size={20} color={COLORS.success} />
+                          <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{t('completed')} ({completedTasks.length})</Text>
+                        </View>
+                        {isCompletedExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}
+                      </TouchableOpacity>
+                      {isCompletedExpanded && <View style={{ opacity: 0.7, gap: 8 }}>{completedTasks.map(task => renderTask(task))}</View>}
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+
+              {/* --- SAYFA 1: ALIŞKANLIKLAR (HABITS) --- */}
+              <View key="1" style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+                  {/* Alışkanlık İstatistikleri */}
+                  <View style={{ backgroundColor: COLORS.primary, borderRadius: 20, padding: 20, marginBottom: 15, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 }}>
+                    <Text style={{ color: '#fff', fontSize: 12, marginBottom: 5, fontWeight: '600' }}>{t('daily_progress')}</Text>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
-                        <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>%{Math.round(habitProgress)}</Text>
-                        <Text style={{ color: '#fff', fontSize: 12 }}>{completedTodaysHabits}/{totalTodaysHabits} {t('habit_progress_label')}</Text>
+                      <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>%{Math.round(habitProgress)}</Text>
+                      <Text style={{ color: '#fff', fontSize: 12 }}>{completedTodaysHabits}/{totalTodaysHabits}</Text>
                     </View>
                     <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 3 }}>
-                        <View style={{ width: `${habitProgress}%`, height: '100%', backgroundColor: '#fff', borderRadius: 3 }} />
+                      <View style={{ width: `${habitProgress}%`, height: '100%', backgroundColor: '#fff', borderRadius: 3 }} />
                     </View>
-                </View>
-                {/* ... PagerView Sayfa 1 içindeki todaysHabits kısmı ... */}
-                {todaysHabits.length > 0 ? todaysHabits.map((habit, index) => {
-                    const isDone = habit.completedDates.includes(currentISODate);
-                    const streak = habit.completedDates.length;
-                    const cat = categories.find(c => c.id === habit.categoryId);
-                    const cc = getCategoryColor(cat?.color || 'purple');
+                  </View>
 
-                    return (
+                  {/* Alışkanlık Listesi */}
+                  <View style={{ gap: 12 }}>
+                    {todaysHabits.length > 0 ? todaysHabits.map((habit, index) => {
+                      const isDone = habit.completedDates.includes(currentISODate);
+                      const streak = habit.completedDates.length;
+                      const cat = categories.find(c => c.id === habit.categoryId);
+                      const cc = getCategoryColor(cat?.color || 'purple');
+
+                      return (
                         <React.Fragment key={habit.id}>
-                            {/* 1. Alışkanlık Kartını Bas */}
-                            <TouchableOpacity onPress={() => toggleHabitCompletion(habit, currentISODate)} style={[styles.taskCard, { backgroundColor: currentColors.surface, opacity: isDone ? 0.8 : 1 }]}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                        <View style={[styles.checkBox, isDone ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary } : { borderColor: '#cbd5e1' }]}>{isDone && <Check size={14} color="#fff" />}</View>
-                                        <View>
-                                            <Text style={[styles.taskText, { color: currentColors.text, textDecorationLine: isDone ? 'line-through' : 'none' }]}>{habit.title}</Text>
-                                            <View style={{ flexDirection: 'row', gap: 5, marginTop: 2 }}>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#ffedd5', paddingHorizontal: 5, borderRadius: 4 }}><Flame size={10} color="#f97316" /><Text style={{ fontSize: 10, color: '#f97316', fontWeight: 'bold' }}>{streak} {t('day')} </Text></View>
-                                                <View style={{ backgroundColor: cc.bg, paddingHorizontal: 5, borderRadius: 4 }}><Text style={{ fontSize: 10, color: cc.hex }}>{cat?.name}</Text></View>
-                                                {habit.notificationTime && <Text style={{ fontSize: 10, color: currentColors.subText }}>⏰ {habit.notificationTime}</Text>}
-                                            </View>
-                                        </View>
-                                    </View>
-                                    <TouchableOpacity onPress={() => {
-                                        askConfirmation(
-                                            t('delete'),
-                                            t('delete_habit_confirm'),
-                                            () => deleteHabit(habit),
-                                            true
-                                        );
-                                    }}><Trash2 size={16} color={currentColors.subText} /></TouchableOpacity>
+                          <TouchableOpacity onPress={() => toggleHabitCompletion(habit, currentISODate)} style={[styles.taskCard, { backgroundColor: currentColors.surface, opacity: isDone ? 0.8 : 1 }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <View style={[styles.checkBox, isDone ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary } : { borderColor: '#cbd5e1' }]}>{isDone && <Check size={14} color="#fff" />}</View>
+                                <View>
+                                  <Text style={[styles.taskText, { color: currentColors.text, textDecorationLine: isDone ? 'line-through' : 'none' }]}>{habit.title}</Text>
+                                  <View style={{ flexDirection: 'row', gap: 5, marginTop: 2 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#ffedd5', paddingHorizontal: 5, borderRadius: 4 }}><Flame size={10} color="#f97316" /><Text style={{ fontSize: 10, color: '#f97316', fontWeight: 'bold' }}>{streak} {t('day')}</Text></View>
+                                    <View style={{ backgroundColor: cc.bg, paddingHorizontal: 5, borderRadius: 4 }}><Text style={{ fontSize: 10, color: cc.hex }}>{cat?.name}</Text></View>
+                                    {habit.notificationTime && <Text style={{ fontSize: 10, color: currentColors.subText }}>⏰ {habit.notificationTime}</Text>}
+                                  </View>
                                 </View>
-                            </TouchableOpacity>
-
-                            {/* 2. Her 5. alışkanlıktan sonra Reklam Bas (Premium değilse) */}
-                            {!isPremium && (index + 1) % 5 === 0 && (
-                                <View style={{ marginVertical: 10, alignItems: 'center' }}>
-                                    <OmmioAdBanner isPremium={false} />
-                                </View>
-                            )}
+                              </View>
+                              <TouchableOpacity onPress={() => askConfirmation(t('delete'), t('delete_habit_confirm'), () => deleteHabit(habit), true)}><Trash2 size={16} color={currentColors.subText} /></TouchableOpacity>
+                            </View>
+                          </TouchableOpacity>
+                          {!isPremium && (index + 1) % 5 === 0 && (
+                            <View style={{ marginVertical: 10, alignItems: 'center' }}>
+                              <OmmioAdBanner isPremium={false} />
+                            </View>
+                          )}
                         </React.Fragment>
-                    );
-                }) : (
-                    <View style={styles.emptyState}>
+                      );
+                    }) : (
+                      <View style={styles.emptyState}>
                         <View style={[styles.emptyIconBox, { backgroundColor: isDark ? '#1e293b' : '#e0e7ff' }]}><Repeat size={32} color={COLORS.primary} /></View>
                         <Text style={[styles.emptyTitle, { color: currentColors.text }]}>{t('new_habit')}!</Text>
                         <Text style={styles.emptyDesc}>{t('motivational_daily')}</Text>
-                    </View>
-                )}
-            </View>
-                    </ScrollView>
-                </View>
+                      </View>
+                    )}
+                  </View>
+                </ScrollView>
+              </View>
 
-                {/* SAYFA 2: MESAJLAR (MESSAGES) */}
-                        <View key="2">
-                            <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-                                user.isAnonymous ? (
-                        // MİSAFİR İÇİN BOŞ EKRAN UYARISI
-                        <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, marginTop:50}}>
-                            <MessageCircle size={60} color={COLORS.primary} style={{opacity:0.5, marginBottom:20}}/>
-                            <Text style={{textAlign:'center', fontWeight:'bold', fontSize:18, color:currentColors.text, marginBottom:10}}>{t('profile_edit_desc')}</Text>
-                            <Text style={{textAlign:'center', color:currentColors.subText, marginBottom:20}}>{t('messaging_guest_desc')}</Text>
-                            {/* BURASI DEĞİŞTİ: handleLogout YERİNE Modal Açılıyor */}
-                            <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, {paddingHorizontal:30}]}>
-                                <Text style={{color:'#fff', fontWeight:'bold'}}>{t('create_ac')}</Text>
-                            </TouchableOpacity>
+              {/* --- SAYFA 2: MESAJLAR (MESSAGES) --- */}
+              <View key="2" style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+                  {user.isAnonymous ? (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 50 }}>
+                      <MessageCircle size={60} color={COLORS.primary} style={{ opacity: 0.5, marginBottom: 20 }} />
+                      <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 18, color: currentColors.text, marginBottom: 10 }}>{t('profile_edit_desc')}</Text>
+                      <Text style={{ textAlign: 'center', color: currentColors.subText, marginBottom: 20 }}>{t('messaging_guest_desc')}</Text>
+                      <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, { paddingHorizontal: 30 }]}>
+                        <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('create_ac')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 10 }}>
+                      {contacts.length === 0 ? (
+                        <View style={{ alignItems: 'center', marginTop: 50, opacity: 0.6 }}>
+                          <MessageCircle size={50} color={currentColors.subText} />
+                          <Text style={{ marginTop: 10, color: currentColors.subText, textAlign: 'center' }}>{t('no_connections')}</Text>
                         </View>
-                    ) : (
-                    <View style={{ gap: 10, padding: 20 }}>
-                        {contacts
-                            // Son mesajın tarihine göre sırala (En yeni en üstte)
-                            .sort((a, b) => {
-                                const timeA = chatPreviews[a.uid]?.timestamp?.seconds || 0;
-                                const timeB = chatPreviews[b.uid]?.timestamp?.seconds || 0;
-                                return timeB - timeA;
-                            })
-                            .map(contact => {
+                      ) : (
+                        contacts
+                          .sort((a, b) => {
+                            const timeA = chatPreviews[a.uid]?.timestamp?.seconds || 0;
+                            const timeB = chatPreviews[b.uid]?.timestamp?.seconds || 0;
+                            return timeB - timeA;
+                          })
+                          .map(contact => {
                             const preview = chatPreviews[contact.uid] || { text: "", timestamp: null, unread: 0 };
-                            
                             return (
-                                <TouchableOpacity 
-                                    key={contact.uid} 
-                                    onPress={() => { setActiveTab('chat_room'); setChatTarget(contact); }} 
-                                    style={[styles.card, {
-                                        backgroundColor: currentColors.surface, 
-                                        flexDirection: 'row', 
-                                        alignItems: 'center', 
-                                        paddingVertical: 12,
-                                        paddingHorizontal: 15,
-                                        marginBottom: 5
-                                    }]}
-                                >
-                                    
-                                    {/* 1. FOTOĞRAF */}
-                                    <View style={{position: 'relative'}}>
-                                        <View style={{width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden'}}>
-                                            {contact.photoURL ? (
-                                                <Image source={{uri: contact.photoURL}} style={{width: 50, height: 50}} />
-                                            ) : (
-                                                <Text style={{fontWeight: 'bold', color: '#fff', fontSize: 18}}>{contact.username[0].toUpperCase()}</Text>
-                                            )}
-                                        </View>
-                                        {/* Online durumu eklenebilir (Opsiyonel) */}
-                                    </View>
-
-                                    {/* 2. ORTA KISIM (İsim ve Mesaj) */}
-                                    <View style={{marginLeft: 15, flex: 1, justifyContent: 'center'}}>
-                                        <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4}}>
-                                            <Text style={{fontSize: 16, fontWeight: 'bold', color: currentColors.text}} numberOfLines={1}>
-                                                    {contact.displayName || contact.username}
-                                                </Text>
-                                            {/* ZAMAN DAMGASI */}
-                                                {preview.timestamp && (
-                                                    <Text style={{
-                                                        fontSize: 11, 
-                                                        // BURASI GÜNCELLENDİ: Yeşil (success) yerine Mor (primary) yapıldı
-                                                        color: preview.unread > 0 ? COLORS.primary : currentColors.subText, 
-                                                        fontWeight: preview.unread > 0 ? 'bold' : 'normal'
-                                                    }}>
-                                                        {formatChatTime(preview.timestamp)}
-                                                    </Text>
-                                                )}
-                                        </View>
-
-                                        <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-                                            <Text style={{fontSize: 13, color: currentColors.subText, flex: 1, marginRight: 10}} numberOfLines={1}>
-                                                    {preview.text}
-                                            </Text>
-                                            
-                                            {/* OKUNMAMIŞ MESAJ ROZETİ */}
-                                                {preview.unread > 0 && (
-                                                    <View style={{
-                                                        backgroundColor: COLORS.primary, // BURAYI GÜNCELLEDİK: Yeşil yerine Ana Renk (Mor)
-                                                        minWidth: 20, height: 20, borderRadius: 10, 
-                                                        alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5
-                                                    }}>
-                                                        <Text style={{color: '#fff', fontSize: 10, fontWeight: 'bold'}}>
-                                                            {preview.unread}
-                                                        </Text>
-                                                    </View>
-                                                )}
-                                        </View>
-                                    </View>
-                                </TouchableOpacity>
-                            )
-                        })}
-                        
-                        {contacts.length === 0 && (
-                            <View style={{alignItems:'center', marginTop: 50, opacity: 0.6}}>
-                                <MessageCircle size={50} color={currentColors.subText} />
-                                <Text style={{marginTop: 10, color: currentColors.subText, textAlign:'center'}}>
-                                    {t('no_connections')}
-                                </Text>
-                            </View>
-                        )}
+                              <TouchableOpacity key={contact.uid} onPress={() => { setActiveTab('chat_room'); setChatTarget(contact); }} style={[styles.card, { backgroundColor: currentColors.surface, flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 15 }]}>
+                                <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', marginRight: 15 }}>
+                                  {contact.photoURL ? <Image source={{ uri: contact.photoURL }} style={{ width: 50, height: 50, borderRadius: 25 }} /> : <Text style={{ fontWeight: 'bold', color: '#fff', fontSize: 18 }}>{contact.username[0].toUpperCase()}</Text>}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{contact.displayName || contact.username}</Text>
+                                    {preview.timestamp && <Text style={{ fontSize: 11, color: preview.unread > 0 ? COLORS.primary : currentColors.subText, fontWeight: preview.unread > 0 ? 'bold' : 'normal' }}>{formatChatTime(preview.timestamp)}</Text>}
+                                  </View>
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Text numberOfLines={1} style={{ fontSize: 13, color: currentColors.subText, flex: 1, marginRight: 10 }}>{preview.text}</Text>
+                                    {preview.unread > 0 && <View style={{ backgroundColor: COLORS.primary, minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 }}><Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>{preview.unread}</Text></View>}
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })
+                      )}
                     </View>
-                )
-                    </ScrollView>
-                </View>
+                  )}
+                </ScrollView>
+              </View>
 
-                {/* SAYFA 3: SOSYAL (SOCIAL) */}
-                                <View key="3">
-                                    <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-                                        user.isAnonymous ? (
-                                // MİSAFİR İÇİN BOŞ EKRAN UYARISI
-                                <View style={{flex:1, alignItems:'center', justifyContent:'center', padding:40, marginTop:50}}>
-                                    <Users size={60} color={COLORS.primary} style={{opacity:0.5, marginBottom:20}}/>
-                                    <Text style={{textAlign:'center', fontWeight:'bold', fontSize:18, color:currentColors.text, marginBottom:10}}>{t('social1')}</Text>
-                                    <Text style={{textAlign:'center', color:currentColors.subText, marginBottom:20}}>{t('register_af')}</Text>
-                                    <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, {paddingHorizontal:30}]}>
-                                        <Text style={{color:'#fff', fontWeight:'bold'}}>{t('create_ac')}</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            ) : (
-                            <View style={{ gap: 20, padding: 20 }}>
-                                
-                                {/* BAŞLIK VE EKLE BUTONU */}
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('friends')}</Text>
-                                    <TouchableOpacity onPress={() => {
-                                        if(!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true);
-                                    }}>
-                                        <UserPlus size={20} color={COLORS.primary} />
-                                    </TouchableOpacity>
-                                </View>
+              {/* --- SAYFA 3: SOSYAL (SOCIAL) --- */}
+              <View key="3" style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+                  {user.isAnonymous ? (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 50 }}>
+                      <Users size={60} color={COLORS.primary} style={{ opacity: 0.5, marginBottom: 20 }} />
+                      <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 18, color: currentColors.text, marginBottom: 10 }}>{t('social1')}</Text>
+                      <Text style={{ textAlign: 'center', color: currentColors.subText, marginBottom: 20 }}>{t('register_af')}</Text>
+                      <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={[styles.btn, { paddingHorizontal: 30 }]}>
+                        <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('create_ac')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 20 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('friends')}</Text>
+                        <TouchableOpacity onPress={() => { if (!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true); }}>
+                          <UserPlus size={20} color={COLORS.primary} />
+                        </TouchableOpacity>
+                      </View>
 
-                                {/* Gelen İstekler (Değişmedi) */}
-                                {friendRequests.length > 0 && (
-                                    <View>
-                                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>{t('social_pending_requests')}</Text>
-                                        {friendRequests.map(req => (
-                                            <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
-                                                <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
-                                                <View style={{ flexDirection: 'row', gap: 10 }}><TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity><TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity></View>
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
-
-                                {/* --- ARKADAŞ LİSTESİ (AKORDEON YAPISI) --- */}
-                                {contacts.map(contact => {
-                                    const isExpanded = expandedContactId === contact.uid;
-                                    const contactCat = categories.find(c => c.id === contact.defaultCategoryId);
-
-                                    return (
-                                        <View key={contact.uid} style={[styles.card, { backgroundColor: currentColors.surface, padding: 0, marginBottom: 10, overflow: 'hidden' }]}>
-                                            
-                                            {/* 1. KİŞİ BAŞLIĞI (Her zaman görünür) */}
-                                            <TouchableOpacity 
-                                                onPress={() => {
-                                                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Animasyon
-                                                    setExpandedContactId(isExpanded ? null : contact.uid); // Aç/Kapa mantığı
-                                                }}
-                                                activeOpacity={0.8}
-                                                style={{ flexDirection: 'row', alignItems: 'center', padding: 15 }}
-                                            >
-                                                {/* Fotoğraf */}
-                                                <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                                    {contact.photoURL ? (
-                                                        <Image source={{ uri: contact.photoURL }} style={{ width: 50, height: 50 }} />
-                                                    ) : (
-                                                        <Text style={{ fontWeight: 'bold', color: '#fff', fontSize: 18 }}>{contact.username[0].toUpperCase()}</Text>
-                                                    )}
-                                                </View>
-
-                                            {/* --- ARKADAŞ LİSTESİ KARTI İÇİ --- */}
-                                                <View style={{ marginLeft: 15, flex: 1 }}>
-                                                    {/* 1. Ana İsim (Display Name) - Instagram'daki Kalın İsim */}
-                                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>
-                                                        {contact.displayName || contact.username}
-                                                    </Text>
-                                                    
-                                                    {/* 2. Altına Kullanıcı Adı (@username) - Instagram'daki gri küçük yazı */}
-                                                    <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight:'500', marginTop: 1 }}>
-                                                        @{contact.username}
-                                                    </Text>
-
-                                                    <Text style={{ fontSize: 11, color: currentColors.subText, marginTop: 4 }}>
-                                                        {isExpanded ? t('hide_detay') : t('touch_s')}
-                                                    </Text>
-                                                </View>
-
-                                                {/* Açılır/Kapanır Ok */}
-                                                {isExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}
-                                            </TouchableOpacity>
-
-                                            {/* 2. GİZLİ DETAYLAR (Sadece isExpanded true ise görünür) */}
-                                            {isExpanded && (
-                                                <View style={{ padding: 15, paddingTop: 0, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#f8fafc' }}>
-                                                    
-                                                    {/* A. Görev Atama İzni */}
-                                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 15 }}>
-                                                        <View>
-                                                            <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('task_assign_permission')}</Text>
-                                                            <Text style={{ fontSize: 10, color: currentColors.subText }}>{t('c_sendtask')}</Text>
-                                                        </View>
-                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: contact.canAssignToMe ? COLORS.success : currentColors.subText }}>
-                                                                {contact.canAssignToMe ? t('open_label') : t('closed_label')}
-                                                            </Text>
-                                                            <Switch 
-                                                                value={contact.canAssignToMe} 
-                                                                onValueChange={() => togglePermission(contact)} 
-                                                                trackColor={{ false: "#cbd5e1", true: "#10b981" }} 
-                                                            />
-                                                        </View>
-                                                    </View>
-
-                                                    {/* B. Kategori Seçimi */}
-                                                    <View>
-                                                        <Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 8 }}>{t('assign_tasks_from')}</Text>
-                                                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                                            {categories.map(cat => {
-                                                                const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0];
-                                                                const isSelected = contact.defaultCategoryId === cat.id;
-                                                                
-                                                                return (
-                                                                    <TouchableOpacity 
-                                                                        key={cat.id} 
-                                                                        onPress={() => setContactCategory(contact, cat.id)} 
-                                                                        style={{
-                                                                            flexDirection: 'row', alignItems: 'center', gap: 5, 
-                                                                            paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, marginRight: 8,
-                                                                            backgroundColor: isSelected ? cc.bg : (isDark ? '#334155' : '#fff'),
-                                                                            borderWidth: 1, 
-                                                                            borderColor: isSelected ? cc.hex : (isDark ? '#475569' : '#e2e8f0')
-                                                                        }}
-                                                                    >
-                                                                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cc.hex }} />
-                                                                        <Text style={{ fontSize: 12, color: isSelected ? cc.hex : currentColors.text, fontWeight: 'bold' }}>
-                                                                            {cat.name}
-                                                                        </Text>
-                                                                        {isSelected && <Check size={12} color={cc.hex} />}
-                                                                    </TouchableOpacity>
-                                                                )
-                                                            })}
-                                                        </ScrollView>
-                                                    </View>
-                                                    {/* C. SİL VE ENGELLE BUTONLARI */}
-                                                    <View style={{ marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#475569' : '#e2e8f0', gap: 10 }}>
-                                                        {/* 1. BUTON: ATANAN GÖREVLER (EN ÜSTTE, TAM GENİŞLİK) */}
-                                                        <TouchableOpacity 
-                                                            onPress={() => showTasksAssignedToFriend(contact.uid, contact.username)}
-                                                            style={{ 
-                                                                flexDirection: 'row', 
-                                                                alignItems: 'center', 
-                                                                justifyContent: 'center', 
-                                                                gap: 8, 
-                                                                padding: 12, 
-                                                                borderRadius: 12, 
-                                                                backgroundColor: '#e0e7ff', 
-                                                                width: '100%' // Tam genişlik kaplasın
-                                                            }} 
-                                                        >
-                                                            <ListTodo size={18} color={COLORS.primary} />
-                                                            <Text style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.primary }}>
-                                                                {t('my_assigned_tasks')}
-                                                            </Text>
-                                                        </TouchableOpacity>
-
-                                                       {/* 2. SATIR: SİL VE ENGELLE (YAN YANA %50 PAYLAŞIMLI) */}
-                                                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                                                            
-                                                            {/* SİL BUTONU */}
-                                                            <TouchableOpacity 
-                                                                onPress={() => handleRemoveFriend(contact.uid, contact.username)}
-                                                                style={{ 
-                                                                    flex: 1, // Alanı paylaş
-                                                                    flexDirection: 'row', 
-                                                                    alignItems: 'center', 
-                                                                    justifyContent: 'center', 
-                                                                    gap: 6, 
-                                                                    padding: 12, 
-                                                                    borderRadius: 12, 
-                                                                    backgroundColor: '#fee2e2' 
-                                                                }}
-                                                            >
-                                                                <UserMinus size={18} color={COLORS.danger} />
-                                                                {/* Metin çok uzunsa küçültmek için numberOfLines ve adjustsFontSizeToFit ekledik */}
-                                                                <Text 
-                                                                    numberOfLines={1} 
-                                                                    adjustsFontSizeToFit 
-                                                                    style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.danger }}
-                                                                >
-                                                                    {t('remove_friend')}
-                                                                </Text>
-                                                            </TouchableOpacity>
-
-                                                            {/* ENGELLE BUTONU */}
-                                                            <TouchableOpacity 
-                                                                onPress={() => handleBlockFriend(contact.uid, contact.username)}
-                                                                style={{ 
-                                                                    flex: 1, // Alanı paylaş
-                                                                    flexDirection: 'row', 
-                                                                    alignItems: 'center', 
-                                                                    justifyContent: 'center', 
-                                                                    gap: 6, 
-                                                                    padding: 12, 
-                                                                    borderRadius: 12, 
-                                                                    backgroundColor: isDark ? '#334155' : '#e2e8f0' 
-                                                                }}
-                                                            >
-                                                                <XCircle size={18} color={currentColors.subText} />
-                                                                <Text 
-                                                                    numberOfLines={1} 
-                                                                    adjustsFontSizeToFit
-                                                                    style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText }}
-                                                                >
-                                                                    {t('block')}
-                                                                </Text>
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                        
-                                                    </View>
-                                                </View>
-                                            )}
-                                        </View>
-                                    );
-                                })}
-
-                                {contacts.length === 0 && friendRequests.length === 0 && <Text style={{ textAlign: 'center', color: currentColors.subText }}>{t('no_users')}</Text>}
+                      {friendRequests.length > 0 && (
+                        <View>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>{t('social_pending_requests')}</Text>
+                          {friendRequests.map(req => (
+                            <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
+                              <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text>
+                              <View style={{ flexDirection: 'row', gap: 10 }}>
+                                <TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity>
+                                <TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity>
+                              </View>
                             </View>
-                        )
-                    </ScrollView>
-                </View>
+                          ))}
+                        </View>
+                      )}
 
-                {/* SAYFA 4: PROFİL (PROFILE) */}
-                                    <View key="4">
-                                        <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-                                            <View style={{ gap: 15, padding: 20 }}>
+                      {/* Arkadaş Listesi */}
+                      {contacts.length === 0 && friendRequests.length === 0 ? (
+                        <Text style={{ textAlign: 'center', color: currentColors.subText }}>{t('no_users')}</Text>
+                      ) : (
+                        contacts.map(contact => {
+                          const isExpanded = expandedContactId === contact.uid;
+                          return (
+                            <View key={contact.uid} style={[styles.card, { backgroundColor: currentColors.surface, padding: 0, marginBottom: 10, overflow: 'hidden' }]}>
+                              <TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedContactId(isExpanded ? null : contact.uid); }} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', padding: 15 }}>
+                                <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', marginRight: 15 }}>
+                                  {contact.photoURL ? <Image source={{ uri: contact.photoURL }} style={{ width: 50, height: 50, borderRadius: 25 }} /> : <Text style={{ fontWeight: 'bold', color: '#fff', fontSize: 18 }}>{contact.username[0].toUpperCase()}</Text>}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{contact.displayName || contact.username}</Text>
+                                  <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight: '500' }}>@{contact.username}</Text>
+                                </View>
+                                {isExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}
+                              </TouchableOpacity>
 
-                        {/* 1. PROFİL FOTOĞRAFI VE KULLANICI ADI KARTI */}
-                        <View style={[styles.card, { backgroundColor: currentColors.surface, alignItems:'center', paddingVertical: 30 }]}>
-                        
-                        {/* A. Fotoğraf Kısmı */}
-                        <TouchableOpacity 
-                            onPress={() => {
-                                // KONTROL BURADA: Misafir ise uyarı ver ve çık
-                                if (user.isAnonymous || user.isGuest) {
-                                    showToast(t('warning_title'), t('guest_edit_warning') || t('guest_cannot_change_photo'), 'warning');
+                              {isExpanded && (
+                                <View style={{ padding: 15, paddingTop: 0, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#f8fafc' }}>
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 15 }}>
+                                    <View><Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('task_assign_permission')}</Text><Text style={{ fontSize: 10, color: currentColors.subText }}>{t('c_sendtask')}</Text></View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                      <Text style={{ fontSize: 12, fontWeight: 'bold', color: contact.canAssignToMe ? COLORS.success : currentColors.subText }}>{contact.canAssignToMe ? t('open_label') : t('closed_label')}</Text>
+                                      <Switch value={contact.canAssignToMe} onValueChange={() => togglePermission(contact)} trackColor={{ false: "#cbd5e1", true: "#10b981" }} />
+                                    </View>
+                                  </View>
+                                  <View style={{ marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#475569' : '#e2e8f0', gap: 10 }}>
+                                    <TouchableOpacity onPress={() => showTasksAssignedToFriend(contact.uid, contact.username)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: '#e0e7ff', width: '100%' }}>
+                                      <ListTodo size={18} color={COLORS.primary} /><Text style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.primary }}>{t('my_assigned_tasks')}</Text>
+                                    </TouchableOpacity>
+                                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                                      <TouchableOpacity onPress={() => handleRemoveFriend(contact.uid, contact.username)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 12, backgroundColor: '#fee2e2' }}>
+                                        <UserMinus size={18} color={COLORS.danger} /><Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.danger }}>{t('remove_friend')}</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity onPress={() => handleBlockFriend(contact.uid, contact.username)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#e2e8f0' }}>
+                                        <XCircle size={18} color={currentColors.subText} /><Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText }}>{t('block')}</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })
+                      )}
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+
+              {/* --- SAYFA 4: PROFİL (PROFILE) --- */}
+              <View key="4" style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+                  {/* Profil Kartı */}
+                  <View style={[styles.card, { backgroundColor: currentColors.surface, alignItems: 'center', paddingVertical: 30, marginVertical: 20 }]}>
+                    <TouchableOpacity onPress={() => { if (user.isAnonymous || user.isGuest) { showToast(t('warning_title'), t('guest_edit_warning') || t('guest_cannot_change_photo'), 'warning'); return; } pickImage(); }} style={{ alignItems: 'center', marginBottom: 15 }}>
+                      {user.photoURL ? <Image source={{ uri: user.photoURL }} style={{ width: 100, height: 100, borderRadius: 50, marginBottom: 10, borderWidth: 3, borderColor: COLORS.primary }} /> : <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}><User size={50} color="#fff" /></View>}
+                      {!(user.isAnonymous || user.isGuest) && <Text style={{ color: COLORS.primary, fontWeight: '600', fontSize: 13 }}>{t('change_photo')}</Text>}
+                    </TouchableOpacity>
+                    <View style={{ alignItems: 'center', gap: 2 }}>
+                      <Text style={{ fontSize: 22, fontWeight: 'bold', color: currentColors.text }}>{user.displayName || user.username || t('no_name')}</Text>
+                      <TouchableOpacity onPress={() => { if (user.isAnonymous || user.isGuest) return; setEditUsernameInput(user.username || ""); setEditDisplayNameInput(user.displayName || ""); setIsEditProfileVisible(true); }} activeOpacity={(user.isAnonymous || user.isGuest) ? 1 : 0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5, padding: 5 }}>
+                        <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>@{user.username}</Text>
+                        {!(user.isAnonymous || user.isGuest) && <View style={{ backgroundColor: COLORS.primary + '20', padding: 4, borderRadius: 8 }}><Edit2 size={12} color={COLORS.primary} /></View>}
+                      </TouchableOpacity>
+                      {(user.isAnonymous || user.isGuest) && <View style={{ marginTop: 5, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}><Text style={{ fontSize: 10, color: '#d97706', fontWeight: 'bold' }}>Misafir Hesabı</Text></View>}
+                    </View>
+                  </View>
+
+                  {/* Ayarlar Kartı */}
+                  <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
+                    <Text style={[styles.cardTitle, { color: currentColors.text }]}>{t('settings')}</Text>
+                    <TouchableOpacity onPress={() => setIsCategoryModalOpen(true)} style={[styles.settingBtn, { marginBottom: 10, justifyContent: 'space-between' }]}>
+                      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}><Layers size={20} color={COLORS.primary} /><Text style={{ color: currentColors.text }}>{t('edit_categories')}</Text></View><ChevronRight size={16} color={currentColors.subText} />
+                    </TouchableOpacity>
+
+                    {/* Premium Butonu */}
+                    {!isPremium && (
+                      <TouchableOpacity 
+                            onPress={async () => { 
+                                // 1. MİSAFİR KONTROLÜ
+                                if (user.isGuest || user.isAnonymous) {
+                                    showToast(t('warning_title'), t('guest_premium_warning') || "Misafirler premium alamaz, lütfen kayıt olun.", 'warning');
                                     return;
                                 }
-                                pickImage();
+
+                                try { 
+                                if (user) { 
+                                    // 2. ARTIK BEDAVA PREMIUM VERMİYORUZ (Kod pasife alındı)
+                                    // await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true }); 
+                                    
+                                    // Kullanıcıya bilgi verelim veya ödeme sayfasına yönlendirelim
+                                    console.log("Ödeme işlemi başlatılmalı..."); 
+                                    showToast("Bilgi", "Ödeme sistemi yakında eklenecek.", 'info');
+                                    
+                                    // Modalı kapatalım mı? (İsteğe bağlı, şimdilik açık kalsın veya kapansın)
+                                    // setIsUpsellVisible(false); 
+                                } 
+                                } catch (e) { 
+                                console.log(e); 
+                                } 
                             }} 
-                            style={{ alignItems: 'center', marginBottom: 15 }}
-                        >
-                            {user.photoURL ? (
-                            <Image source={{uri: user.photoURL}} style={{width:100, height:100, borderRadius:50, marginBottom:10, borderWidth:3, borderColor:COLORS.primary}} />
-                            ) : (
-                            <View style={{width:100, height:100, borderRadius:50, backgroundColor:COLORS.primary, alignItems:'center', justifyContent:'center', marginBottom:10}}>
-                                <User size={50} color="#fff" />
-                            </View>
-                            )}
-                            {/* Tek ve net değiştirme yazısı */}
-                            <Text style={{ color: COLORS.primary, fontWeight:'600', fontSize: 13 }}>{t('change_photo')}</Text>
-                            {!(user.isAnonymous || user.isGuest) && (
-                                <Text style={{ color: COLORS.primary, fontWeight:'600', fontSize: 13 }}>{t('change_photo')}</Text>
-                            )}
-                        </TouchableOpacity>
-
-                        {/* B. İsim ve Kullanıcı Adı Kısmı */}
-                        <View style={{alignItems: 'center', gap: 2}}>
-                                {/* Gerçek İsim */}
-                                <Text style={{ fontSize: 22, fontWeight: 'bold', color: currentColors.text }}>
-                                    {user.displayName || user.username || t('no_name')}
-                                </Text>
-                                
-                               <TouchableOpacity 
-                                    // 1. Tıklamayı engelleme mantığı
-                                    onPress={() => {
-                                        if (user.isAnonymous || user.isGuest) {
-                                            // İsterseniz buraya da Toast koyabilirsiniz veya hiçbir şey yapmazsınız.
-                                            // showToast(...) 
-                                            return;
-                                        }
-                                        setEditUsernameInput(user.username || "");
-                                        setEditDisplayNameInput(user.displayName || ""); 
-                                        setIsEditProfileVisible(true);
-                                    }}
-                                    // Misafir ise tıklanabilirliği kapat (opacity düşmesin diye)
-                                    activeOpacity={ (user.isAnonymous || user.isGuest) ? 1 : 0.7 }
-                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5, padding: 5 }}
-                                >
-                                   <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>
-                                        @{user.username}
-                                    </Text>
-
-                                    {/* 2. Kalem İkonunu Gizleme Mantığı */}
-                                    {!(user.isAnonymous || user.isGuest) && (
-                                        <View style={{backgroundColor: COLORS.primary+'20', padding:4, borderRadius:8}}>
-                                            <Edit2 size={12} color={COLORS.primary} />
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                                
-                                {/* MİSAFİR ETİKETİ (OPSİYONEL - ŞIK DURUR) */}
-                                {(user.isAnonymous || user.isGuest) && (
-                                    <View style={{marginTop: 5, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6}}>
-                                        <Text style={{fontSize: 10, color: '#d97706', fontWeight: 'bold'}}>Misafir Hesabı</Text>
-                                    </View>
-                                )}
-                            </View>
-                        </View>
-                        
-
-                        {/* 2. GENEL AYARLAR KARTI (Hepsi Bir Arada) */}
-                        <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
-                            <Text style={[styles.cardTitle, { color: currentColors.text }]}>{t('settings')}</Text>
-                            
-                            {/* A. Kategorileri Düzenle */}
-                            <TouchableOpacity 
-                                onPress={() => setIsCategoryModalOpen(true)} 
-                                style={[styles.settingBtn, { marginBottom: 10, justifyContent: 'space-between' }]}
+                            style={premiumStyles.ctaButton}
                             >
-                                <View style={{flexDirection:'row', gap:10, alignItems:'center'}}>
-                                    <Layers size={20} color={COLORS.primary} />
-                                    <Text style={{ color: currentColors.text }}>{t('edit_categories')}</Text>
-                                </View>
-                                <ChevronRight size={16} color={currentColors.subText} />
+                            <Text style={premiumStyles.ctaText}>{t('premium_cta')}</Text>
+                            <Text style={premiumStyles.ctaSubText}>{t('premium_price')}</Text>
                             </TouchableOpacity>
-                            {/* PREMIUM OL BUTONU (TEST İÇİN) */}
-                                {!isPremium && (
-                                    <TouchableOpacity 
-                                        onPress={async () => {
-                                            // Ödeme işlemi simülasyonu
-                                            try {
-                                                await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
-                                                showToast(t('premium_congrats'), t('premium_active'), 'success');
-                                            } catch (e) { console.log(e); }
-                                        }}
-                                        style={{
-                                            overflow: 'hidden',
-                                            borderRadius: 16,
-                                            marginBottom: 15,
-                                            borderWidth: 1,
-                                            borderColor: '#fbbf24', // Amber rengi çerçeve
-                                            backgroundColor: isDark ? '#422006' : '#fffbeb', // Koyu modda koyu amber, açıkta açık sarı
-                                        }}
-                                    >
-                                        <View style={{ padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <View style={{flex: 1}}>
-                                                <View style={{flexDirection:'row', alignItems:'center', gap: 6, marginBottom: 4}}>
-                                                    <Trophy size={18} color="#d97706" fill="#d97706" />
-                                                    <Text style={{fontSize: 12, fontWeight:'800', color: '#d97706', letterSpacing: 1}}>{t('premium_short_desc')}</Text>
-                                                </View>
-                                                <Text style={{fontSize: 16, fontWeight: 'bold', color: isDark ? '#fcd34d' : '#92400e'}}>{t('premium_unlock')}</Text>
-                                                <Text style={{fontSize: 12, color: isDark ? '#fde68a' : '#b45309', marginTop: 2}}>{t('premium_short_desc')}</Text>
-                                            </View>
-                                            <View style={{
-                                                backgroundColor: '#d97706', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20
-                                            }}>
-                                                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>{t('premium_upgrade_btn')}</Text>
-                                            </View>
-                                        </View>
-                                    </TouchableOpacity>
-                                )}
-                            
-                            {/* PREMIUM İSE GÖSTERİLECEK ROZET */}
-                            {isPremium && (
-                                <View style={{padding: 15, backgroundColor: '#f0fdf4', borderRadius: 12, marginBottom: 15, borderWidth:1, borderColor:COLORS.success, flexDirection:'row', alignItems:'center', gap:10}}>
-                                    <CheckCircle2 size={24} color={COLORS.success} />
-                                    <Text style={{color: COLORS.success, fontWeight:'bold'}}>{t('active_premium')}</Text>
-                                </View>
-                            )}
-                            {/* B. Dil Seçimi */}
-                            <TouchableOpacity 
-                                onPress={() => setIsLangModalOpen(true)} 
-                                style={[styles.settingBtn, { marginBottom: 15, justifyContent: 'space-between' }]}
-                            >
-                                <View style={{flexDirection:'row', gap:10, alignItems:'center'}}>
-                                    <Globe size={20} color={COLORS.primary} />
-                                    <Text style={{ color: currentColors.text }}>{t('language')}</Text>
-                                </View>
-                                <Text style={{fontSize: 20}}>{LANGUAGES.find(l => l.code === lang)?.flag}</Text>
-                            </TouchableOpacity>
-
-                            {/* C. Tema (Görünüm) */}
-                            <Text style={{fontSize:12, color:currentColors.subText, marginTop:5, marginBottom:10}}>{t('appearance')?.toUpperCase() || 'GÖRÜNÜM'}</Text>
-                            <View style={{flexDirection:'row', gap:10, marginBottom:15}}>
-                                <TouchableOpacity onPress={() => setTheme('light')} style={[styles.settingBtn, theme === 'light' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
-                                    <Sun size={16} color={theme === 'light' ? COLORS.primary : currentColors.subText} />
-                                    <Text style={{color: theme === 'light' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_light')}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => setTheme('dark')} style={[styles.settingBtn, theme === 'dark' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
-                                    <Moon size={16} color={theme === 'dark' ? COLORS.primary : currentColors.subText} />
-                                    <Text style={{color: theme === 'dark' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_dark')}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => setTheme('system')} style={[styles.settingBtn, theme === 'system' && styles.settingBtnActive, {flex:1, justifyContent:'center'}]}>
-                                    <Monitor size={16} color={theme === 'system' ? COLORS.primary : currentColors.subText} />
-                                    <Text style={{color: theme === 'system' ? COLORS.primary : currentColors.subText, fontSize:12}}>{t('theme_system')}</Text>
-                                </TouchableOpacity>
-                            </View>
-                            {/* --- ŞİFRE BELİRLEME / DEĞİŞTİRME BUTONU --- */}
-                            {/* Condition (Şart) kaldırıldı, artık herkes görebilir */}
-                            {(() => {
-                                // Kullanıcının hali hazırda şifresi var mı kontrol edelim
-                                const hasPasswordProvider = user.providerData.some((p: any) => p.providerId === 'password');
-                                
-                                return (
-                                    <TouchableOpacity 
-                                        onPress={() => setIsPasswordModalOpen(true)} 
-                                        style={{ 
-                                            flexDirection: 'row', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'space-between', 
-                                            paddingHorizontal: 15, 
-                                            paddingVertical: 12, 
-                                            borderRadius: 12, 
-                                            borderWidth: 1, 
-                                            borderColor: isDark ? '#334155' : '#e2e8f0',
-                                            backgroundColor: isDark ? '#1e293b' : '#f8fafc',
-                                            marginBottom: 10 
-                                        }}
-                                    >
-                                        <View style={{flexDirection:'row', gap:12, alignItems:'center'}}>
-                                            {/* İkon Kutusu */}
-                                            <View style={{
-                                                width:36, height:36, borderRadius:10, 
-                                                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#e0e7ff', 
-                                                alignItems:'center', justifyContent:'center'
-                                            }}>
-                                                <Lock size={18} color={COLORS.primary} />
-                                            </View>
-                                            
-                                            {/* Yazılar - Duruma göre değişir */}
-                                            <View>
-                                                <Text style={{ color: currentColors.text, fontWeight:'600', fontSize: 14 }}>
-                                                    {hasPasswordProvider ? t('change_password') : t('create_password')}
-                                                </Text>
-                                                <Text style={{ color: currentColors.subText, fontSize: 11 }}>
-                                                    {hasPasswordProvider 
-                                                        ? t('security_change_regular')
-                                                        : t('login_with_email_info')}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                        
-                                        <ChevronRight size={18} color={currentColors.subText} />
-                                    </TouchableOpacity>
-                                );
-                            })()}
-
-                            {/* D. Gizlilik Politikası Linki (Ayarlar Kartının En Altında) */}
-                                <TouchableOpacity 
-                                    onPress={() => {
-                                        // 1. Ayarlar modalı açıksa kapat (senin kodunda ayarlar bir modal değil sayfaydı ama yine de temiz olsun)
-                                        setIsSettingsOpen(false); 
-                                        
-                                        // 2. Sayfaya yönlendir
-                                        // '/tr/privacy' formatında yönlendirir
-                                        router.push(`/${lang}/privacy`);
-                                    }} 
-                                    style={{paddingTop:15, borderTopWidth:1, borderColor: isDark?'#334155':'#f1f5f9'}}
-                                >
-                                    <Text style={{color: COLORS.primary, textAlign:'center', fontSize:12, fontWeight:'600'}}>
-                                    { t('privacy_terms')}
-                                    </Text>
-                                </TouchableOpacity>
-                        </View>
-                        {/* --- MİSAFİR KULLANICI İÇİN KAYIT KARTI --- */}
-                            {user.isGuest && (
-                                <View style={[styles.card, { backgroundColor: '#fffbeb', borderColor: '#f59e0b', borderWidth: 1, marginBottom: 15 }]}>
-                                    <View style={{flexDirection:'row', alignItems:'center', gap:10, marginBottom:10}}>
-                                        <AlertCircle size={24} color="#d97706" />
-                                        <Text style={{fontSize:16, fontWeight:'bold', color:'#d97706'}}>{t('guest_acc')}</Text>
-                                    </View>
-                                    <Text style={{color:'#b45309', marginBottom:15, fontSize:13}}>
-                                        {t('guest_now')}
-                                    </Text>
-                                    <TouchableOpacity 
-                                        onPress={() => setIsGuestModalOpen(true)}
-                                        style={{backgroundColor:'#d97706', padding:12, borderRadius:12, alignItems:'center'}}
-                                    >
-                                        <Text style={{color:'#fff', fontWeight:'bold'}}>{t('save_register')}</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-
-                        {/* 3. ÇIKIŞ YAP KARTI */}
-                        
-                        <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
-                        <TouchableOpacity onPress={handleLogout} style={{flexDirection:'row', alignItems:'center', gap:10, padding:15, backgroundColor:'#fee2e2', borderRadius:12, justifyContent:'center'}}>
-                            <LogOut size={20} color={COLORS.danger} />
-                            <Text style={{color: COLORS.danger, fontWeight:'bold', fontSize:16}}>{t('logout')}</Text>
-                        </TouchableOpacity>
-                        </View>
-
-                        <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                            <TouchableOpacity 
-                                onPress={handleDeleteAccount} 
-                                style={{
-                                    flexDirection: 'row', 
-                                    alignItems: 'center', 
-                                    gap: 10, 
-                                    padding: 10, 
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                <Trash2 size={20} color={currentColors.subText} />
-                                <Text style={{ color: currentColors.subText, fontWeight: '600', fontSize: 14 }}>
-                                { t('delete_account') }
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                        
-                    </View>
-                    </ScrollView>
-                </View>
-
-            </PagerView>
-    
-      </ScrollView>
-     )}
-      {/* REKLAM */}
-      {!isSettingsOpen && (<OmmioAdBanner isPremium={isPremium} />)}
-        
-      {/* BOTTOM TABS (YENİ DÜZEN) */}
-        {!isSettingsOpen && (
-        <View style={[styles.tabBar, { backgroundColor: currentColors.surface, borderTopColor: isDark?'#334155':'#e2e8f0' }]}>
-            
-            <TouchableOpacity onPress={() => onBottomTabPress('list')} style={{alignItems:'center', opacity: activeTab==='list'?1:0.5}}>
-                <ListTodo size={24} color={activeTab==='list'?COLORS.primary:currentColors.subText} />
-                <Text style={{fontSize:10, color:activeTab==='list'?COLORS.primary:currentColors.subText}}>{t('tasks_tab')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => onBottomTabPress('habits')} style={{alignItems:'center', opacity: activeTab==='habits'?1:0.5}}>
-                <Repeat size={24} color={activeTab==='habits'?COLORS.primary:currentColors.subText} />
-                <Text style={{fontSize:10, color:activeTab==='habits'?COLORS.primary:currentColors.subText}}>{t('habits_tab')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => onBottomTabPress('messages')} style={{alignItems:'center', opacity: activeTab==='messages'?1:0.5}}>
-                <MessageCircle size={24} color={activeTab==='messages'?COLORS.primary:currentColors.subText} />
-                <Text style={{fontSize:10, color:activeTab==='messages'?COLORS.primary:currentColors.subText}}>{t('messages_tab')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => onBottomTabPress('social')} style={{alignItems:'center', opacity: activeTab==='social'?1:0.5}}>
-                <Users size={24} color={activeTab==='social'?COLORS.primary:currentColors.subText} />
-                <Text style={{fontSize:10, color:activeTab==='social'?COLORS.primary:currentColors.subText}}>{t('social_tab')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => onBottomTabPress('profile')} style={{alignItems:'center', opacity: activeTab==='profile'?1:0.5}}>
-                <User size={24} color={activeTab==='profile'?COLORS.primary:currentColors.subText} />
-                <Text style={{fontSize:10, color:activeTab==='profile'?COLORS.primary:currentColors.subText}}>{t('profile_tab')}</Text>
-            </TouchableOpacity>
-
-        </View>
-        )}
-      
-      {/* YENİ: ALIŞKANLIK EKLEME BUTONU (Sadece Habits sekmesinde) */}
-      {!isSettingsOpen && activeTab === 'habits' && (
-          <View style={[styles.floatingInputWrapper, {alignItems:'flex-end', backgroundColor:'transparent', shadowOpacity:0,bottom: !isPremium ? 175 : 95}]}>
-              <TouchableOpacity onPress={() => { setAddMode('habit'); setIsAddModalOpen(true); }} style={[styles.sendBtn, {backgroundColor: COLORS.primary, width:56, height:56, borderRadius:28, shadowColor:COLORS.primary, shadowOpacity:0.3, shadowRadius:10, elevation:5}]}>
-                  <Plus size={28} color="#fff" />
-              </TouchableOpacity>
-          </View>
-      )}
-
-    {/* GÖREV EKLEME BAR (SADECE GÖREVLER SEKMESİNDE) */}
-{!isSettingsOpen && activeTab === 'list' && (
-    <>
-        {/* 1. DIŞARI TIKLAMA KATMANI (Sadece genişletilmişse görünür) */}
-        {isInputExpanded && (
-            <TouchableWithoutFeedback onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Kapanış animasyonu
-                setIsInputExpanded(false);
-                Keyboard.dismiss();
-            }}>
-                <View style={{
-                    position: 'absolute',
-                    top: 0, bottom: 0, left: 0, right: 0,
-                    backgroundColor: 'rgba(0,0,0,0.2)', // Hafif karartma (İsterseniz 0.0 yapıp görünmez yapabilirsiniz)
-                    zIndex: 40 // İçerikten yüksek, Bardan düşük olmalı
-                }} />
-            </TouchableWithoutFeedback>
-        )}
-
-        {/* 2. GÖREV EKLEME KUTUSU - KONUM GÜNCELLENDİ */}
-                <BlurView 
-                    intensity={Platform.OS === 'ios' ? 80 : 100}
-                    tint={isDark ? 'dark' : 'light'}
-                    style={[
-                        styles.floatingInputWrapper, 
-                        { 
-                            // DÜZELTME BURADA:
-                            // Eğer Premium DEĞİLSE (reklam varsa), kutuyu daha yukarı (155px) kaldır.
-                            // Premium ise (reklam yoksa), kutuyu biraz aşağı (95px) indir.
-                            bottom: !isPremium ? 185 : 115, 
-                            
-                            backgroundColor: isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.65)',
-                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
-                            borderWidth: 1, 
-                            overflow: 'hidden',
-                            zIndex: 50
-                        }
-                    ]}
-                >
-            {/* ... İÇERİK AYNEN KALIYOR ... */}
-            {isInputExpanded && (
-                <View style={styles.expandedOptions}>
-                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5, marginTop: 5 }}>{t('assign_to')}</Text>
-                    <View style={{ flexDirection: 'row', gap: 5, marginBottom: 10, alignItems: 'center', borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', paddingBottom: 10 }}>
-                        <Search size={16} color={currentColors.subText} />
-                        <TextInput value={assignSearchText} onChangeText={setAssignSearchText} placeholder={t('search_contact')} placeholderTextColor={currentColors.subText} style={{ flex: 1, color: currentColors.text }} onSubmitEditing={addTask} />
-                    </View>
-                    {/* --- MODERN KİŞİ SEÇİM LİSTESİ --- */}
-                  <View style={{ marginBottom: 15 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.primary, marginBottom: 8, letterSpacing: 0.5 }}>
-                      {t('assign_to').toUpperCase()}
-                    </Text>
-                    
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 2, gap: 10 }}>
-                      
-                      {/* 1. "BEN" (ME) SEÇENEĞİ */}
-                      <TouchableOpacity 
-                        onPress={() => setAssignTarget(null)} 
-                        activeOpacity={0.8}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          backgroundColor: !assignTarget ? COLORS.primary : (isDark ? '#334155' : '#fff'),
-                          paddingVertical: 6,
-                          paddingHorizontal: 12,
-                          borderRadius: 20,
-                          borderWidth: 1,
-                          borderColor: !assignTarget ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0'),
-                          shadowColor: "#000", shadowOpacity: !assignTarget ? 0.2 : 0.05, shadowRadius: 5, elevation: !assignTarget ? 4 : 1
-                        }}
-                      >
-                         <View style={{
-                           width: 28, height: 28, borderRadius: 14, 
-                           backgroundColor: !assignTarget ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9'),
-                           alignItems:'center', justifyContent:'center', marginRight: 8
-                         }}>
-                            {user.photoURL ? (
-                              <Image source={{uri: user.photoURL}} style={{width: 28, height: 28, borderRadius: 14}} />
-                            ) : (
-                              <User size={16} color={!assignTarget ? '#fff' : currentColors.subText} />
-                            )}
-                         </View>
-                         <Text style={{ fontSize: 13, fontWeight: '700', color: !assignTarget ? '#fff' : currentColors.text }}>
-                           {t('me')}
-                         </Text>
-                         {!assignTarget && <CheckCircle2 size={14} color="#fff" style={{marginLeft: 6}} />}
-                      </TouchableOpacity>
-
-                      {/* 2. ARKADAŞLAR LİSTESİ */}
-                      {filteredContacts.map(contact => {
-                         const isSelected = assignTarget?.uid === contact.uid;
-                         return (
-                            <TouchableOpacity 
-                              key={contact.uid} 
-                              onPress={() => setAssignTarget(contact)} 
-                              activeOpacity={0.8}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                // BURASI DEĞİŞTİ: COLORS.warning -> COLORS.primary (Mor oldu)
-                                backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#fff'),
-                                paddingVertical: 6,
-                                paddingHorizontal: 12,
-                                borderRadius: 20,
-                                borderWidth: 1,
-                                // BURASI DEĞİŞTİ: COLORS.warning -> COLORS.primary
-                                borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0'),
-                                shadowColor: "#000", shadowOpacity: isSelected ? 0.2 : 0.05, shadowRadius: 5, elevation: isSelected ? 4 : 1
-                              }}
-                            >
-                               <View style={{
-                                 width: 28, height: 28, borderRadius: 14, 
-                                 backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9'),
-                                 alignItems:'center', justifyContent:'center', marginRight: 8, overflow:'hidden'
-                               }}>
-                                  {contact.photoURL ? (
-                                    <Image source={{uri: contact.photoURL}} style={{width: 28, height: 28}} />
-                                  ) : (
-                                    <Text style={{fontSize: 12, fontWeight:'bold', color: isSelected ? '#fff' : currentColors.subText}}>
-                                      {contact.username[0].toUpperCase()}
-                                    </Text>
-                                  )}
-                               </View>
-                               
-                               <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : currentColors.text }}>
-                                 {contact.displayName || contact.username}
-                               </Text>
-                               
-                               {isSelected && <CheckCircle2 size={14} color="#fff" style={{marginLeft: 6}} />}
-                            </TouchableOpacity>
-                         );
-                      })}
-
-                    </ScrollView>
-                  </View>
-
-                    <View style={{ marginBottom: 10 }}>
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('description')}</Text>
-                        <TextInput value={inputDesc} onChangeText={setInputDesc} placeholder="..." placeholderTextColor={currentColors.subText} style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text }]} onSubmitEditing={addTask} />
-                    </View>
-
-                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-                        <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('start_date')}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TextInput value={inputStartDate} onChangeText={handleInputStartDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
-                                <TouchableOpacity onPress={() => openDatePicker('start')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><CalendarIcon size={16} color="#fff" /></TouchableOpacity>
-                            </View>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('due_date')}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TextInput value={inputDueDate} onChangeText={handleInputDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
-                                <TouchableOpacity onPress={() => openDatePicker('due')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><CalendarIcon size={16} color="#fff" /></TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-
-                        {/* KATEGORİ SEÇİM LİSTESİ - Sadece kendine görev atıyorsan (assignTarget yoksa) göster */}
-                        {!assignTarget ? (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                                {categories.map(cat => { 
-                                    const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0]; 
-                                    return (
-                                        <TouchableOpacity key={cat.id} onPress={() => setSelectedCategory(cat)} style={[styles.pill, selectedCategory.id === cat.id ? { backgroundColor: selectedCategory ? cc.hex : (isDark ? '#334155' : '#fff'),
-                                                
-                                                // Seçiliyse çerçeve şeffaf, değilse gri
-                                                borderColor: selectedCategory ? 'transparent' : (isDark ? '#475569' : '#e2e8f0') } : { borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
-                
-                                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cc.hex }} />
-                                            <Text style={{ fontSize: 12, color: currentColors.text, fontWeight: '600' }}>{cat.name}</Text>
-                                        </TouchableOpacity>
-                                    ) 
-                                })}
-                            </ScrollView>
-                        ) : (
-                            /* BAŞKASINA ATANIYORSA GÖSTERİLECEK UYARI */
-                            <View style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                                <Text style={{ fontSize: 11, color: COLORS.warning, fontStyle: 'italic' }}>
-                                   {assignTarget && tFormat("task_assign_info", { name: assignTarget.username })}
-                                </Text>
-                            </View>
-                        )}                   
-                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 }}><View style={{ flexDirection: 'row', gap: 5 }}><TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={[styles.iconToggle, isNotifOn && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]}><Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} /></TouchableOpacity><TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={[styles.iconToggle, isAlarmOn && { backgroundColor: '#fef2f2', borderColor: '#ef4444' }]}><AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} /></TouchableOpacity>{inputDueDate && <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={[styles.iconToggle, isEveryDayOn && { backgroundColor: '#f0fdf4', borderColor: '#10b981' }, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}><CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} /><Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>{t('every_day')}</Text></TouchableOpacity>}</View><View style={{ flexDirection: 'row', gap: 5 }}>{isNotifOn && <TextInput value={notifInput} onChangeText={handleNotifInputChange} placeholder="09:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.primary, borderColor: COLORS.primary }]} maxLength={5} onSubmitEditing={addTask} />}{isAlarmOn && <TextInput value={alarmInput} onChangeText={handleAlarmInputChange} placeholder="07:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.danger, borderColor: COLORS.danger }]} maxLength={5} onSubmitEditing={addTask} />}</View></View>
-                </View>
-            )}
-            <View style={styles.inputMainRow}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(!isInputExpanded); }} style={styles.expandBtn}>{isInputExpanded ? <X size={20} color={currentColors.subText} /> : <Sliders size={20} color={currentColors.subText} />}</TouchableOpacity><TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('addTask')} placeholderTextColor={currentColors.subText} style={[styles.mainInput, { color: currentColors.text }]} onFocus={() => { /* Artık oto açılmıyor */ }} onSubmitEditing={addTask} /><TouchableOpacity onPress={addTask} style={[styles.sendBtn, { backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0') }]}><Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} /></TouchableOpacity></View>
-        </BlurView>
-        
-    </>
-)}
-
-     {/* EKLEME MODALI (Alışkanlıklar için) */}
-<Modal visible={isAddModalOpen} animationType="slide" transparent>
-    <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        style={{ flex: 1 }}
-    >
-    {/* 1. DIŞ KATMAN: Buraya (arka plana) basınca modal kapanır ve klavye iner */}
-    <TouchableWithoutFeedback onPress={() => { setIsAddModalOpen(false); Keyboard.dismiss(); }}>
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-
-            {/* 2. İÇ KATMAN: Beyaz alana basınca kapanmayı engellemek için boş bir Touchable ekliyoruz */}
-            <TouchableWithoutFeedback>
-                <View style={{ backgroundColor: currentColors.bg, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, minHeight: 400 }}>
-                    
-                    {/* --- İÇERİK BAŞLANGICI (HİÇBİR ŞEY DEĞİŞMEDİ) --- */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
-                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('new_habit')}</Text>
-                        <TouchableOpacity onPress={() => setIsAddModalOpen(false)}><X size={24} color={currentColors.text} /></TouchableOpacity>
-                    </View>
-                    
-                    <View style={{ gap: 15 }}>
-                        <TextInput placeholder={t('habit_name')} placeholderTextColor={currentColors.subText} value={newHabitTitle} onChangeText={setNewHabitTitle} style={[styles.input, { color: currentColors.text }]} />
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <TouchableOpacity onPress={() => setNewHabitFreq('daily')} style={[styles.pill, newHabitFreq === 'daily' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'daily' ? '#fff' : currentColors.text }}>{t('daily')}</Text></TouchableOpacity>
-                            <TouchableOpacity onPress={() => setNewHabitFreq('weekly')} style={[styles.pill, newHabitFreq === 'weekly' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'weekly' ? '#fff' : currentColors.text }}>{t('weekly')}</Text></TouchableOpacity>
-                        </View>
-                        
-                        {newHabitFreq === 'weekly' && (
-                            <View style={{ marginTop: 10 }}>
-                                <Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 8 }}>{t('which_days')}</Text>
-                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                                    {getDaysOfWeek(lang).map((dayObj) => {
-                                        const isSelected = newHabitDays.includes(dayObj.id);
-                                        return (
-                                            <TouchableOpacity
-                                                key={dayObj.id}
-                                                onPress={() => toggleHabitDay(dayObj.id)}
-                                                style={{
-                                                    width: 36, height: 36, borderRadius: 18,
-                                                    backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'),
-                                                    alignItems: 'center', justifyContent: 'center',
-                                                    borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0')
-                                                }}
-                                            >
-                                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: isSelected ? '#fff' : currentColors.text }}>
-                                                    {dayObj.label.substring(0, 2)} {/* Sığması için ilk 2 harf */}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        );
-                                    })}
-                                </View>
-                            </View>
-                        )}
-
-                        <TextInput placeholder={t('time_placeholder')} placeholderTextColor={currentColors.subText} value={habitNotifInput} onChangeText={(t) => setHabitNotifInput(maskTimeInput(t))} style={[styles.input, { color: currentColors.text }]} maxLength={5} keyboardType="numeric" />
-                        <Text style={{ color: currentColors.subText, fontSize: 10 }}>{t('category')}</Text>
-                        <ScrollView horizontal>{categories.map(c => <TouchableOpacity key={c.id} onPress={() => setSelectedCategory(c)} style={{ padding: 8, marginRight: 5, borderRadius: 8, backgroundColor: selectedCategory.id === c.id ? COLORS.secondary : currentColors.surface }}><Text style={{ color: currentColors.text }}>{c.name}</Text></TouchableOpacity>)}</ScrollView>
-                        <TouchableOpacity onPress={addHabit} style={styles.btn}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('start_habit')}</Text></TouchableOpacity>
-                    </View>
-                    {/* --- İÇERİK BİTİŞİ --- */}
-
-                </View>
-                
-            </TouchableWithoutFeedback>
-        </View> 
-    </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
-</Modal>
-{/* --- MİSAFİR DÖNÜŞÜM MODALI --- */}
-<Modal visible={isGuestModalOpen} transparent animationType="slide">
-    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', padding:20}}>
-            <View style={{backgroundColor: currentColors.surface, borderRadius:24, padding:25}}>
-                
-                <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}>
-                    <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text}}>{t('create_ac')}</Text>
-                    <TouchableOpacity onPress={() => setIsGuestModalOpen(false)}>
-                        <X size={24} color={currentColors.subText} />
-                    </TouchableOpacity>
-                </View>
-
-                <Text style={{color:currentColors.subText, marginBottom:20}}>
-                    {t('protect_data_msg')}
-                </Text>
-
-                <View style={{gap:15}}>
-                    {/* Kullanıcı Adı */}
-                    <View style={styles.authInputRow}>
-                        <User size={20} color={currentColors.subText} />
-                        <TextInput 
-                            value={username} 
-                            onChangeText={setUsername} 
-                            placeholder={t('social_search_tab_username')}
-                            placeholderTextColor={currentColors.subText} 
-                            style={[styles.authInput, {color: currentColors.text}]} 
-                            autoCapitalize='none' 
-                        />
-                    </View>
-
-                    {/* E-posta */}
-                    <View style={styles.authInputRow}>
-                        <Mail size={20} color={currentColors.subText} />
-                        <TextInput 
-                            value={email} 
-                            onChangeText={setEmail} 
-                            placeholder="E-posta" 
-                            placeholderTextColor={currentColors.subText} 
-                            style={[styles.authInput, {color: currentColors.text}]} 
-                            autoCapitalize='none' 
-                            keyboardType="email-address"
-                        />
-                    </View>
-
-                    {/* Şifre */}
-                    <View style={styles.authInputRow}>
-                        <Lock size={20} color={currentColors.subText} />
-                        <TextInput 
-                            value={password} 
-                            onChangeText={setPassword} 
-                            placeholder={t('auth_password_placeholder')}
-                            placeholderTextColor={currentColors.subText} 
-                            style={[styles.authInput, {color: currentColors.text}]} 
-                            secureTextEntry 
-                        />
-                    </View>
-
-                    <TouchableOpacity 
-                        onPress={handleConvertGuest} 
-                        style={[styles.createBtn, {marginTop: 10}]}
-                    >
-                        {isAuthLoading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={{color:'#fff', fontWeight:'bold', fontSize:16}}>{t('complete_profile')}</Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </View>
-    </TouchableWithoutFeedback>
-</Modal>
-      {/* --- TARİH SEÇİCİ (WEB, IOS, ANDROID UYUMLU) --- */}
-      {showDatePicker && (
-        Platform.OS === 'android' ? (
-           <DateTimePicker 
-              value={selectedDate || new Date()} 
-              mode="date" 
-              display="default" 
-              onChange={onDateChange} 
-           />
-        ) : (
-           <Modal transparent visible={true} animationType="fade">
-             <TouchableOpacity 
-                activeOpacity={1} 
-                onPress={() => setShowDatePicker(false)}
-                style={{flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'rgba(0,0,0,0.6)'}}
-             >
-                <TouchableWithoutFeedback>
-                  <View style={{
-                      backgroundColor: currentColors.surface, 
-                      borderRadius: 24, 
-                      padding: 20,
-                      width: Platform.OS === 'web' ? 360 : '85%', 
-                      maxWidth: 400,
-                      shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 20, elevation: 15
-                  }}>
-                    
-                    {/* Header */}
-                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15}}>
-                       <View style={{flexDirection:'row', alignItems:'center', gap: 10}}>
-                          <View style={{backgroundColor: COLORS.primary + '20', padding: 8, borderRadius: 10}}>
-                            <CalendarIcon size={20} color={COLORS.primary} />
-                          </View>
-                          <Text style={{fontSize: 18, fontWeight:'bold', color: currentColors.text}}>Tarih Seç</Text>
-                       </View>
-                       <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{padding: 5}}>
-                          <X size={24} color={currentColors.subText} />
-                       </TouchableOpacity>
-                    </View>
-
-                    {/* --- GÜNCELLENMİŞ TAKVİM --- */}
-                    <Calendar
-                      // Takvimi seçili tarihe odakla
-                      current={selectedStr}
-                      
-                      // Özel stil tipi
-                      markingType={'custom'}
-
-                      // YUKARIDA OLUŞTURDUĞUMUZ DEĞİŞKENİ BURAYA VERİYORUZ
-                      markedDates={calendarMarks}
-
-                      onDayPress={(day: any) => {
-                          const timestamp = new Date(day.timestamp);
-                          // Saat dilimi hatasını önlemek için güvenli çeviri
-                          const newDate = new Date(timestamp.valueOf() + timestamp.getTimezoneOffset() * 60000);
-                          
-                          onDateChange(null, newDate); 
-                          // setShowDatePicker(false); // İstersen seçince otomatik kapat, istersen "Tamam"a bastır.
-                      }}
-
-                      theme={{
-                        backgroundColor: 'transparent',
-                        calendarBackground: 'transparent',
-                        textSectionTitleColor: currentColors.subText,
-                        selectedDayBackgroundColor: COLORS.primary,
-                        selectedDayTextColor: '#ffffff',
-                        todayTextColor: COLORS.primary,
-                        dayTextColor: currentColors.text,
-                        textDisabledColor: '#d9e1e8',
-                        dotColor: COLORS.primary,
-                        arrowColor: COLORS.primary,
-                        monthTextColor: currentColors.text,
-                        indicatorColor: COLORS.primary,
-                        textDayFontWeight: '600',
-                        textMonthFontWeight: 'bold',
-                        textDayHeaderFontWeight: 'bold',
-                        textDayFontSize: 15,
-                        textMonthFontSize: 16,
-                        textDayHeaderFontSize: 12
-                      }}
-                      
-                      // Dil veya Seçili Tarih değişince takvimi zorla yenile
-                      key={`${lang}-${selectedStr}`} 
-                    />
-                    
-                  </View>
-                </TouchableWithoutFeedback>
-             </TouchableOpacity>
-           </Modal>
-        )
-      )}
-      {showDetailDatePicker && (Platform.OS === 'ios' ? (<Modal transparent visible={true} animationType="slide"><View style={{flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.3)'}}><View style={{backgroundColor: currentColors.surface, padding:20, borderTopLeftRadius:20, borderTopRightRadius:20}}><View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:10}}><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{color:COLORS.danger}}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onDetailDateChange} /></View></View></Modal>) : (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onDetailDateChange} />))}
-      {showHabitDatePicker && Platform.OS === 'android' && (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onHabitDateChange} />)}
-      <Modal transparent visible={showHabitDatePicker && Platform.OS === 'ios'} animationType="slide"><View style={{flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.3)'}}><View style={{backgroundColor: currentColors.surface, padding:20, borderTopLeftRadius:20, borderTopRightRadius:20}}><View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:10}}><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{color:COLORS.danger}}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{color:COLORS.primary, fontWeight:'bold'}}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onHabitDateChange} /></View></View></Modal>
-      
-      {/* --- GOREV DETAY VE SOHBET MODALI (FIXED) --- */}
-            <Modal visible={!!selectedTask} animationType="slide" presentationStyle="pageSheet">
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-                <View style={[styles.container, { backgroundColor: currentColors.bg, padding: 20 }]}>
-                    
-                    <View style={{ marginBottom: 20 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{t('task_detail_title')}</Text>
-                        <TouchableOpacity onPress={() => setSelectedTask(null)}>
-                        <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('close_btn')}</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 10, padding: 4 }}>
-                        <TouchableOpacity 
-                        onPress={() => setTaskModalTab('details')} 
-                        style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'details' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}>
-                        <Text style={{ fontWeight: '600', color: taskModalTab === 'details' ? currentColors.text : currentColors.subText }}>{t('edit_label')}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                        onPress={() => setTaskModalTab('chat')} 
-                        style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'chat' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}>
-                        <Text style={{ fontWeight: '600', color: taskModalTab === 'chat' ? currentColors.text : currentColors.subText }}>{t('messaging_title')}</Text>
-                        </TouchableOpacity>
-                    </View>
-                    </View>
-
-                    {selectedTask && (
-                    <View style={{flex:1}}>
-                        {taskModalTab === 'details' && (
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            <View style={{ gap: 15 }}>
-                            <View>
-                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('title_label')}</Text>
-                                <TextInput value={detailText} onChangeText={setDetailText} multiline={true} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, minHeight: 60, borderRadius: 12, paddingHorizontal: 15, paddingTop:15 }]} />
-                            </View>
-                            <View>
-                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('description_label')}</Text>
-                                <TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder= {t('add_note_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 100, borderRadius: 12, paddingHorizontal: 15, paddingTop: 15, textAlignVertical: 'top' }]} />
-                            </View>
-                            <View>
-                                <Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('due_date_label')}</Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TextInput value={detailDueDate} onChangeText={handleDetailDueDateChange} placeholder="dd-mm-yyyy" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, borderRadius: 12, paddingHorizontal: 15, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} />
-                                <TouchableOpacity onPress={() => openDatePicker('detail')} style={{ backgroundColor: COLORS.primary, padding: 10, borderTopRightRadius: 12, borderBottomRightRadius: 12, height: 50, justifyContent: 'center' }}><CalendarIcon size={24} color="#fff" /></TouchableOpacity>
-                                </View>
-                            </View>
-                            <TouchableOpacity onPress={saveTaskDetail} style={[styles.createBtn, { backgroundColor: COLORS.primary, marginTop: 10 }]}>
-                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save')}</Text>
-                            </TouchableOpacity>
-                            </View>
-                        </ScrollView>
-                        )}
-
-                        {taskModalTab === 'chat' && (
-                        <View style={{ flex: 1, backgroundColor: currentColors.surface, borderRadius: 16, overflow: 'hidden' }}>
-                            
-                            <FlatList
-                            data={taskComments}
-                            keyExtractor={item => item.id}
-                            contentContainerStyle={{ padding: 15, paddingBottom: 60 }}
-                            renderItem={({ item }) => {
-                                const isMe = item.senderId === user.uid;
-                                return (
-                                <View style={{ flexDirection: 'row', marginBottom: 15, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                                    {!isMe && (
-                                    <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.secondary, marginRight: 8, alignItems:'center', justifyContent:'center' }}>
-                                        <Text style={{ fontSize:10, fontWeight:'bold', color:'#fff' }}>{item.senderName?.[0]}</Text>
-                                    </View>
-                                    )}
-                                    <View style={{ maxWidth: '80%' }}>
-                                    <View style={{ 
-                                        backgroundColor: isMe ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'), 
-                                        padding: 10, borderRadius: 12, borderTopLeftRadius: isMe?12:0, borderTopRightRadius: isMe?0:12 
-                                    }}>
-                                        <Text style={{ color: isMe ? '#fff' : currentColors.text, fontSize: 14 }}>{item.text}</Text>
-                                    </View>
-                                    <Text style={{ fontSize: 9, color: currentColors.subText, marginTop: 2, textAlign: isMe ? 'right' : 'left' }}>
-                                        {item.senderName}
-                                    </Text>
-                                    </View>
-                                </View>
-                                );
-                            }}
-                            ListEmptyComponent={
-                                <View style={{ alignItems: 'center', marginTop: 50, opacity: 0.5 }}>
-                                <MessageCircle size={40} color={currentColors.subText} />
-                                <Text style={{ color: currentColors.subText, marginTop: 10 }}>{t('no_comments_yet')}</Text>
-                                </View>
-                            }
-                            />
-
-                            <View style={{ padding: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: currentColors.surface }}>
-                            <TextInput
-                                value={taskCommentInput}
-                                onChangeText={setTaskCommentInput}
-                                placeholder={t('add_comment_placeholder')}
-                                placeholderTextColor={currentColors.subText}
-                                style={{ flex: 1, backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderRadius: 20, paddingHorizontal: 15, height: 40, color: currentColors.text }}
-                            />
-                            <TouchableOpacity onPress={sendTaskComment} disabled={!taskCommentInput.trim()}>
-                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: taskCommentInput.trim() ? COLORS.primary : '#ccc', alignItems: 'center', justifyContent: 'center' }}>
-                                <Send size={18} color="#fff" />
-                                </View>
-                            </TouchableOpacity>
-                            </View>
-                        </View>
-                        )}
-                    </View>
                     )}
-                </View>
-                </KeyboardAvoidingView>
-            </Modal>
-{/* ARKADAŞ EKLEME / AĞ MODALI */}
-      <Modal visible={isNetworkModalOpen} animationType="slide" presentationStyle="pageSheet">
-        <View style={[styles.container, { backgroundColor: currentColors.bg, padding: 20 }]}>
+
+                    <TouchableOpacity onPress={() => setIsLangModalOpen(true)} style={[styles.settingBtn, { marginBottom: 15, justifyContent: 'space-between' }]}>
+                      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}><Globe size={20} color={COLORS.primary} /><Text style={{ color: currentColors.text }}>{t('language')}</Text></View><Text style={{ fontSize: 20 }}>{LANGUAGES.find(l => l.code === lang)?.flag}</Text>
+                    </TouchableOpacity>
+
+                    <Text style={{ fontSize: 12, color: currentColors.subText, marginTop: 5, marginBottom: 10 }}>{t('appearance')?.toUpperCase() || 'GÖRÜNÜM'}</Text>
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 15 }}>
+                      <TouchableOpacity onPress={() => setTheme('light')} style={[styles.settingBtn, theme === 'light' && styles.settingBtnActive, { flex: 1, justifyContent: 'center' }]}><Sun size={16} color={theme === 'light' ? COLORS.primary : currentColors.subText} /><Text style={{ color: theme === 'light' ? COLORS.primary : currentColors.subText, fontSize: 12 }}>{t('theme_light')}</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={() => setTheme('dark')} style={[styles.settingBtn, theme === 'dark' && styles.settingBtnActive, { flex: 1, justifyContent: 'center' }]}><Moon size={16} color={theme === 'dark' ? COLORS.primary : currentColors.subText} /><Text style={{ color: theme === 'dark' ? COLORS.primary : currentColors.subText, fontSize: 12 }}>{t('theme_dark')}</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={() => setTheme('system')} style={[styles.settingBtn, theme === 'system' && styles.settingBtnActive, { flex: 1, justifyContent: 'center' }]}><Monitor size={16} color={theme === 'system' ? COLORS.primary : currentColors.subText} /><Text style={{ color: theme === 'system' ? COLORS.primary : currentColors.subText, fontSize: 12 }}>{t('theme_system')}</Text></TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity onPress={() => setIsPasswordModalOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#1e293b' : '#f8fafc', marginBottom: 10 }}>
+                      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#e0e7ff', alignItems: 'center', justifyContent: 'center' }}><Lock size={18} color={COLORS.primary} /></View>
+                        <View><Text style={{ color: currentColors.text, fontWeight: '600', fontSize: 14 }}>{user.providerData.some((p: any) => p.providerId === 'password') ? t('change_password') : t('create_password')}</Text><Text style={{ color: currentColors.subText, fontSize: 11 }}>{user.providerData.some((p: any) => p.providerId === 'password') ? t('security_change_regular') : t('login_with_email_info')}</Text></View>
+                      </View>
+                      <ChevronRight size={18} color={currentColors.subText} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => { setIsSettingsOpen(false); router.push(`/${lang}/privacy`); }} style={{ paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                      <Text style={{ color: COLORS.primary, textAlign: 'center', fontSize: 12, fontWeight: '600' }}>{t('privacy_terms')}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {user.isGuest && (
+                    <View style={[styles.card, { backgroundColor: '#fffbeb', borderColor: '#f59e0b', borderWidth: 1, marginBottom: 15 }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}><AlertCircle size={24} color="#d97706" /><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#d97706' }}>{t('guest_acc')}</Text></View>
+                      <Text style={{ color: '#b45309', marginBottom: 15, fontSize: 13 }}>{t('guest_now')}</Text>
+                      <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={{ backgroundColor: '#d97706', padding: 12, borderRadius: 12, alignItems: 'center' }}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save_register')}</Text></TouchableOpacity>
+                    </View>
+                  )}
+
+                  <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
+                    <TouchableOpacity onPress={handleLogout} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 15, backgroundColor: '#fee2e2', borderRadius: 12, justifyContent: 'center' }}>
+                      <LogOut size={20} color={COLORS.danger} /><Text style={{ color: COLORS.danger, fontWeight: 'bold', fontSize: 16 }}>{t('logout')}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                    <TouchableOpacity onPress={handleDeleteAccount} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, justifyContent: 'center' }}>
+                      <Trash2 size={20} color={currentColors.subText} /><Text style={{ color: currentColors.subText, fontWeight: '600', fontSize: 14 }}>{t('delete_account')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </PagerView>
+          </View>
+        )}
+
+        {/* ================================================================================= */}
+        {/* 4. REKLAM (Sabit) */}
+        {/* ================================================================================= */}
+        {!isSettingsOpen && (<OmmioAdBanner isPremium={isPremium} />)}
+
+        {/* ================================================================================= */}
+        {/* 5. BOTTOM TABS */}
+        {/* ================================================================================= */}
+        {!isSettingsOpen && (
+          <View style={[styles.tabBar, { backgroundColor: currentColors.surface, borderTopColor: isDark ? '#334155' : '#e2e8f0' }]}>
+            <TouchableOpacity onPress={() => onBottomTabPress('list')} style={{ alignItems: 'center', opacity: activeTab === 'list' ? 1 : 0.5 }}>
+              <ListTodo size={24} color={activeTab === 'list' ? COLORS.primary : currentColors.subText} />
+              <Text style={{ fontSize: 10, color: activeTab === 'list' ? COLORS.primary : currentColors.subText }}>{t('tasks_tab')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onBottomTabPress('habits')} style={{ alignItems: 'center', opacity: activeTab === 'habits' ? 1 : 0.5 }}>
+              <Repeat size={24} color={activeTab === 'habits' ? COLORS.primary : currentColors.subText} />
+              <Text style={{ fontSize: 10, color: activeTab === 'habits' ? COLORS.primary : currentColors.subText }}>{t('habits_tab')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onBottomTabPress('messages')} style={{ alignItems: 'center', opacity: activeTab === 'messages' ? 1 : 0.5 }}>
+              <MessageCircle size={24} color={activeTab === 'messages' ? COLORS.primary : currentColors.subText} />
+              <Text style={{ fontSize: 10, color: activeTab === 'messages' ? COLORS.primary : currentColors.subText }}>{t('messages_tab')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onBottomTabPress('social')} style={{ alignItems: 'center', opacity: activeTab === 'social' ? 1 : 0.5 }}>
+              <Users size={24} color={activeTab === 'social' ? COLORS.primary : currentColors.subText} />
+              <Text style={{ fontSize: 10, color: activeTab === 'social' ? COLORS.primary : currentColors.subText }}>{t('social_tab')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onBottomTabPress('profile')} style={{ alignItems: 'center', opacity: activeTab === 'profile' ? 1 : 0.5 }}>
+              <User size={24} color={activeTab === 'profile' ? COLORS.primary : currentColors.subText} />
+              <Text style={{ fontSize: 10, color: activeTab === 'profile' ? COLORS.primary : currentColors.subText }}>{t('profile_tab')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ================================================================================= */}
+        {/* 6. FLOATING ACTION BUTTONS (GÖREV & ALIŞKANLIK EKLEME) */}
+        {/* ================================================================================= */}
+        
+        {/* Alışkanlık Ekleme Butonu (Sadece Habits Sekmesinde) */}
+        {!isSettingsOpen && activeTab === 'habits' && (
+          <View style={[styles.floatingInputWrapper, { alignItems: 'flex-end', backgroundColor: 'transparent', shadowOpacity: 0, bottom: !isPremium ? 175 : 95 }]}>
+            <TouchableOpacity onPress={() => { setAddMode('habit'); setIsAddModalOpen(true); }} style={[styles.sendBtn, { backgroundColor: COLORS.primary, width: 56, height: 56, borderRadius: 28, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 }]}>
+              <Plus size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Görev Ekleme Barı (Sadece List Sekmesinde) */}
+        {!isSettingsOpen && activeTab === 'list' && (
+          <>
+            {/* Dışarı Tıklama Alanı */}
+            {isInputExpanded && (
+              <TouchableWithoutFeedback onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(false); Keyboard.dismiss(); }}>
+                <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.2)', zIndex: 40 }} />
+              </TouchableWithoutFeedback>
+            )}
             
-            {/* --- DÜZELTME: BİLDİRİM KUTUSU ARTIK MODALIN İÇİNDE VE EN ÜSTTE --- */}
-            {customToast.visible && (
-                <View style={{ 
-                    position: 'absolute', top: 20, left: 20, right: 20, 
-                    zIndex: 9999, // En üstte kalması için
-                    backgroundColor: customToast.type === 'error' ? '#fee2e2' : (customToast.type === 'warning' ? '#fef3c7' : '#f0fdf4'), 
-                    padding: 15, borderRadius: 16, 
-                    flexDirection: 'row', alignItems: 'center', gap: 12,
-                    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10,
-                    borderWidth: 1, borderColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981')
-                }}>
-                    <View style={{ 
-                        width: 36, height: 36, borderRadius: 18, 
-                        backgroundColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981'), 
-                        alignItems: 'center', justifyContent: 'center' 
-                    }}>
-                        {customToast.type === 'success' && <Check size={18} color="#fff" />}
-                        {customToast.type === 'error' && <X size={18} color="#fff" />}
-                        {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
-                        {customToast.type === 'info' && <Bell size={18} color="#fff" />}
+            {/* Blur Input Bar */}
+            <BlurView intensity={Platform.OS === 'ios' ? 80 : 100} tint={isDark ? 'dark' : 'light'} style={[styles.floatingInputWrapper, { bottom: !isPremium ? 185 : 115, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.65)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', borderWidth: 1, overflow: 'hidden', zIndex: 50 }]}>
+              {isInputExpanded && (
+                <View style={styles.expandedOptions}>
+                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('assign_to')}</Text>
+                  <View style={{ flexDirection: 'row', gap: 5, marginBottom: 10, alignItems: 'center', borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', paddingBottom: 10 }}>
+                    <Search size={16} color={currentColors.subText} />
+                    <TextInput value={assignSearchText} onChangeText={setAssignSearchText} placeholder={t('search_contact')} placeholderTextColor={currentColors.subText} style={{ flex: 1, color: currentColors.text }} onSubmitEditing={addTask} />
+                  </View>
+                  {/* Kime Atanacak Listesi */}
+                  <View style={{ marginBottom: 15 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.primary, marginBottom: 8, letterSpacing: 0.5 }}>{t('assign_to').toUpperCase()}</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 2, gap: 10 }}>
+                      <TouchableOpacity onPress={() => setAssignTarget(null)} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: !assignTarget ? COLORS.primary : (isDark ? '#334155' : '#fff'), paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: !assignTarget ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0') }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: !assignTarget ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9'), alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>{user.photoURL ? <Image source={{ uri: user.photoURL }} style={{ width: 28, height: 28, borderRadius: 14 }} /> : <User size={16} color={!assignTarget ? '#fff' : currentColors.subText} />}</View>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: !assignTarget ? '#fff' : currentColors.text }}>{t('me')}</Text>
+                        {!assignTarget && <CheckCircle2 size={14} color="#fff" style={{ marginLeft: 6 }} />}
+                      </TouchableOpacity>
+                      {filteredContacts.map(contact => {
+                        const isSelected = assignTarget?.uid === contact.uid;
+                        return (
+                          <TouchableOpacity key={contact.uid} onPress={() => setAssignTarget(contact)} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#fff'), paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0') }}>
+                            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9'), alignItems: 'center', justifyContent: 'center', marginRight: 8, overflow: 'hidden' }}>{contact.photoURL ? <Image source={{ uri: contact.photoURL }} style={{ width: 28, height: 28 }} /> : <Text style={{ fontSize: 12, fontWeight: 'bold', color: isSelected ? '#fff' : currentColors.subText }}>{contact.username[0].toUpperCase()}</Text>}</View>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : currentColors.text }}>{contact.displayName || contact.username}</Text>
+                            {isSelected && <CheckCircle2 size={14} color="#fff" style={{ marginLeft: 6 }} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('description')}</Text>
+                    <TextInput value={inputDesc} onChangeText={setInputDesc} placeholder="..." placeholderTextColor={currentColors.subText} style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text }]} onSubmitEditing={addTask} />
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('start_date')}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TextInput value={inputStartDate} onChangeText={handleInputStartDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
+                        <TouchableOpacity onPress={() => openDatePicker('start')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><CalendarIcon size={16} color="#fff" /></TouchableOpacity>
+                      </View>
                     </View>
                     <View style={{ flex: 1 }}>
-                        <Text style={{ color: '#1e293b', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
-                        <Text style={{ color: '#475569', fontSize: 11 }}>{customToast.message}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.subText, marginBottom: 5 }}>{t('due_date')}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TextInput value={inputDueDate} onChangeText={handleInputDueDateChange} placeholder="DD-MM-YYYY" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} onSubmitEditing={addTask} />
+                        <TouchableOpacity onPress={() => openDatePicker('due')} style={{ backgroundColor: COLORS.primary, padding: 7, borderTopRightRadius: 8, borderBottomRightRadius: 8, height: 36, justifyContent: 'center' }}><CalendarIcon size={16} color="#fff" /></TouchableOpacity>
+                      </View>
                     </View>
-                    <TouchableOpacity onPress={() => setCustomToast({...customToast, visible: false})}>
-                        <X size={16} color="#475569" />
-                    </TouchableOpacity>
-                </View>
-            )}
-            {/* ------------------------------------------------------------------ */}
-
-            {/* BAŞLIK VE KAPAT BUTONU */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 10 }}>
-                <Text style={{ fontSize: 24, fontWeight: 'bold', color: currentColors.text }}>{t('connections')}</Text>
-                <TouchableOpacity onPress={() => setIsNetworkModalOpen(false)}>
-                    <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('close')}</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* TABLAR (Ommio / Rehber) */}
-            <View style={{ flexDirection: 'row', marginBottom: 20, backgroundColor: currentColors.surface, borderRadius: 12, padding: 4 }}>
-                <TouchableOpacity onPress={() => setNetworkTab('ommio')} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'ommio' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}>
-                    <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('auth_username_placeholder')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setNetworkTab('contacts'); fetchDeviceContacts(); }} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'contacts' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}>
-                    <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('find_from_contacts')}</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* --- OMMIO ARAMA SEKMESİ --- */}
-            {networkTab === 'ommio' ? (
-                <>
-                    <Text style={{ color: currentColors.subText, marginBottom: 10 }}>{t('add_friend_prompt')}</Text>
-
-                    {/* ARAMA KUTUSU VE BUTONU */}
-                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
-                        <TextInput
-                            value={searchUsername}
-                            onChangeText={setSearchUsername}
-                            placeholder={t('search_username')}
-                            placeholderTextColor={currentColors.subText}
-                            style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, flex: 1, borderRadius: 12, paddingHorizontal: 15 }]}
-                            autoCapitalize='none'
-                        />
-                        <TouchableOpacity onPress={sendFriendRequest} style={{ backgroundColor: COLORS.primary, width: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
-                            <UserPlus size={24} color="#fff" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* GELEN İSTEKLER LİSTESİ */}
-                    {friendRequests.length > 0 && (
-                        <View style={{ marginBottom: 20 }}>
-                            <Text style={{ fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>{t('social_pending_requests')}</Text>
-                            {friendRequests.map(req => (
-                                <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
-                                    <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
-                                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                                        <TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity>
-                                        <TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity>
-                                    </View>
-                                </View>
-                            ))}
-                        </View>
-                    )}
-                </>
-            ) : (
-                /* --- REHBER SEKMESİ --- */
-                <FlatList
-                    data={deviceContacts}
-                    keyExtractor={item => item.id}
-                    renderItem={({ item }) => (
-                        <View style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <View>
-                                <Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{item.name}</Text>
-                                <Text style={{ color: currentColors.subText, fontSize: 12 }}>{item.phoneNumber}</Text>
-                            </View>
-                            <TouchableOpacity onPress={() => inviteContact(item.phoneNumber)} style={{ backgroundColor: '#eff6ff', padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                                <Share2 size={16} color={COLORS.primary} />
-                                <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: 'bold' }}>Davet Et</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                    ListEmptyComponent={<Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 20 }}>{t('contacts_loading_or_denied')}</Text>}
-                />
-            )}
-        </View>
-      </Modal>
-      
-      <Modal visible={isLangModalOpen} transparent animationType="fade"><View style={styles.modalBackdrop}><View style={[styles.catModal, { backgroundColor: currentColors.surface, maxHeight: '80%' }]}><Text style={[styles.catModalTitle, {color: currentColors.text}]}>{t('language')}</Text><FlatList data={LANGUAGES} keyExtractor={item => item.code} renderItem={({item}) => (<TouchableOpacity onPress={() => { setLang(item.code as LangCode); setIsLangModalOpen(false); }} style={{flexDirection:'row', alignItems:'center', padding:15, borderBottomWidth:1, borderColor: isDark ? '#334155' : '#f1f5f9'}}><Text style={{fontSize:24, marginRight:15}}>{item.flag}</Text><Text style={{fontSize:16, color: currentColors.text, fontWeight: lang === item.code ? 'bold' : 'normal'}}>{item.label}</Text>{lang === item.code && <Check size={18} color={COLORS.success} style={{marginLeft:'auto'}} />}</TouchableOpacity>)} /><TouchableOpacity onPress={() => setIsLangModalOpen(false)} style={{marginTop:15, padding:10, alignItems:'center'}}><Text style={{color:COLORS.danger, fontWeight:'bold'}}>{t('cancel')}</Text></TouchableOpacity></View></View></Modal>
-      <Modal visible={!!activeAlarmTask} transparent animationType="slide"><View style={styles.alarmOverlay}><View style={[styles.alarmCard, { backgroundColor: currentColors.surface }]}><Text style={[styles.alarmTitle, {color: currentColors.text}]}>{t('alarm')}</Text><Text style={{color: currentColors.text}}>{activeAlarmTask?.text}</Text><TouchableOpacity onPress={() => setActiveAlarmTask(null)} style={styles.alarmCloseBtn}><Text style={{color:'#fff'}}>{t('close')}</Text></TouchableOpacity></View></View></Modal>
-     <Modal visible={showOnboarding} animationType="fade">
-    <View style={{flex:1, backgroundColor: COLORS.primary, padding: 20, justifyContent:'center', alignItems:'center'}}>
-    
-        {onboardingStep === 0 && (
-            <View style={{alignItems:'center', gap:20}}>
-                <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
-                    <ListTodo size={60} color="#fff" />
-                </View>
-                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>{t('welcome')}</Text>
-                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>{t('onboard_step1_desc')}</Text>
-            </View>
-        )}
-        {onboardingStep === 1 && (
-            <View style={{alignItems:'center', gap:20}}>
-                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
-                    <Repeat size={60} color="#fff" />
-                </View>
-                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>{t('onboard_step2_title')}</Text>
-                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>{t('onboard_step2_desc')}</Text>
-            </View>
-        )}
-        {onboardingStep === 2 && (
-            <View style={{alignItems:'center', gap:20}}>
-                 <View style={{width:120, height:120, backgroundColor:'rgba(255,255,255,0.2)', borderRadius:60, alignItems:'center', justifyContent:'center'}}>
-                    <Users size={60} color="#fff" />
-                </View>
-                <Text style={{fontSize:28, fontWeight:'bold', color:'#fff', textAlign:'center'}}>{t('onboard_step3_title')}</Text>
-                <Text style={{color:'#fff', textAlign:'center', fontSize:16}}>{t('onboard_step3_desc')}</Text>
-            </View>
-        )}
-
-        {/* İLERLEME BUTONLARI */}
-        <View style={{position:'absolute', bottom: 50, flexDirection:'row', width:'100%', justifyContent:'space-between', alignItems:'center'}}>
-             <View style={{flexDirection:'row', gap:5}}>
-                {[0,1,2].map(i => <View key={i} style={{width:8, height:8, borderRadius:4, backgroundColor: i===onboardingStep?'#fff':'rgba(255,255,255,0.3)'}} />)}
-             </View>
-             <TouchableOpacity onPress={async() => {
-                setShowOnboarding(false);
-                // Veritabanına kullanıcının rehberi gördüğünü işle
-                if (user) {
-                    await updateDoc(doc(db, "users", user.uid), { hasSeenOnboarding: true });
-                }
-             }} style={{backgroundColor:'#fff', paddingHorizontal:20, paddingVertical:10, borderRadius:20}}>
-                <Text style={{color:COLORS.primary, fontWeight:'bold'}}>{onboardingStep === 2 ? t('start_btn') : t('next_btn')}</Text>
-             </TouchableOpacity>
-        </View>
-    </View>
-</Modal>
-        {/* KATEGORİ YÖNETİM MODALI (SCROLL FIX & FLEX LAYOUT) */}
-        <Modal visible={isCategoryModalOpen} transparent animationType="fade">
-            <TouchableOpacity 
-                activeOpacity={1} 
-                onPress={() => { setIsCategoryModalOpen(false); Keyboard.dismiss(); }} 
-                style={styles.modalBackdrop}
-            >
-                <KeyboardAvoidingView 
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    style={{ width: '100%', alignItems: 'center', justifyContent: 'center', flex: 1 }}
-                >
-                    <TouchableWithoutFeedback>
-                        <View style={{ 
-                            width: '90%', 
-                            maxWidth: 400, 
-                            backgroundColor: currentColors.surface, 
-                            borderRadius: 24, 
-                            padding: 20,
-                            shadowColor: "#000",
-                            shadowOffset: { width: 0, height: 10 },
-                            shadowOpacity: 0.25,
-                            shadowRadius: 10,
-                            elevation: 10,
-                            // ÖNEMLİ: Sabit yükseklik yerine ekranın %80'ini kaplasın
-                            height: '80%', 
-                            display: 'flex',
-                            flexDirection: 'column'
-                        }}>
-                            
-                            {/* 1. BAŞLIK (SABİT) */}
-                            <View style={{ 
-                                flexDirection: 'row', 
-                                justifyContent: 'space-between', 
-                                alignItems: 'center', 
-                                marginBottom: 10, 
-                                paddingBottom: 10, 
-                                borderBottomWidth: 1, 
-                                borderColor: isDark ? '#334155' : '#f1f5f9',
-                                flexShrink: 0 // Başlık küçülmesin
-                            }}>
-                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>
-                                    {t('categories_title')}
-                                </Text>
-                                <TouchableOpacity onPress={() => setIsCategoryModalOpen(false)} style={{ padding: 5 }}>
-                                    <X size={24} color={currentColors.subText} />
-                                </TouchableOpacity>
-                            </View>
-                            
-                            {/* 2. LİSTE (SCROLLABLE - FLEX: 1) */}
-                            {/* flex: 1 sayesinde başlık ve alt kısım haricindeki tüm alanı burası alır */}
-                            <ScrollView 
-                                style={{ flex: 1, marginBottom: 15 }} 
-                                contentContainerStyle={{ paddingBottom: 10 }}
-                                showsVerticalScrollIndicator={true} 
-                                indicatorStyle={isDark ? 'white' : 'black'}
-                            >
-                                {categories.map((cat) => (
-                                    <View key={cat.id} style={{ 
-                                        flexDirection: 'row', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'space-between', 
-                                        paddingVertical: 12, 
-                                        paddingHorizontal: 10,
-                                        marginBottom: 8,
-                                        borderRadius: 12,
-                                        backgroundColor: isDark ? '#1e293b' : '#f8fafc',
-                                        borderWidth: 1,
-                                        borderColor: isDark ? '#334155' : '#e2e8f0'
-                                    }}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                            <View style={{ 
-                                                width: 16, height: 16, borderRadius: 8, 
-                                                backgroundColor: CATEGORY_COLORS.find(c => c.id === cat.color)?.hex || 'gray',
-                                                borderWidth: 2, borderColor: isDark ? '#334155' : '#fff'
-                                            }} />
-                                            <Text style={{ fontSize: 16, fontWeight: '600', color: currentColors.text }}>{cat.name}</Text>
-                                        </View>
-                                        
-                                        <TouchableOpacity 
-                                            onPress={() => handleDeleteCategory(cat.id)} 
-                                            style={{ backgroundColor: '#fee2e2', padding: 8, borderRadius: 8 }}
-                                        >
-                                            <Trash2 size={18} color={COLORS.danger} />
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-                            </ScrollView>
-
-                            {/* 3. YENİ EKLEME ALANI (SABİT) */}
-                            <View style={{ 
-                                paddingTop: 15, 
-                                borderTopWidth: 1, 
-                                borderColor: isDark ? '#334155' : '#f1f5f9',
-                                flexShrink: 0 // Alt kısım sıkışmasın
-                            }}>
-                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10, textTransform: 'uppercase' }}>
-                                    {t('create_new_category')}
-                                </Text>
-
-                                {/* Input */}
-                                <TextInput
-                                    value={newCategoryName}
-                                    onChangeText={setNewCategoryName}
-                                    placeholder={t('category_name_placeholder')}
-                                    placeholderTextColor={currentColors.subText}
-                                    style={{
-                                        backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
-                                        color: currentColors.text,
-                                        padding: 15,
-                                        borderRadius: 12,
-                                        fontSize: 16,
-                                        borderWidth: 1,
-                                        borderColor: isDark ? '#475569' : '#cbd5e1',
-                                        marginBottom: 15
-                                    }}
-                                />
-
-                                {/* Renk Seçimi */}
-                                <View style={{ marginBottom: 20, height: 50 }}>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, alignItems: 'center' }}>
-                                        {CATEGORY_PALETTE.map(colorName => {
-                                            const colorHex = CATEGORY_COLORS.find(c => c.id === colorName)?.hex || '#000';
-                                            const isSelected = newCategoryColor === colorName;
-                                            return (
-                                                <TouchableOpacity 
-                                                    key={colorName} 
-                                                    onPress={() => setNewCategoryColor(colorName)} 
-                                                    style={{
-                                                        width: 40, height: 40, 
-                                                        borderRadius: 20, 
-                                                        backgroundColor: colorHex, 
-                                                        alignItems: 'center', 
-                                                        justifyContent: 'center',
-                                                        borderWidth: isSelected ? 3 : 0,
-                                                        borderColor: currentColors.text,
-                                                        elevation: 3
-                                                    }}
-                                                >
-                                                    {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
-                                                </TouchableOpacity>
-                                            )
-                                        })}
-                                    </ScrollView> 
-                                </View>
-
-                                {/* Ekle Butonu */}
-                                <TouchableOpacity 
-                                    onPress={handleAddCategory} 
-                                    disabled={!newCategoryName.trim()}
-                                    style={{ 
-                                        backgroundColor: newCategoryName.trim() ? COLORS.success : '#94a3b8', 
-                                        paddingVertical: 15, 
-                                        borderRadius: 16, 
-                                        alignItems: 'center', 
-                                        flexDirection: 'row', 
-                                        justifyContent: 'center', 
-                                        gap: 8,
-                                        shadowColor: COLORS.success,
-                                        shadowOpacity: newCategoryName.trim() ? 0.3 : 0,
-                                        shadowRadius: 5,
-                                        elevation: newCategoryName.trim() ? 5 : 0
-                                    }}
-                                >
-                                    <Plus size={20} color="#fff" strokeWidth={3} />
-                                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>{t('create_new_category')}</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                        </View>
-                    </TouchableWithoutFeedback>
-                </KeyboardAvoidingView>
-            </TouchableOpacity>
-        </Modal>
-      {/* PROFİL DÜZENLEME MODALI */}
-      <Modal visible={isEditProfileVisible} transparent animationType="fade">
-        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
-           {/* --- PROFİL DÜZENLEME MODALI İÇERİĞİ --- */}
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{width:'85%', backgroundColor: currentColors.surface, padding: 25, borderRadius: 24}}>
-                <Text style={{fontSize:20, fontWeight:'bold', color: currentColors.text, marginBottom: 5, textAlign:'center'}}>{t('profile_edit_title')}</Text>
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 20, textAlign:'center'}}>{t('profile_edit_desc')}</Text>
-                
-                {/* 1. GÖRÜNEN İSİM (DISPLAY NAME) */}
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>{t('profile_display_name')}</Text>
-                <View style={{flexDirection:'row', alignItems:'center', backgroundColor: isDark?'#334155':'#f8fafc', borderWidth:1, borderColor: isDark?'#475569':'#e2e8f0', borderRadius:12, paddingHorizontal:15, marginBottom:15}}>
-                    <User size={18} color={COLORS.primary} />
-                    <TextInput 
-                        value={editDisplayNameInput}
-                        onChangeText={setEditDisplayNameInput}
-                        style={{flex:1, padding: 12, color: currentColors.text, fontSize:16, fontWeight:'600'}}
-                        placeholder="Adınız Soyadınız"
-                        placeholderTextColor={currentColors.subText}
-                    />
-                    {/* Kalem ikonu dekoratif */}
-                    <Edit2 size={14} color={currentColors.subText} />
-                </View>
-
-                {/* 2. KULLANICI ADI (USERNAME) */}
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 6, fontWeight:'600', marginLeft: 4}}>{t('profile_username_label')}</Text>
-                <View style={{flexDirection:'row', alignItems:'center', backgroundColor: isDark?'#1e293b':'#f1f5f9', borderWidth:1, borderColor: isDark?'#334155':'#cbd5e1', borderRadius:12, paddingHorizontal:15, marginBottom:25}}>
-                    <Text style={{color: currentColors.subText, fontWeight:'bold', fontSize:16}}>@</Text>
-                    <TextInput 
-                        value={editUsernameInput}
-                        onChangeText={setEditUsernameInput}
-                        style={{flex:1, padding: 12, color: currentColors.subText, fontSize:14}} // Username biraz daha sönük dursun
-                        autoCapitalize="none"
-                        placeholder="kullaniciadi"
-                        placeholderTextColor={currentColors.subText}
-                    />
-                </View>
-
-                <View style={{flexDirection:'row', gap: 12}}>
-                    <TouchableOpacity onPress={() => setIsEditProfileVisible(false)} style={{flex:1, padding:15, alignItems:'center', borderRadius:14, backgroundColor: isDark?'#334155':'#f1f5f9'}}>
-                        <Text style={{color: currentColors.text, fontWeight:'bold'}}>{t('cancel_btn')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleUpdateProfile} style={{flex:1, padding:15, alignItems:'center', borderRadius:14, backgroundColor: COLORS.primary, shadowColor: COLORS.primary, shadowOpacity:0.3, shadowRadius:5}}>
-                        <Text style={{color: '#fff', fontWeight:'bold'}}>{t('save')}</Text>
-                    </TouchableOpacity>
-                </View>
-            </KeyboardAvoidingView>
-        </View>
-      </Modal>
-      
-            <Modal visible={friendTasksModal.visible} transparent animationType="slide">
-            <View style={styles.modalBackdrop}>
-                <View style={[styles.catModal, { backgroundColor: currentColors.surface, height: '70%' }]}>
-                    <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15}}>
-                        <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text}}>
-                            {friendTasksModal.friendName} {t('status_label')}
-                        </Text>
-                        <TouchableOpacity onPress={()=>setFriendTasksModal({...friendTasksModal, visible:false})}>
-                            <X size={24} color={currentColors.text} />
-                        </TouchableOpacity>
-                    </View>
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                        {friendTasksModal.tasks.length === 0 ? (
-                            <Text style={{textAlign:'center', color:currentColors.subText, marginTop:20}}>{t('no_tasks_assigned')}</Text>
-                        ) : (
-                            friendTasksModal.tasks.map(t => (
-                                <View key={t.id} style={{padding:15, borderRadius:12, backgroundColor: isDark?'#334155':'#f8fafc', marginBottom:10, borderLeftWidth:4, borderLeftColor: t.completed ? COLORS.success : COLORS.warning}}>
-                                    <Text style={{fontWeight:'bold', color:currentColors.text, textDecorationLine: t.completed ? 'line-through' : 'none'}}>{t.text}</Text>
-                                    <View style={{flexDirection:'row', justifyContent:'space-between', marginTop:5}}>
-                                        <Text style={{fontSize:12, color: t.completed ? COLORS.success : COLORS.warning}}>
-                                            {t.completed ? "Tamamlandı" : "Bekliyor"}
-                                        </Text>
-                                        <Text style={{fontSize:10, color:currentColors.subText}}>{t.date}</Text>
-                                    </View>
-                                </View>
-                            ))
-                        )}
+                  </View>
+                  {!assignTarget ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                      {categories.map(cat => {
+                        const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0];
+                        return (
+                          <TouchableOpacity key={cat.id} onPress={() => setSelectedCategory(cat)} style={[styles.pill, selectedCategory.id === cat.id ? { backgroundColor: selectedCategory ? cc.hex : (isDark ? '#334155' : '#fff'), borderColor: selectedCategory ? 'transparent' : (isDark ? '#475569' : '#e2e8f0') } : { borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cc.hex }} />
+                            <Text style={{ fontSize: 12, color: currentColors.text, fontWeight: '600' }}>{cat.name}</Text>
+                          </TouchableOpacity>
+                        )
+                      })}
                     </ScrollView>
-                </View>
-            </View>
-        </Modal> 
-        {/* ŞİFRE DEĞİŞTİRME MODALI */}
-      <Modal visible={isPasswordModalOpen} transparent animationType="fade">
-        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
-            <View style={{width:'85%', backgroundColor: currentColors.surface, padding: 20, borderRadius: 20}}>
-                <Text style={{fontSize:18, fontWeight:'bold', color: currentColors.text, marginBottom: 15}}>{t('new_password_title')}</Text>
-                
-                <Text style={{fontSize:12, color: currentColors.subText, marginBottom: 5}}>{t('new_password_title')}</Text>
-                <View style={{flexDirection:'row', alignItems:'center', borderWidth:1, borderColor: isDark?'#334155':'#e2e8f0', borderRadius:12, paddingHorizontal:10, marginBottom:20}}>
-                    <Lock size={16} color={currentColors.subText} />
-                    <TextInput 
-                        value={newPasswordInput}
-                        onChangeText={setNewPasswordInput}
-                        style={{flex:1, padding: 15, color: currentColors.text, fontSize:16}}
-                        secureTextEntry
-                        placeholder="******"
-                        placeholderTextColor={currentColors.subText}
-                    />
-                </View>
-
-                <View style={{flexDirection:'row', gap: 10}}>
-                    <TouchableOpacity onPress={() => { setIsPasswordModalOpen(false); setNewPasswordInput(""); }} style={{flex:1, padding:15, alignItems:'center', borderRadius:12, backgroundColor: isDark?'#334155':'#f1f5f9'}}>
-                        <Text style={{color: currentColors.subText, fontWeight:'bold'}}>{t('cancel_btn')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handlePasswordChange} style={{flex:1, padding:15, alignItems:'center', borderRadius:12, backgroundColor: COLORS.primary}}>
-                        <Text style={{color: '#fff', fontWeight:'bold'}}>{t('save')}</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </View>
-      </Modal>
-
-{/* --- CUSTOM CONFIRM MODAL --- */}
-<Modal visible={confirmModal.visible} transparent animationType="fade">
-    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <View style={{ backgroundColor: currentColors.surface, borderRadius: 24, padding: 25, width: '100%', maxWidth: 340, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
-            
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>
-                {confirmModal.title}
-            </Text>
-            <Text style={{ color: currentColors.subText, marginBottom: 25, lineHeight: 22 }}>
-                {confirmModal.message}
-            </Text>
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity 
-                    onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))} 
-                    style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
-                >
-                    <Text style={{ color: currentColors.text, fontWeight: '600' }}>{t('cancel_btn')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    onPress={() => {
-                        confirmModal.onConfirm();
-                        setConfirmModal(prev => ({ ...prev, visible: false }));
-                    }} 
-                    style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: confirmModal.isDestructive ? COLORS.danger : COLORS.primary, alignItems: 'center' }}
-                >
-                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>
-                        {confirmModal.isDestructive ? t('delete') : t('confirm_btn')}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    </View>
-</Modal>              
-
-     {/* ================================================================================= */}
-      {/* 1. ZORUNLU REKLAM MODALI (SAYAÇLI) */}
-      {/* ================================================================================= */}
-      <Modal visible={isAdVisible} transparent animationType="fade">
-        <View style={premiumStyles.overlay}>
-            {/* Reklam Alanı Container */}
-            <View style={[premiumStyles.adContainer, {backgroundColor: '#000'}]}>
-                
-                <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom:10}}>
-                   <Text style={{color:'#fff', fontSize:12, fontWeight:'bold', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>{t('ad_label_full')}</Text>
-                </View>
-
-                {/* --- BURASI GOOGLE ADS ALANI --- */}
-                <View style={{flex:1, width:'100%', justifyContent:'center', alignItems:'center', backgroundColor:'#1e1e1e', borderRadius:8}}>
-                     <Text style={{color:'#666'}}>Google Ads Component Here</Text>
-                     {/* Web için örnek görsel, Mobil için AdMob Componenti buraya gelir */}
-                     {Platform.OS === 'web' && <Image source={{uri: 'https://via.placeholder.com/350x250'}} style={{width:300, height:250, opacity:0.5}} />}
-                </View>
-                {/* ------------------------------- */}
-
-                {/* SAYAÇLI KAPATMA BUTONU */}
-                <TouchableOpacity 
-                    disabled={adCountdown > 0} // Süre bitmeden tıklanamaz
-                    onPress={() => {
-                        setIsAdVisible(false);
-                        setIsUpsellVisible(true); // Reklam bitince Premium teklifi aç
-                    }}
-                    style={[
-                        premiumStyles.closeAdButton, 
-                        { backgroundColor: adCountdown > 0 ? 'rgba(255,255,255,0.1)' : '#fff' }
-                    ]}
-                >
-                    {adCountdown > 0 ? (
-                        <Text style={{color:'#aaa', fontWeight:'bold'}}>{t('ad_skip')} , {adCountdown}</Text>
-                    ) : (
-                        <Text style={{color:'#000', fontWeight:'bold'}}>{t('ad_close')} ✕</Text>
-                    )}
-                </TouchableOpacity>
-            </View>
-        </View>
-      </Modal>
-
-      {/* ================================================================================= */}
-      {/* 2. MODERN PREMIUM UPSELL (SATIŞ) MODALI */}
-      {/* ================================================================================= */}
-      <Modal visible={isUpsellVisible} transparent animationType="slide">
-        <View style={premiumStyles.overlay}>
-            <View style={[premiumStyles.card, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
-                
-                {/* --- BAŞLIK KISMI (Header) --- */}
-                <View style={premiumStyles.headerSection}>
-                    <View style={premiumStyles.iconCircle}>
-                        <Trophy size={40} color="#d97706" fill="#d97706" />
+                  ) : (
+                    <View style={{ paddingVertical: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                      <Text style={{ fontSize: 11, color: COLORS.warning, fontStyle: 'italic' }}>{assignTarget && tFormat("task_assign_info", { name: assignTarget.username })}</Text>
                     </View>
-                    <Text style={[premiumStyles.title, { color: isDark ? '#fff' : '#1e293b' }]}>
-                        {t('premium_unlock')}
-                    </Text>
-                    <Text style={[premiumStyles.subtitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>
-                        {t('premium_subtitle')}
-                    </Text>
+                  )}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 }}><View style={{ flexDirection: 'row', gap: 5 }}><TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={[styles.iconToggle, isNotifOn && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]}><Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} /></TouchableOpacity><TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={[styles.iconToggle, isAlarmOn && { backgroundColor: '#fef2f2', borderColor: '#ef4444' }]}><AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} /></TouchableOpacity>{inputDueDate && <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={[styles.iconToggle, isEveryDayOn && { backgroundColor: '#f0fdf4', borderColor: '#10b981' }, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}><CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} /><Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>{t('every_day')}</Text></TouchableOpacity>}</View><View style={{ flexDirection: 'row', gap: 5 }}>{isNotifOn && <TextInput value={notifInput} onChangeText={handleNotifInputChange} placeholder="09:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.primary, borderColor: COLORS.primary }]} maxLength={5} onSubmitEditing={addTask} />}{isAlarmOn && <TextInput value={alarmInput} onChangeText={handleAlarmInputChange} placeholder="07:00" placeholderTextColor="#94a3b8" style={[styles.tinyInput, { color: COLORS.danger, borderColor: COLORS.danger }]} maxLength={5} onSubmitEditing={addTask} />}</View></View>
                 </View>
+              )}
+              <View style={styles.inputMainRow}><TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(!isInputExpanded); }} style={styles.expandBtn}>{isInputExpanded ? <X size={20} color={currentColors.subText} /> : <Sliders size={20} color={currentColors.subText} />}</TouchableOpacity><TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('addTask')} placeholderTextColor={currentColors.subText} style={[styles.mainInput, { color: currentColors.text }]} onSubmitEditing={addTask} /><TouchableOpacity onPress={addTask} style={[styles.sendBtn, { backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0') }]}><Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} /></TouchableOpacity></View>
+            </BlurView>
+          </>
+        )}
 
-                {/* --- ÖZELLİK LİSTESİ --- */}
-                <View style={premiumStyles.featuresList}>
-                    {/* Madde 1 */}
-                    <View style={premiumStyles.featureItem}>
-                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_ads')}</Text>
-                    </View>
-                    {/* Madde 2 */}
-                    <View style={premiumStyles.featureItem}>
-                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_habits')}</Text>
-                    </View>
-                    {/* Madde 3 */}
-                    <View style={premiumStyles.featureItem}>
-                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_stats')}</Text>
-                    </View>
-                    {/* Madde 4 */}
-                    <View style={premiumStyles.featureItem}>
-                        <View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View>
-                        <Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_themes')}</Text>
-                    </View>
-                </View>
-
-                {/* --- AKSİYON BUTONLARI --- */}
-                <View style={{marginTop: 20, width: '100%', gap: 12}}>
-                    <TouchableOpacity 
-                        onPress={async () => {
-                             // Premium Satın Alma Simülasyonu
-                             try {
-                                if(user) {
-                                    await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
-                                    showToast(t('great_label'), t('premium_activated_msg'), 'success');
-                                    setIsUpsellVisible(false);
-                                }
-                            } catch(e) { console.log(e); }
-                        }}
-                        style={premiumStyles.ctaButton}
-                    >
-                        <Text style={premiumStyles.ctaText}>{t('premium_cta')}</Text>
-                        <Text style={premiumStyles.ctaSubText}>{t('premium_price')}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => setIsUpsellVisible(false)} style={premiumStyles.secondaryButton}>
-                        <Text style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: 13, fontWeight: '600' }}>
-                            {t('keep_ads')}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
+        {/* ================================================================================= */}
+        {/* 7. TOAST BİLDİRİMLER (En üstte) */}
+        {/* ================================================================================= */}
+        {customToast.visible && (
+          <View style={{
+            position: 'absolute', top: 60, left: 20, right: 20, zIndex: 9999,
+            backgroundColor: customToast.type === 'error' ? '#fee2e2' : (customToast.type === 'warning' ? '#fef3c7' : '#f0fdf4'),
+            padding: 15, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
+            shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10,
+            borderWidth: 1, borderColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981')
+          }}>
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981'), alignItems: 'center', justifyContent: 'center' }}>
+              {customToast.type === 'success' && <Check size={18} color="#fff" />}
+              {customToast.type === 'error' && <X size={18} color="#fff" />}
+              {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
+              {customToast.type === 'info' && <Bell size={18} color="#fff" />}
             </View>
-        </View>
-      </Modal>              
-    </SafeAreaView>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#1e293b', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
+              <Text style={{ color: '#475569', fontSize: 11 }}>{customToast.message}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setCustomToast({ ...customToast, visible: false })}><X size={16} color="#475569" /></TouchableOpacity>
+          </View>
+        )}
+
+        {/* ================================================================================= */}
+        {/* 8. MODALLAR (Tümü) */}
+        {/* ================================================================================= */}
+
+        {/* ALIŞKANLIK EKLEME MODALI */}
+        <Modal visible={isAddModalOpen} transparent animationType="slide">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+            <TouchableWithoutFeedback onPress={() => { setIsAddModalOpen(false); Keyboard.dismiss(); }}>
+              <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                <TouchableWithoutFeedback>
+                  <View style={{ backgroundColor: currentColors.bg, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, minHeight: 400 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('new_habit')}</Text>
+                      <TouchableOpacity onPress={() => setIsAddModalOpen(false)}><X size={24} color={currentColors.text} /></TouchableOpacity>
+                    </View>
+                    <View style={{ gap: 15 }}>
+                      <TextInput placeholder={t('habit_name')} placeholderTextColor={currentColors.subText} value={newHabitTitle} onChangeText={setNewHabitTitle} style={[styles.input, { color: currentColors.text }]} />
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity onPress={() => setNewHabitFreq('daily')} style={[styles.pill, newHabitFreq === 'daily' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'daily' ? '#fff' : currentColors.text }}>{t('daily')}</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => setNewHabitFreq('weekly')} style={[styles.pill, newHabitFreq === 'weekly' && { backgroundColor: COLORS.primary }]}><Text style={{ color: newHabitFreq === 'weekly' ? '#fff' : currentColors.text }}>{t('weekly')}</Text></TouchableOpacity>
+                      </View>
+                      {newHabitFreq === 'weekly' && (
+                        <View style={{ marginTop: 10 }}>
+                          <Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 8 }}>{t('which_days')}</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                            {getDaysOfWeek(lang).map((dayObj) => {
+                              const isSelected = newHabitDays.includes(dayObj.id);
+                              return (
+                                <TouchableOpacity key={dayObj.id} onPress={() => toggleHabitDay(dayObj.id)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#475569' : '#e2e8f0') }}>
+                                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: isSelected ? '#fff' : currentColors.text }}>{dayObj.label.substring(0, 2)}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+                      <TextInput placeholder={t('time_placeholder')} placeholderTextColor={currentColors.subText} value={habitNotifInput} onChangeText={(t) => setHabitNotifInput(maskTimeInput(t))} style={[styles.input, { color: currentColors.text }]} maxLength={5} keyboardType="numeric" />
+                      <Text style={{ color: currentColors.subText, fontSize: 10 }}>{t('category')}</Text>
+                      <ScrollView horizontal>{categories.map(c => <TouchableOpacity key={c.id} onPress={() => setSelectedCategory(c)} style={{ padding: 8, marginRight: 5, borderRadius: 8, backgroundColor: selectedCategory.id === c.id ? COLORS.secondary : currentColors.surface }}><Text style={{ color: currentColors.text }}>{c.name}</Text></TouchableOpacity>)}</ScrollView>
+                      <TouchableOpacity onPress={addHabit} style={styles.btn}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('start_habit')}</Text></TouchableOpacity>
+                    </View>
+                  </View>
+                </TouchableWithoutFeedback>
+              </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* MİSAFİR DÖNÜŞÜM MODALI */}
+        <Modal visible={isGuestModalOpen} transparent animationType="slide">
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 }}>
+              <View style={{ backgroundColor: currentColors.surface, borderRadius: 24, padding: 25 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('create_ac')}</Text>
+                  <TouchableOpacity onPress={() => setIsGuestModalOpen(false)}><X size={24} color={currentColors.subText} /></TouchableOpacity>
+                </View>
+                <Text style={{ color: currentColors.subText, marginBottom: 20 }}>{t('protect_data_msg')}</Text>
+                <View style={{ gap: 15 }}>
+                  <View style={styles.authInputRow}><User size={20} color={currentColors.subText} /><TextInput value={username} onChangeText={setUsername} placeholder={t('social_search_tab_username')} placeholderTextColor={currentColors.subText} style={[styles.authInput, { color: currentColors.text }]} autoCapitalize='none' /></View>
+                  <View style={styles.authInputRow}><Mail size={20} color={currentColors.subText} /><TextInput value={email} onChangeText={setEmail} placeholder="E-posta" placeholderTextColor={currentColors.subText} style={[styles.authInput, { color: currentColors.text }]} autoCapitalize='none' keyboardType="email-address" /></View>
+                  <View style={styles.authInputRow}><Lock size={20} color={currentColors.subText} /><TextInput value={password} onChangeText={setPassword} placeholder={t('auth_password_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, { color: currentColors.text }]} secureTextEntry /></View>
+                  <TouchableOpacity onPress={handleConvertGuest} style={[styles.createBtn, { marginTop: 10 }]}>{isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{t('complete_profile')}</Text>}</TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+
+        {/* TARİH SEÇİCİ */}
+        {showDatePicker && (
+          Platform.OS === 'android' ? (
+            <DateTimePicker value={selectedDate || new Date()} mode="date" display="default" onChange={onDateChange} />
+          ) : (
+            <Modal transparent visible={true} animationType="fade">
+              <TouchableOpacity activeOpacity={1} onPress={() => setShowDatePicker(false)} style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                <TouchableWithoutFeedback>
+                  <View style={{ backgroundColor: currentColors.surface, borderRadius: 24, padding: 20, width: Platform.OS === 'web' ? 360 : '85%', maxWidth: 400, shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 20, elevation: 15 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><View style={{ backgroundColor: COLORS.primary + '20', padding: 8, borderRadius: 10 }}><CalendarIcon size={20} color={COLORS.primary} /></View><Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>Tarih Seç</Text></View>
+                      <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ padding: 5 }}><X size={24} color={currentColors.subText} /></TouchableOpacity>
+                    </View>
+                    <Calendar current={selectedStr} key={`${lang}-${selectedStr}`} markingType={'custom'} markedDates={calendarMarks} onDayPress={(day: any) => { const newDate = new Date(day.timestamp); newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset()); onDateChange(null, newDate); }} theme={{ backgroundColor: 'transparent', calendarBackground: 'transparent', textSectionTitleColor: currentColors.subText, selectedDayBackgroundColor: COLORS.primary, selectedDayTextColor: '#ffffff', todayTextColor: COLORS.primary, dayTextColor: currentColors.text, textDisabledColor: '#d9e1e8', dotColor: COLORS.primary, arrowColor: COLORS.primary, monthTextColor: currentColors.text, indicatorColor: COLORS.primary, textDayFontWeight: '600', textMonthFontWeight: 'bold', textDayHeaderFontWeight: 'bold', textDayFontSize: 15, textMonthFontSize: 16, textDayHeaderFontSize: 12 }} />
+                  </View>
+                </TouchableWithoutFeedback>
+              </TouchableOpacity>
+            </Modal>
+          )
+        )}
+        {showDetailDatePicker && (Platform.OS === 'ios' ? (<Modal transparent visible={true} animationType="slide"><View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.3)' }}><View style={{ backgroundColor: currentColors.surface, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{ color: COLORS.danger }}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowDetailDatePicker(false)}><Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onDetailDateChange} /></View></View></Modal>) : (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onDetailDateChange} />))}
+        {showHabitDatePicker && Platform.OS === 'android' && (<DateTimePicker value={new Date()} mode="date" display="default" onChange={onHabitDateChange} />)}
+        <Modal transparent visible={showHabitDatePicker && Platform.OS === 'ios'} animationType="slide"><View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.3)' }}><View style={{ backgroundColor: currentColors.surface, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{ color: COLORS.danger }}>{t('cancel')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setShowHabitDatePicker(false)}><Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('ok_btn')}</Text></TouchableOpacity></View><DateTimePicker value={new Date()} mode="date" display="inline" onChange={onHabitDateChange} /></View></View></Modal>
+
+        {/* GÖREV DETAY MODALI */}
+        <Modal visible={!!selectedTask} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <View style={[styles.container, { backgroundColor: currentColors.bg, padding: 20 }]}>
+              <View style={{ marginBottom: 20 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{t('task_detail_title')}</Text>
+                  <TouchableOpacity onPress={() => setSelectedTask(null)}><Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('close_btn')}</Text></TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 10, padding: 4 }}>
+                  <TouchableOpacity onPress={() => setTaskModalTab('details')} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'details' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}><Text style={{ fontWeight: '600', color: taskModalTab === 'details' ? currentColors.text : currentColors.subText }}>{t('edit_label')}</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setTaskModalTab('chat')} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: taskModalTab === 'chat' ? (isDark ? '#1e293b' : '#fff') : 'transparent' }}><Text style={{ fontWeight: '600', color: taskModalTab === 'chat' ? currentColors.text : currentColors.subText }}>{t('messaging_title')}</Text></TouchableOpacity>
+                </View>
+              </View>
+              {selectedTask && (
+                <View style={{ flex: 1 }}>
+                  {taskModalTab === 'details' && (
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                      <View style={{ gap: 15 }}>
+                        <View><Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('title_label')}</Text><TextInput value={detailText} onChangeText={setDetailText} multiline={true} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, minHeight: 60, borderRadius: 12, paddingHorizontal: 15, paddingTop: 15 }]} /></View>
+                        <View><Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('description_label')}</Text><TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder={t('add_note_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 100, borderRadius: 12, paddingHorizontal: 15, paddingTop: 15, textAlignVertical: 'top' }]} /></View>
+                        <View><Text style={{ color: currentColors.subText, fontSize: 12, marginBottom: 5 }}>{t('due_date_label')}</Text><View style={{ flexDirection: 'row', alignItems: 'center' }}><TextInput value={detailDueDate} onChangeText={handleDetailDueDateChange} placeholder="dd-mm-yyyy" placeholderTextColor={currentColors.subText} maxLength={10} keyboardType="numeric" style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, borderRadius: 12, paddingHorizontal: 15, flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]} /><TouchableOpacity onPress={() => openDatePicker('detail')} style={{ backgroundColor: COLORS.primary, padding: 10, borderTopRightRadius: 12, borderBottomRightRadius: 12, height: 50, justifyContent: 'center' }}><CalendarIcon size={24} color="#fff" /></TouchableOpacity></View></View>
+                        <TouchableOpacity onPress={saveTaskDetail} style={[styles.createBtn, { backgroundColor: COLORS.primary, marginTop: 10 }]}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save')}</Text></TouchableOpacity>
+                      </View>
+                    </ScrollView>
+                  )}
+                  {taskModalTab === 'chat' && (
+                    <View style={{ flex: 1, backgroundColor: currentColors.surface, borderRadius: 16, overflow: 'hidden' }}>
+                      <FlatList data={taskComments} keyExtractor={item => item.id} contentContainerStyle={{ padding: 15, paddingBottom: 60 }} renderItem={({ item }) => { const isMe = item.senderId === user.uid; return (<View style={{ flexDirection: 'row', marginBottom: 15, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>{!isMe && (<View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.secondary, marginRight: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 10, fontWeight: 'bold', color: '#fff' }}>{item.senderName?.[0]}</Text></View>)}<View style={{ maxWidth: '80%' }}><View style={{ backgroundColor: isMe ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'), padding: 10, borderRadius: 12, borderTopLeftRadius: isMe ? 12 : 0, borderTopRightRadius: isMe ? 0 : 12 }}><Text style={{ color: isMe ? '#fff' : currentColors.text, fontSize: 14 }}>{item.text}</Text></View><Text style={{ fontSize: 9, color: currentColors.subText, marginTop: 2, textAlign: isMe ? 'right' : 'left' }}>{item.senderName}</Text></View></View>); }} ListEmptyComponent={<View style={{ alignItems: 'center', marginTop: 50, opacity: 0.5 }}><MessageCircle size={40} color={currentColors.subText} /><Text style={{ color: currentColors.subText, marginTop: 10 }}>{t('no_comments_yet')}</Text></View>} />
+                      <View style={{ padding: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: currentColors.surface }}>
+                        <TextInput value={taskCommentInput} onChangeText={setTaskCommentInput} placeholder={t('add_comment_placeholder')} placeholderTextColor={currentColors.subText} style={{ flex: 1, backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderRadius: 20, paddingHorizontal: 15, height: 40, color: currentColors.text }} />
+                        <TouchableOpacity onPress={sendTaskComment} disabled={!taskCommentInput.trim()}><View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: taskCommentInput.trim() ? COLORS.primary : '#ccc', alignItems: 'center', justifyContent: 'center' }}><Send size={18} color="#fff" /></View></TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* ARKADAŞ EKLEME MODALI */}
+        <Modal visible={isNetworkModalOpen} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.container, { backgroundColor: currentColors.bg, padding: 20 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 10 }}>
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: currentColors.text }}>{t('connections')}</Text>
+              <TouchableOpacity onPress={() => setIsNetworkModalOpen(false)}><Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{t('close')}</Text></TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: 'row', marginBottom: 20, backgroundColor: currentColors.surface, borderRadius: 12, padding: 4 }}>
+              <TouchableOpacity onPress={() => setNetworkTab('ommio')} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'ommio' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}><Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('auth_username_placeholder')}</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { setNetworkTab('contacts'); fetchDeviceContacts(); }} style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'contacts' ? (isDark ? '#334155' : '#e2e8f0') : 'transparent' }}><Text style={{ fontWeight: 'bold', color: currentColors.text }}>{t('find_from_contacts')}</Text></TouchableOpacity>
+            </View>
+            {networkTab === 'ommio' ? (
+              <>
+                <Text style={{ color: currentColors.subText, marginBottom: 10 }}>{t('add_friend_prompt')}</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
+                  <TextInput value={searchUsername} onChangeText={setSearchUsername} placeholder={t('search_username')} placeholderTextColor={currentColors.subText} style={[styles.authInput, { backgroundColor: currentColors.surface, color: currentColors.text, height: 50, flex: 1, borderRadius: 12, paddingHorizontal: 15 }]} autoCapitalize='none' />
+                  <TouchableOpacity onPress={sendFriendRequest} style={{ backgroundColor: COLORS.primary, width: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}><UserPlus size={24} color="#fff" /></TouchableOpacity>
+                </View>
+                {friendRequests.length > 0 && (
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={{ fontWeight: 'bold', color: currentColors.subText, marginBottom: 10 }}>{t('social_pending_requests')}</Text>
+                    {friendRequests.map(req => (
+                      <View key={req.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: COLORS.warning }}>
+                        <View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{req.fromUsername}</Text></View>
+                        <View style={{ flexDirection: 'row', gap: 10 }}><TouchableOpacity onPress={() => rejectRequest(req.id)}><XCircle size={28} color={COLORS.danger} /></TouchableOpacity><TouchableOpacity onPress={() => acceptRequest(req)}><UserCheck size={28} color={COLORS.success} /></TouchableOpacity></View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            ) : (
+              <FlatList data={deviceContacts} keyExtractor={item => item.id} renderItem={({ item }) => (<View style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}><View><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{item.name}</Text><Text style={{ color: currentColors.subText, fontSize: 12 }}>{item.phoneNumber}</Text></View><TouchableOpacity onPress={() => inviteContact(item.phoneNumber)} style={{ backgroundColor: '#eff6ff', padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}><Share2 size={16} color={COLORS.primary} /><Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: 'bold' }}>Davet Et</Text></TouchableOpacity></View>)} ListEmptyComponent={<Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 20 }}>{t('contacts_loading_or_denied')}</Text>} />
+            )}
+          </View>
+        </Modal>
+
+        {/* DİĞER KÜÇÜK MODALLAR */}
+        <Modal visible={isLangModalOpen} transparent animationType="fade"><View style={styles.modalBackdrop}><View style={[styles.catModal, { backgroundColor: currentColors.surface, maxHeight: '80%' }]}><Text style={[styles.catModalTitle, { color: currentColors.text }]}>{t('language')}</Text><FlatList data={LANGUAGES} keyExtractor={item => item.code} renderItem={({ item }) => (<TouchableOpacity onPress={() => { setLang(item.code as LangCode); setIsLangModalOpen(false); }} style={{ flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}><Text style={{ fontSize: 24, marginRight: 15 }}>{item.flag}</Text><Text style={{ fontSize: 16, color: currentColors.text, fontWeight: lang === item.code ? 'bold' : 'normal' }}>{item.label}</Text>{lang === item.code && <Check size={18} color={COLORS.success} style={{ marginLeft: 'auto' }} />}</TouchableOpacity>)} /><TouchableOpacity onPress={() => setIsLangModalOpen(false)} style={{ marginTop: 15, padding: 10, alignItems: 'center' }}><Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>{t('cancel')}</Text></TouchableOpacity></View></View></Modal>
+        <Modal visible={!!activeAlarmTask} transparent animationType="slide"><View style={styles.alarmOverlay}><View style={[styles.alarmCard, { backgroundColor: currentColors.surface }]}><Text style={[styles.alarmTitle, { color: currentColors.text }]}>{t('alarm')}</Text><Text style={{ color: currentColors.text }}>{activeAlarmTask?.text}</Text><TouchableOpacity onPress={() => setActiveAlarmTask(null)} style={styles.alarmCloseBtn}><Text style={{ color: '#fff' }}>{t('close')}</Text></TouchableOpacity></View></View></Modal>
+        <Modal visible={showOnboarding} animationType="fade"><View style={{ flex: 1, backgroundColor: COLORS.primary, padding: 20, justifyContent: 'center', alignItems: 'center' }}>{onboardingStep === 0 && (<View style={{ alignItems: 'center', gap: 20 }}><View style={{ width: 120, height: 120, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }}><ListTodo size={60} color="#fff" /></View><Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center' }}>{t('welcome')}</Text><Text style={{ color: '#fff', textAlign: 'center', fontSize: 16 }}>{t('onboard_step1_desc')}</Text></View>)}{onboardingStep === 1 && (<View style={{ alignItems: 'center', gap: 20 }}><View style={{ width: 120, height: 120, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }}><Repeat size={60} color="#fff" /></View><Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center' }}>{t('onboard_step2_title')}</Text><Text style={{ color: '#fff', textAlign: 'center', fontSize: 16 }}>{t('onboard_step2_desc')}</Text></View>)}{onboardingStep === 2 && (<View style={{ alignItems: 'center', gap: 20 }}><View style={{ width: 120, height: 120, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }}><Users size={60} color="#fff" /></View><Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center' }}>{t('onboard_step3_title')}</Text><Text style={{ color: '#fff', textAlign: 'center', fontSize: 16 }}>{t('onboard_step3_desc')}</Text></View>)}<View style={{ position: 'absolute', bottom: 50, flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}><View style={{ flexDirection: 'row', gap: 5 }}>{[0, 1, 2].map(i => <View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: i === onboardingStep ? '#fff' : 'rgba(255,255,255,0.3)' }} />)}</View><TouchableOpacity onPress={async () => { if (onboardingStep < 2) { setOnboardingStep(onboardingStep + 1); } else { setShowOnboarding(false); if (user) { await updateDoc(doc(db, "users", user.uid), { hasSeenOnboarding: true }); } } }} style={{ backgroundColor: '#fff', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}><Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>{onboardingStep === 2 ? t('start_btn') : t('next_btn')}</Text></TouchableOpacity></View></View></Modal>
+        <Modal visible={isCategoryModalOpen} transparent animationType="fade"><TouchableOpacity activeOpacity={1} onPress={() => { setIsCategoryModalOpen(false); Keyboard.dismiss(); }} style={styles.modalBackdrop}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: '100%', alignItems: 'center', justifyContent: 'center', flex: 1 }}><TouchableWithoutFeedback><View style={{ width: '90%', maxWidth: 400, backgroundColor: currentColors.surface, borderRadius: 24, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 10, height: '80%', display: 'flex', flexDirection: 'column' }}><View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexShrink: 0 }}><Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{t('categories_title')}</Text><TouchableOpacity onPress={() => setIsCategoryModalOpen(false)} style={{ padding: 5 }}><X size={24} color={currentColors.subText} /></TouchableOpacity></View><ScrollView style={{ flex: 1, marginBottom: 15 }} contentContainerStyle={{ paddingBottom: 10 }} showsVerticalScrollIndicator={true} indicatorStyle={isDark ? 'white' : 'black'}>{categories.map((cat) => (<View key={cat.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 10, marginBottom: 8, borderRadius: 12, backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: CATEGORY_COLORS.find(c => c.id === cat.color)?.hex || 'gray', borderWidth: 2, borderColor: isDark ? '#334155' : '#fff' }} /><Text style={{ fontSize: 16, fontWeight: '600', color: currentColors.text }}>{cat.name}</Text></View><TouchableOpacity onPress={() => handleDeleteCategory(cat.id)} style={{ backgroundColor: '#fee2e2', padding: 8, borderRadius: 8 }}><Trash2 size={18} color={COLORS.danger} /></TouchableOpacity></View>))}</ScrollView><View style={{ paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexShrink: 0 }}><Text style={{ fontSize: 12, fontWeight: 'bold', color: currentColors.subText, marginBottom: 10, textTransform: 'uppercase' }}>{t('create_new_category')}</Text><TextInput value={newCategoryName} onChangeText={setNewCategoryName} placeholder={t('category_name_placeholder')} placeholderTextColor={currentColors.subText} style={{ backgroundColor: isDark ? '#1e293b' : '#f1f5f9', color: currentColors.text, padding: 15, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: isDark ? '#475569' : '#cbd5e1', marginBottom: 15 }} /><View style={{ marginBottom: 20, height: 50 }}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, alignItems: 'center' }}>{CATEGORY_PALETTE.map(colorName => { const colorHex = CATEGORY_COLORS.find(c => c.id === colorName)?.hex || '#000'; const isSelected = newCategoryColor === colorName; return (<TouchableOpacity key={colorName} onPress={() => setNewCategoryColor(colorName)} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colorHex, alignItems: 'center', justifyContent: 'center', borderWidth: isSelected ? 3 : 0, borderColor: currentColors.text, elevation: 3 }}>{isSelected && <Check size={18} color="#fff" strokeWidth={3} />}</TouchableOpacity>) })}</ScrollView></View><TouchableOpacity onPress={handleAddCategory} disabled={!newCategoryName.trim()} style={{ backgroundColor: newCategoryName.trim() ? COLORS.success : '#94a3b8', paddingVertical: 15, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, shadowColor: COLORS.success, shadowOpacity: newCategoryName.trim() ? 0.3 : 0, shadowRadius: 5, elevation: newCategoryName.trim() ? 5 : 0 }}><Plus size={20} color="#fff" strokeWidth={3} /><Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>{t('create_new_category')}</Text></TouchableOpacity></View></View></TouchableWithoutFeedback></KeyboardAvoidingView></TouchableOpacity></Modal>
+        <Modal visible={isEditProfileVisible} transparent animationType="fade"><View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '85%', backgroundColor: currentColors.surface, padding: 25, borderRadius: 24 }}><Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text, marginBottom: 5, textAlign: 'center' }}>{t('profile_edit_title')}</Text><Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 20, textAlign: 'center' }}>{t('profile_edit_desc')}</Text><Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 6, fontWeight: '600', marginLeft: 4 }}>{t('profile_display_name')}</Text><View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#334155' : '#f8fafc', borderWidth: 1, borderColor: isDark ? '#475569' : '#e2e8f0', borderRadius: 12, paddingHorizontal: 15, marginBottom: 15 }}><User size={18} color={COLORS.primary} /><TextInput value={editDisplayNameInput} onChangeText={setEditDisplayNameInput} style={{ flex: 1, padding: 12, color: currentColors.text, fontSize: 16, fontWeight: '600' }} placeholder="Adınız Soyadınız" placeholderTextColor={currentColors.subText} /><Edit2 size={14} color={currentColors.subText} /></View><Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 6, fontWeight: '600', marginLeft: 4 }}>{t('profile_username_label')}</Text><View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderWidth: 1, borderColor: isDark ? '#334155' : '#cbd5e1', borderRadius: 12, paddingHorizontal: 15, marginBottom: 25 }}><Text style={{ color: currentColors.subText, fontWeight: 'bold', fontSize: 16 }}>@</Text><TextInput value={editUsernameInput} onChangeText={setEditUsernameInput} style={{ flex: 1, padding: 12, color: currentColors.subText, fontSize: 14 }} autoCapitalize="none" placeholder="kullaniciadi" placeholderTextColor={currentColors.subText} /></View><View style={{ flexDirection: 'row', gap: 12 }}><TouchableOpacity onPress={() => setIsEditProfileVisible(false)} style={{ flex: 1, padding: 15, alignItems: 'center', borderRadius: 14, backgroundColor: isDark ? '#334155' : '#f1f5f9' }}><Text style={{ color: currentColors.text, fontWeight: 'bold' }}>{t('cancel_btn')}</Text></TouchableOpacity><TouchableOpacity onPress={handleUpdateProfile} style={{ flex: 1, padding: 15, alignItems: 'center', borderRadius: 14, backgroundColor: COLORS.primary, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 5 }}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save')}</Text></TouchableOpacity></View></KeyboardAvoidingView></View></Modal>
+        <Modal visible={friendTasksModal.visible} transparent animationType="slide"><View style={styles.modalBackdrop}><View style={[styles.catModal, { backgroundColor: currentColors.surface, height: '70%' }]}><View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}><Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{friendTasksModal.friendName} {t('status_label')}</Text><TouchableOpacity onPress={() => setFriendTasksModal({ ...friendTasksModal, visible: false })}><X size={24} color={currentColors.text} /></TouchableOpacity></View><ScrollView showsVerticalScrollIndicator={false}>{friendTasksModal.tasks.length === 0 ? (<Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 20 }}>{t('no_tasks_assigned')}</Text>) : (friendTasksModal.tasks.map(t => (<View key={t.id} style={{ padding: 15, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f8fafc', marginBottom: 10, borderLeftWidth: 4, borderLeftColor: t.completed ? COLORS.success : COLORS.warning }}><Text style={{ fontWeight: 'bold', color: currentColors.text, textDecorationLine: t.completed ? 'line-through' : 'none' }}>{t.text}</Text><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }}><Text style={{ fontSize: 12, color: t.completed ? COLORS.success : COLORS.warning }}>{t.completed ? "Tamamlandı" : "Bekliyor"}</Text><Text style={{ fontSize: 10, color: currentColors.subText }}>{t.date}</Text></View></View>)))}</ScrollView></View></View></Modal>
+        <Modal visible={isPasswordModalOpen} transparent animationType="fade"><View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}><View style={{ width: '85%', backgroundColor: currentColors.surface, padding: 20, borderRadius: 20 }}><Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text, marginBottom: 15 }}>{t('new_password_title')}</Text><Text style={{ fontSize: 12, color: currentColors.subText, marginBottom: 5 }}>{t('new_password_title')}</Text><View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 12, paddingHorizontal: 10, marginBottom: 20 }}><Lock size={16} color={currentColors.subText} /><TextInput value={newPasswordInput} onChangeText={setNewPasswordInput} style={{ flex: 1, padding: 15, color: currentColors.text, fontSize: 16 }} secureTextEntry placeholder="******" placeholderTextColor={currentColors.subText} /></View><View style={{ flexDirection: 'row', gap: 10 }}><TouchableOpacity onPress={() => { setIsPasswordModalOpen(false); setNewPasswordInput(""); }} style={{ flex: 1, padding: 15, alignItems: 'center', borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9' }}><Text style={{ color: currentColors.subText, fontWeight: 'bold' }}>{t('cancel_btn')}</Text></TouchableOpacity><TouchableOpacity onPress={handlePasswordChange} style={{ flex: 1, padding: 15, alignItems: 'center', borderRadius: 12, backgroundColor: COLORS.primary }}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save')}</Text></TouchableOpacity></View></View></View></Modal>
+        <Modal visible={confirmModal.visible} transparent animationType="fade"><View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}><View style={{ backgroundColor: currentColors.surface, borderRadius: 24, padding: 25, width: '100%', maxWidth: 340, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}><Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>{confirmModal.title}</Text><Text style={{ color: currentColors.subText, marginBottom: 25, lineHeight: 22 }}>{confirmModal.message}</Text><View style={{ flexDirection: 'row', gap: 10 }}><TouchableOpacity onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))} style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}><Text style={{ color: currentColors.text, fontWeight: '600' }}>{t('cancel_btn')}</Text></TouchableOpacity><TouchableOpacity onPress={() => { confirmModal.onConfirm(); setConfirmModal(prev => ({ ...prev, visible: false })); }} style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: confirmModal.isDestructive ? COLORS.danger : COLORS.primary, alignItems: 'center' }}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{confirmModal.isDestructive ? t('delete') : t('confirm_btn')}</Text></TouchableOpacity></View></View></View></Modal>
+        <Modal visible={isAdVisible} transparent animationType="fade"><View style={premiumStyles.overlay}><View style={[premiumStyles.adContainer, { backgroundColor: '#000' }]}><View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10 }}><Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>{t('ad_label_full')}</Text></View><View style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e1e1e', borderRadius: 8 }}><Text style={{ color: '#666' }}>Google Ads Component Here</Text>{Platform.OS === 'web' && <Image source={{ uri: 'https://via.placeholder.com/350x250' }} style={{ width: 300, height: 250, opacity: 0.5 }} />}</View><TouchableOpacity disabled={adCountdown > 0} onPress={() => { setIsAdVisible(false); setIsUpsellVisible(true); }} style={[premiumStyles.closeAdButton, { backgroundColor: adCountdown > 0 ? 'rgba(255,255,255,0.1)' : '#fff' }]}>{adCountdown > 0 ? (<Text style={{ color: '#aaa', fontWeight: 'bold' }}>{t('ad_skip')} , {adCountdown}</Text>) : (<Text style={{ color: '#000', fontWeight: 'bold' }}>{t('ad_close')} ✕</Text>)}</TouchableOpacity></View></View></Modal>
+        <Modal visible={isUpsellVisible} transparent animationType="slide"><View style={premiumStyles.overlay}><View style={[premiumStyles.card, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}><View style={premiumStyles.headerSection}><View style={premiumStyles.iconCircle}><Trophy size={40} color="#d97706" fill="#d97706" /></View><Text style={[premiumStyles.title, { color: isDark ? '#fff' : '#1e293b' }]}>{t('premium_unlock')}</Text><Text style={[premiumStyles.subtitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>{t('premium_subtitle')}</Text></View><View style={premiumStyles.featuresList}><View style={premiumStyles.featureItem}><View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View><Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_ads')}</Text></View><View style={premiumStyles.featureItem}><View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View><Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_habits')}</Text></View><View style={premiumStyles.featureItem}><View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View><Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_stats')}</Text></View><View style={premiumStyles.featureItem}><View style={premiumStyles.checkCircle}><Check size={14} color="#fff" strokeWidth={3} /></View><Text style={[premiumStyles.featureText, { color: isDark ? '#e2e8f0' : '#334155' }]}>{t('premium_feat_themes')}</Text></View></View><View style={{ marginTop: 20, width: '100%', gap: 12 }}><TouchableOpacity onPress={async () => { try { if (user) { await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true }); showToast(t('great_label'), t('premium_activated_msg'), 'success'); setIsUpsellVisible(false); } } catch (e) { console.log(e); } }} style={premiumStyles.ctaButton}><Text style={premiumStyles.ctaText}>{t('premium_cta')}</Text><Text style={premiumStyles.ctaSubText}>{t('premium_price')}</Text></TouchableOpacity><TouchableOpacity onPress={() => setIsUpsellVisible(false)} style={premiumStyles.secondaryButton}><Text style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: 13, fontWeight: '600' }}>{t('keep_ads')}</Text></TouchableOpacity></View></View></View></Modal>
+
+      </SafeAreaView>
     </KeyboardAvoidingView>
   );
 }
+
 // --- OmmioApp FONKSİYONUNUN DIŞINA, EN ALTA ---
 
 // --- TİP TANIMLAMASI ---
@@ -5257,7 +3865,7 @@ const premiumStyles = StyleSheet.create({
 });
 const styles = StyleSheet.create({
   
-  container: { flex: 1 },
+  container: { flex: 1, },
   header: { padding: 20, flexDirection: 'row', justifyContent:'space-between', alignItems:'center' },
   card: { padding: 20, borderRadius: 16, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
   input: { backgroundColor: 'rgba(0,0,0,0.05)', padding: 15, borderRadius: 12, fontSize: 16 },
