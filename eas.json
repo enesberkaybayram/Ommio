@@ -9,17 +9,23 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk" 
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
     "production": {
       "android": {
         "serviceAccountKeyPath": "./google-services.json",
-        "track": "production" 
+        "track": "production"
       },
       "ios": {
         "appleId": "limerayayinlari@gmail.com",
