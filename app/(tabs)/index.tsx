@@ -15,64 +15,64 @@ import { Prompt } from 'expo-auth-session';
 import * as Localization from 'expo-localization';
 import { Auth, browserLocalPersistence } from "firebase/auth";
 import {
-    AlarmClock,
-    AlertCircle,
-    AlignLeft,
-    Bell,
-    CalendarClock,
-    CalendarDays,
-    CalendarIcon,
-    Check,
-    CheckCheck,
-    CheckCircle2,
-    ChevronDown,
-    ChevronLeft, ChevronRight,
-    ChevronUp,
-    Edit2,
-    Flame,
-    Globe,
-    Layers,
-    ListTodo,
-    Lock,
-    LogOut, Mail,
-    MessageCircle,
-    Monitor,
-    Moon,
-    Plus,
-    Repeat,
-    Search,
-    Send,
-    Share2, Sliders,
-    Sun,
-    Trash2,
-    Trophy,
-    User,
-    UserCheck,
-    UserMinus,
-    UserPlus,
-    Users,
-    X,
-    XCircle
+  AlarmClock,
+  AlertCircle,
+  AlignLeft,
+  Bell,
+  CalendarClock,
+  CalendarDays,
+  CalendarIcon,
+  Check,
+  CheckCheck,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft, ChevronRight,
+  ChevronUp,
+  Edit2,
+  Flame,
+  Globe,
+  Layers,
+  ListTodo,
+  Lock,
+  LogOut, Mail,
+  MessageCircle,
+  Monitor,
+  Moon,
+  Plus,
+  Repeat,
+  Search,
+  Send,
+  Share2, Sliders,
+  Sun,
+  Trash2,
+  Trophy,
+  User,
+  UserCheck,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+  XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList, Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    LayoutAnimation,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView, StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput, TouchableOpacity,
-    TouchableWithoutFeedback,
-    UIManager,
-    useColorScheme,
-    View
+  ActivityIndicator,
+  FlatList, Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView, StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput, TouchableOpacity,
+  TouchableWithoutFeedback,
+  UIManager,
+  useColorScheme,
+  View
 } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import AnimatedSplash from '../../components/AnimatedSplash'; // Yolunu kendine göre ayarla
@@ -85,8 +85,8 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
 import { initializeApp } from "firebase/app";
 import {
-    createUserWithEmailAndPassword,
-    EmailAuthProvider, // YENİ: getAuth yerine bunu kullanacağız
+  createUserWithEmailAndPassword,
+  EmailAuthProvider, // YENİ: getAuth yerine bunu kullanacağız
 
 
 
@@ -102,36 +102,45 @@ import {
 
 
 
-    // @ts-ignore
-    getReactNativePersistence,
-    GoogleAuthProvider,
-    initializeAuth,
-    linkWithCredential,
-    OAuthProvider,
-    onAuthStateChanged,
-    signInAnonymously,
-    signInWithCredential,
-    signInWithEmailAndPassword,
-    signOut,
-    updatePassword,
-    updateProfile
+
+
+
+
+
+
+
+
+
+  // @ts-ignore
+  getReactNativePersistence,
+  GoogleAuthProvider,
+  initializeAuth,
+  linkWithCredential,
+  OAuthProvider,
+  onAuthStateChanged,
+  signInAnonymously,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  signOut,
+  updatePassword,
+  updateProfile
 } from 'firebase/auth';
 import {
-    addDoc,
-    arrayRemove,
-    arrayUnion,
-    collection,
-    deleteDoc, doc,
-    getDoc,
-    getDocs,
-    initializeFirestore,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-    where
+  addDoc,
+  arrayRemove,
+  arrayUnion,
+  collection,
+  deleteDoc, doc,
+  getDoc,
+  getDocs,
+  initializeFirestore,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where
 } from 'firebase/firestore';
 import LandingPage from '../../components/LandingPage';
 import { TRANSLATIONS } from '../../constants/translations'; // YENİ IMPORT
@@ -416,9 +425,10 @@ export default function OmmioApp() {
   // OmmioApp fonksiyonunun içine, diğer state'lerin yanına ekle
 const [isSplashAnimationComplete, setIsSplashAnimationComplete] = useState(false);
 
+const passwordRef = useRef<TextInput>(null);
+
   // --- REKLAM VE SAYAÇ STATE'LERİ ---
-  // Hangi eylemden kaç tane yapıldı?
-  
+  // Hangi eylemden kaç tane yapıldı?  
   // --- REKLAM & PREMIUM MANTIĞI ---
   const [adCounters, setAdCounters] = useState({ tasks: 0, habits: 0, assigned: 0, time: 0 });
   const [isAdVisible, setIsAdVisible] = useState(false);
@@ -1738,7 +1748,11 @@ const handleAuth = async () => {
     }
 };
 
-  const handleLogout = async () => { await signOut(auth); setTasks([]); };
+  const handleLogout = async () => { await signOut(auth); setTasks([]); 
+    if (Platform.OS === 'web') {
+        setShowAuth(false);
+    }
+  };
   
 const pickImage = async () => {
     try {
@@ -2702,22 +2716,40 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
 
 // Eğer Splash animasyonu daha bitmediyse, Auth yüklense bile Splash göster.
 // --- A) SPLASH EKRANI ---
-  if (!isSplashAnimationComplete) { 
-      return (<AnimatedSplash onAnimationFinish={() => {setIsSplashAnimationComplete(true); setShowAuth(true);}} /> );
+  if (!isSplashAnimationComplete && Platform.OS !== 'web') { 
+      return (
+        <AnimatedSplash 
+            onAnimationFinish={() => {
+                setIsSplashAnimationComplete(true); 
+                setShowAuth(true);
+            }} 
+        /> 
+      );
   }
 
   // --- B) KULLANICI YOKSA (Giriş / Kayıt Ekranı) ---
   if (!user) {
     // 1. Landing Page mi gösterilsin?
     if (!showAuth) {
-        return <LandingPage lang={lang} isDark={isDark} onGetStarted={(mode) => {setShowAuth(true); setAuthMode(mode); }} onLanguageChange={(newLang) => setLang(newLang as LangCode)}/>;    
+      return (
+        <LandingPage 
+            lang={lang} 
+            isDark={isDark} 
+            onGetStarted={(mode) => {
+                // Landing Page'deki butona basılınca çalışır
+                setAuthMode(mode); // 'login' veya 'signup' modunu ayarla
+                setShowAuth(true); // Artık Giriş ekranını göster
+            }} 
+            onLanguageChange={(newLang) => setLang(newLang as LangCode)}
+        />
+      );    
     }
 
     // 2. HAYIR, GİRİŞ EKRANI (Login/Signup) GÖSTERİLSİN
     // (Senin kodunda eksik veya karışık olan kısım burasıydı)
     return (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <TouchableWithoutFeedback onPress={Platform.OS !== 'web' ? Keyboard.dismiss : undefined}>
           <View style={{ flex: 1, backgroundColor: currentColors.bg, justifyContent: 'center', padding: 20 }}>
             
             {/* LOGO */}
@@ -2746,13 +2778,16 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     style={[styles.authInput, {color: currentColors.text}]} 
                     autoCapitalize='none' 
                     // Login sırasında klavyede @ işareti zorunlu olmasın diye default yapıyoruz
-                    keyboardType={authMode === 'login' ? "default" : "email-address"} 
+                    keyboardType={authMode === 'login' ? "default" : "email-address"}
+                    returnKeyType="next" // Klavyede "İleri" butonu gösterir
+                    blurOnSubmit={false} // Enter'a basınca klavyeyi kapatma
+                    onSubmitEditing={() => passwordRef.current?.focus()} // Şifre kutusuna atla
                 />
             </View>
 
             <View style={styles.authInputRow}>
                 <Lock size={20} color={currentColors.subText} />
-                <TextInput value={password} onChangeText={setPassword} placeholder={t('auth_password_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} secureTextEntry />
+                <TextInput value={password} onChangeText={setPassword} placeholder={t('auth_password_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.authInput, {color: currentColors.text}]} secureTextEntry ref={passwordRef} returnKeyType="done"  onSubmitEditing={handleAuth} />
             </View>
 
             {/* --- YENİ YER: BENİ HATIRLA (Sadece Giriş Modunda) --- */}
@@ -2816,6 +2851,27 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                 </TouchableOpacity>
             )}
             </View>
+            {customToast.visible && (
+              <View style={{
+                position: 'absolute', top: 50, left: 20, right: 20, zIndex: 9999, // Top değerini 50 yaptım
+                backgroundColor: customToast.type === 'error' ? '#fee2e2' : (customToast.type === 'warning' ? '#fef3c7' : '#f0fdf4'),
+                padding: 15, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
+                shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10,
+                borderWidth: 1, borderColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981')
+              }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: customToast.type === 'error' ? '#ef4444' : (customToast.type === 'warning' ? '#f59e0b' : '#10b981'), alignItems: 'center', justifyContent: 'center' }}>
+                  {customToast.type === 'success' && <Check size={18} color="#fff" />}
+                  {customToast.type === 'error' && <X size={18} color="#fff" />}
+                  {customToast.type === 'warning' && <AlertCircle size={18} color="#fff" />}
+                  {customToast.type === 'info' && <Bell size={18} color="#fff" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#1e293b', fontWeight: 'bold', fontSize: 13 }}>{customToast.title}</Text>
+                  <Text style={{ color: '#475569', fontSize: 11 }}>{customToast.message}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCustomToast({ ...customToast, visible: false })}><X size={16} color="#475569" /></TouchableOpacity>
+              </View>
+            )}
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
@@ -2944,32 +3000,106 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
                     </View>
                   )}
 
-                  {/* Geciken Görevler */}
+                 {/* Geciken Görevler Bölümü */}
                   {overdueTasks.length > 0 && (
-                    <View style={{ marginBottom: 15 }}>
-                      <TouchableOpacity onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsOverdueExpanded(!isOverdueExpanded); }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, backgroundColor: isDark ? '#450a0a' : '#fef2f2', borderRadius: 12, borderWidth: 1, borderColor: COLORS.danger }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <AlertCircle size={20} color={COLORS.danger} />
-                          <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>{t('overdue')} ({overdueTasks.length})</Text>
+                    <View style={{ marginBottom: 20 }}>
+                      
+                      {/* --- HEADER (BAŞLIK) --- */}
+                      <TouchableOpacity 
+                        onPress={() => { 
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); 
+                          setIsOverdueExpanded(!isOverdueExpanded); 
+                        }} 
+                        activeOpacity={0.7}
+                        style={{ 
+                          flexDirection: 'row', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between', 
+                          padding: 14, 
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fef2f2', // Daha soft kırmızı
+                          borderRadius: 16, 
+                          borderWidth: 1, 
+                          borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#fee2e2'
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <View style={{ backgroundColor: COLORS.danger, padding: 6, borderRadius: 8 }}>
+                            <AlertCircle size={18} color="#fff" />
+                          </View>
+                          <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 15 }}>
+                            {t('overdue')}
+                          </Text>
+                          {/* Sayaç Rozeti */}
+                          <View style={{ backgroundColor: COLORS.danger, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                            <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>{overdueTasks.length}</Text>
+                          </View>
                         </View>
+                        
                         {isOverdueExpanded ? <ChevronUp size={20} color={COLORS.danger} /> : <ChevronDown size={20} color={COLORS.danger} />}
                       </TouchableOpacity>
+
+                      {/* --- LİSTE İÇERİĞİ --- */}
                       {isOverdueExpanded && (
-                        <View style={{ gap: 8, marginTop: 10 }}>
-                          {overdueTasks.map(task => (
-                            <View key={task.id} style={[styles.taskCard, { backgroundColor: isDark ? '#2a0a0a' : '#fff', borderColor: COLORS.danger, borderWidth: 1 }]}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={[styles.taskText, { color: currentColors.text }]}>{task.text}</Text>
-                                <Text style={{ fontSize: 10, color: COLORS.danger, marginTop: 2 }}>{task.date}</Text>
+                        <View style={{ marginTop: 10, gap: 10, paddingHorizontal: 5 }}>
+                          {overdueTasks.map((task, index) => (
+                            <View 
+                              key={task.id} 
+                              style={{ 
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: 16, 
+                                backgroundColor: currentColors.surface, 
+                                borderRadius: 16,
+                                borderLeftWidth: 4, // Sol tarafa dikkat çekici çizgi
+                                borderLeftColor: COLORS.danger,
+                                shadowColor: COLORS.danger, 
+                                shadowOffset: { width: 0, height: 2 }, 
+                                shadowOpacity: 0.05, 
+                                shadowRadius: 4, 
+                                elevation: 2 
+                              }}
+                            >
+                              {/* Görev Bilgisi */}
+                              <View style={{ flex: 1, marginRight: 10 }}>
+                                <Text 
+                                  numberOfLines={2} 
+                                  style={{ fontSize: 15, fontWeight: '600', color: currentColors.text, marginBottom: 6 }}
+                                >
+                                  {task.text}
+                                </Text>
+                                
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <CalendarIcon size={12} color={COLORS.danger} />
+                                  <Text style={{ fontSize: 12, color: COLORS.danger, fontWeight: '500' }}>
+                                    {task.date}
+                                  </Text>
+                                  {/* İsteğe bağlı: "Gecikti" etiketi */}
+                                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: currentColors.subText }} />
+                                  <Text style={{ fontSize: 11, color: currentColors.subText, fontStyle: 'italic' }}>
+                                    {t('overdue')}
+                                  </Text>
+                                </View>
                               </View>
-                              <TouchableOpacity onPress={() => deleteTask(task)}><Trash2 size={16} color={COLORS.danger} /></TouchableOpacity>
+
+                              {/* Silme Butonu - Daha belirgin ve güvenli */}
+                              <TouchableOpacity 
+                                onPress={() => deleteTask(task)}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                style={{ 
+                                  padding: 10, 
+                                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2', 
+                                  borderRadius: 12 
+                                }}
+                              >
+                                <Trash2 size={18} color={COLORS.danger} />
+                              </TouchableOpacity>
                             </View>
                           ))}
                         </View>
                       )}
                     </View>
                   )}
-
                   {/* Aktif Görevler */}
                   <View style={{ gap: 10 }}>
                     {activeTasks.length > 0 ? activeTasks.map((task, index) => (
@@ -3211,107 +3341,220 @@ const showToast = (title: string, message: string, type: 'success' | 'error' | '
               </View>
 
               {/* --- SAYFA 4: PROFİL (PROFILE) --- */}
-              <View key="4" style={{ flex: 1 }}>
-                <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-                  {/* Profil Kartı */}
-                  <View style={[styles.card, { backgroundColor: currentColors.surface, alignItems: 'center', paddingVertical: 30, marginVertical: 20 }]}>
-                    <TouchableOpacity onPress={() => { if (user.isAnonymous || user.isGuest) { showToast(t('warning_title'), t('guest_edit_warning') || t('guest_cannot_change_photo'), 'warning'); return; } pickImage(); }} style={{ alignItems: 'center', marginBottom: 15 }}>
-                      {user.photoURL ? <Image source={{ uri: user.photoURL }} style={{ width: 100, height: 100, borderRadius: 50, marginBottom: 10, borderWidth: 3, borderColor: COLORS.primary }} /> : <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}><User size={50} color="#fff" /></View>}
-                      {!(user.isAnonymous || user.isGuest) && <Text style={{ color: COLORS.primary, fontWeight: '600', fontSize: 13 }}>{t('change_photo')}</Text>}
-                    </TouchableOpacity>
-                    <View style={{ alignItems: 'center', gap: 2 }}>
-                      <Text style={{ fontSize: 22, fontWeight: 'bold', color: currentColors.text }}>{user.displayName || user.username || t('no_name')}</Text>
-                      <TouchableOpacity onPress={() => { if (user.isAnonymous || user.isGuest) return; setEditUsernameInput(user.username || ""); setEditDisplayNameInput(user.displayName || ""); setIsEditProfileVisible(true); }} activeOpacity={(user.isAnonymous || user.isGuest) ? 1 : 0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5, padding: 5 }}>
-                        <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>@{user.username}</Text>
-                        {!(user.isAnonymous || user.isGuest) && <View style={{ backgroundColor: COLORS.primary + '20', padding: 4, borderRadius: 8 }}><Edit2 size={12} color={COLORS.primary} /></View>}
-                      </TouchableOpacity>
-                      {(user.isAnonymous || user.isGuest) && <View style={{ marginTop: 5, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}><Text style={{ fontSize: 10, color: '#d97706', fontWeight: 'bold' }}>Misafir Hesabı</Text></View>}
-                    </View>
-                  </View>
-
-                  {/* Ayarlar Kartı */}
-                  <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
-                    <Text style={[styles.cardTitle, { color: currentColors.text }]}>{t('settings')}</Text>
-                    <TouchableOpacity onPress={() => setIsCategoryModalOpen(true)} style={[styles.settingBtn, { marginBottom: 10, justifyContent: 'space-between' }]}>
-                      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}><Layers size={20} color={COLORS.primary} /><Text style={{ color: currentColors.text }}>{t('edit_categories')}</Text></View><ChevronRight size={16} color={currentColors.subText} />
-                    </TouchableOpacity>
-
-                    {/* Premium Butonu */}
-                    {!isPremium && (
-                      <TouchableOpacity 
-                            onPress={async () => { 
-                                // 1. MİSAFİR KONTROLÜ
-                                if (user.isGuest || user.isAnonymous) {
-                                    showToast(t('warning_title'), t('guest_premium_warning') || "Misafirler premium alamaz, lütfen kayıt olun.", 'warning');
-                                    return;
-                                }
-
-                                try { 
-                                if (user) { 
-                                    // 2. ARTIK BEDAVA PREMIUM VERMİYORUZ (Kod pasife alındı)
-                                    // await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true }); 
-                                    
-                                    // Kullanıcıya bilgi verelim veya ödeme sayfasına yönlendirelim
-                                    console.log("Ödeme işlemi başlatılmalı..."); 
-                                    showToast("Bilgi", "Ödeme sistemi yakında eklenecek.", 'info');
-                                    
-                                    // Modalı kapatalım mı? (İsteğe bağlı, şimdilik açık kalsın veya kapansın)
-                                    // setIsUpsellVisible(false); 
-                                } 
-                                } catch (e) { 
-                                console.log(e); 
-                                } 
-                            }} 
-                            style={premiumStyles.ctaButton}
-                            >
-                            <Text style={premiumStyles.ctaText}>{t('premium_cta')}</Text>
-                            <Text style={premiumStyles.ctaSubText}>{t('premium_price')}</Text>
-                            </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity onPress={() => setIsLangModalOpen(true)} style={[styles.settingBtn, { marginBottom: 15, justifyContent: 'space-between' }]}>
-                      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}><Globe size={20} color={COLORS.primary} /><Text style={{ color: currentColors.text }}>{t('language')}</Text></View><Text style={{ fontSize: 20 }}>{LANGUAGES.find(l => l.code === lang)?.flag}</Text>
-                    </TouchableOpacity>
-
-                    <Text style={{ fontSize: 12, color: currentColors.subText, marginTop: 5, marginBottom: 10 }}>{t('appearance')?.toUpperCase() || 'GÖRÜNÜM'}</Text>
-                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 15 }}>
-                      <TouchableOpacity onPress={() => setTheme('light')} style={[styles.settingBtn, theme === 'light' && styles.settingBtnActive, { flex: 1, justifyContent: 'center' }]}><Sun size={16} color={theme === 'light' ? COLORS.primary : currentColors.subText} /><Text style={{ color: theme === 'light' ? COLORS.primary : currentColors.subText, fontSize: 12 }}>{t('theme_light')}</Text></TouchableOpacity>
-                      <TouchableOpacity onPress={() => setTheme('dark')} style={[styles.settingBtn, theme === 'dark' && styles.settingBtnActive, { flex: 1, justifyContent: 'center' }]}><Moon size={16} color={theme === 'dark' ? COLORS.primary : currentColors.subText} /><Text style={{ color: theme === 'dark' ? COLORS.primary : currentColors.subText, fontSize: 12 }}>{t('theme_dark')}</Text></TouchableOpacity>
-                      <TouchableOpacity onPress={() => setTheme('system')} style={[styles.settingBtn, theme === 'system' && styles.settingBtnActive, { flex: 1, justifyContent: 'center' }]}><Monitor size={16} color={theme === 'system' ? COLORS.primary : currentColors.subText} /><Text style={{ color: theme === 'system' ? COLORS.primary : currentColors.subText, fontSize: 12 }}>{t('theme_system')}</Text></TouchableOpacity>
-                    </View>
-
-                    <TouchableOpacity onPress={() => setIsPasswordModalOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#1e293b' : '#f8fafc', marginBottom: 10 }}>
-                      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#e0e7ff', alignItems: 'center', justifyContent: 'center' }}><Lock size={18} color={COLORS.primary} /></View>
-                        <View><Text style={{ color: currentColors.text, fontWeight: '600', fontSize: 14 }}>{user.providerData.some((p: any) => p.providerId === 'password') ? t('change_password') : t('create_password')}</Text><Text style={{ color: currentColors.subText, fontSize: 11 }}>{user.providerData.some((p: any) => p.providerId === 'password') ? t('security_change_regular') : t('login_with_email_info')}</Text></View>
+              <View key="4" style={{ flex: 1, width: '100%' }}>
+                <ScrollView 
+                  contentContainerStyle={{ 
+                    paddingHorizontal: 20, 
+                    paddingBottom: 120,
+                    width: '100%',
+                    maxWidth: 600, // Web'de içeriğin çok yayılmasını engeller
+                    alignSelf: 'center', // Web'de içeriği ortalar
+                    paddingTop: 10
+                  }} 
+                  showsVerticalScrollIndicator={false}
+                >
+                  
+                  {/* --- 1. PROFİL KARTI (FOTOĞRAF & İSİM) --- */}
+                  <View style={[styles.card, { backgroundColor: currentColors.surface, alignItems: 'center', paddingVertical: 25, marginBottom: 15, borderRadius: 24 }]}>
+                    
+                    {/* Fotoğraf Alanı */}
+                    <TouchableOpacity 
+                      onPress={() => { 
+                        if (user.isAnonymous || user.isGuest) { 
+                          showToast(t('warning_title'), t('guest_edit_warning') || t('guest_cannot_change_photo'), 'warning'); 
+                          return; 
+                        } 
+                        pickImage(); 
+                      }} 
+                      activeOpacity={0.8}
+                      style={{ position: 'relative', marginBottom: 15 }}
+                    >
+                      <View style={{ 
+                        width: 110, height: 110, borderRadius: 55, 
+                        backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 4, borderColor: currentColors.bg, // Fotoğrafın etrafına temiz bir çerçeve
+                        shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5
+                      }}>
+                        {user.photoURL ? (
+                          <Image source={{ uri: user.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 55 }} />
+                        ) : (
+                          <User size={50} color="#fff" />
+                        )}
                       </View>
-                      <ChevronRight size={18} color={currentColors.subText} />
+                      
+                      {/* Düzenleme İkonu (Sağ Alt) */}
+                      {!(user.isAnonymous || user.isGuest) && (
+                        <View style={{ 
+                          position: 'absolute', bottom: 0, right: 0, 
+                          backgroundColor: currentColors.surface, borderRadius: 20, padding: 6,
+                          borderWidth: 1, borderColor: '#e2e8f0', shadowColor: "#000", shadowOpacity: 0.1, elevation: 2
+                        }}>
+                          <Edit2 size={14} color={COLORS.primary} />
+                        </View>
+                      )}
                     </TouchableOpacity>
 
-                    <TouchableOpacity onPress={() => { setIsSettingsOpen(false); router.push(`/${lang}/privacy`); }} style={{ paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                      <Text style={{ color: COLORS.primary, textAlign: 'center', fontSize: 12, fontWeight: '600' }}>{t('privacy_terms')}</Text>
+                    {/* İsim ve Kullanıcı Adı */}
+                    <View style={{ alignItems: 'center', gap: 4 }}>
+                      <Text style={{ fontSize: 24, fontWeight: '800', color: currentColors.text, textAlign: 'center' }}>
+                        {user.displayName || user.username || t('no_name')}
+                      </Text>
+                      
+                      <TouchableOpacity 
+                        onPress={() => { 
+                          if (user.isAnonymous || user.isGuest) return; 
+                          setEditUsernameInput(user.username || ""); 
+                          setEditDisplayNameInput(user.displayName || ""); 
+                          setIsEditProfileVisible(true); 
+                        }} 
+                        activeOpacity={(user.isAnonymous || user.isGuest) ? 1 : 0.6}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}
+                      >
+                        <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>@{user.username}</Text>
+                        {!(user.isAnonymous || user.isGuest) && <Edit2 size={10} color={COLORS.primary} style={{ opacity: 0.7 }} />}
+                      </TouchableOpacity>
+
+                      {(user.isAnonymous || user.isGuest) && (
+                        <View style={{ marginTop: 8, backgroundColor: '#fff7ed', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' }}>
+                          <Text style={{ fontSize: 11, color: '#c2410c', fontWeight: 'bold' }}>Misafir Hesabı</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* --- 2. AYARLAR KARTI --- */}
+                  <View style={[styles.card, { backgroundColor: currentColors.surface, padding: 0, borderRadius: 24, overflow: 'hidden', marginBottom: 15 }]}>
+                    <View style={{ padding: 20, paddingBottom: 10 }}>
+                      <Text style={[styles.cardTitle, { color: currentColors.text, fontSize: 18, marginBottom: 15 }]}>{t('settings')}</Text>
+                      
+                      {/* Kategoriler */}
+                      <TouchableOpacity onPress={() => setIsCategoryModalOpen(true)} style={[styles.settingBtn, { marginBottom: 12, justifyContent: 'space-between', backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderWidth: 0 }]}>
+                        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                          <View style={{ padding: 8, borderRadius: 10, backgroundColor: COLORS.primary + '15' }}><Layers size={20} color={COLORS.primary} /></View>
+                          <Text style={{ color: currentColors.text, fontSize: 15, fontWeight: '500' }}>{t('edit_categories')}</Text>
+                        </View>
+                        <ChevronRight size={18} color={currentColors.subText} />
+                      </TouchableOpacity>
+
+                      {/* Dil Seçimi */}
+                      <TouchableOpacity onPress={() => setIsLangModalOpen(true)} style={[styles.settingBtn, { marginBottom: 12, justifyContent: 'space-between', backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderWidth: 0 }]}>
+                        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                          <View style={{ padding: 8, borderRadius: 10, backgroundColor: COLORS.primary + '15' }}><Globe size={20} color={COLORS.primary} /></View>
+                          <Text style={{ color: currentColors.text, fontSize: 15, fontWeight: '500' }}>{t('language')}</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Text style={{ fontSize: 22 }}>{LANGUAGES.find(l => l.code === lang)?.flag}</Text>
+                          <ChevronRight size={18} color={currentColors.subText} />
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* Şifre İşlemleri */}
+                      <TouchableOpacity onPress={() => setIsPasswordModalOpen(true)} style={[styles.settingBtn, { marginBottom: 12, justifyContent: 'space-between', backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderWidth: 0 }]}>
+                        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                          <View style={{ padding: 8, borderRadius: 10, backgroundColor: COLORS.primary + '15' }}><Lock size={20} color={COLORS.primary} /></View>
+                          <View>
+                            <Text style={{ color: currentColors.text, fontSize: 15, fontWeight: '500' }}>
+                              {user.providerData.some((p: any) => p.providerId === 'password') ? t('change_password') : t('create_password')}
+                            </Text>
+                          </View>
+                        </View>
+                        <ChevronRight size={18} color={currentColors.subText} />
+                      </TouchableOpacity>
+                    </View>
+                    
+                    {/* Görünüm (Theme) */}
+                    <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+                      <Text style={{ fontSize: 12, color: currentColors.subText, fontWeight: '700', marginBottom: 10, marginLeft: 4 }}>{t('appearance')?.toUpperCase() || 'GÖRÜNÜM'}</Text>
+                      <View style={{ flexDirection: 'row', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#f1f5f9', padding: 4, borderRadius: 14 }}>
+                        {['light', 'dark', 'system'].map((mode) => {
+                          const isActive = theme === mode;
+                          const icon = mode === 'light' ? <Sun size={16} color={isActive ? COLORS.primary : currentColors.subText} /> : 
+                                      mode === 'dark' ? <Moon size={16} color={isActive ? COLORS.primary : currentColors.subText} /> : 
+                                      <Monitor size={16} color={isActive ? COLORS.primary : currentColors.subText} />;
+                          const labelKey = `theme_${mode}`;
+                          
+                          return (
+                            <TouchableOpacity 
+                              key={mode}
+                              onPress={() => setTheme(mode as ThemeMode)} 
+                              style={{ 
+                                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                paddingVertical: 10, borderRadius: 10,
+                                backgroundColor: isActive ? currentColors.surface : 'transparent',
+                                shadowColor: "#000", shadowOpacity: isActive ? 0.1 : 0, shadowRadius: 2, elevation: isActive ? 1 : 0
+                              }}
+                            >
+                              {icon}
+                              <Text style={{ fontSize: 12, fontWeight: isActive ? 'bold' : '500', color: isActive ? COLORS.primary : currentColors.subText }}>
+                                {t(labelKey)}
+                              </Text>
+                            </TouchableOpacity>
+                          )
+                        })}
+                      </View>
+                    </View>
+                    
+                    {/* Gizlilik Linki */}
+                    <TouchableOpacity onPress={() => { setIsSettingsOpen(false); router.push(`/${lang}/privacy`); }} style={{ borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', padding: 15 }}>
+                      <Text style={{ color: currentColors.subText, textAlign: 'center', fontSize: 12, fontWeight: '500' }}>{t('privacy_terms')}</Text>
                     </TouchableOpacity>
                   </View>
 
-                  {user.isGuest && (
-                    <View style={[styles.card, { backgroundColor: '#fffbeb', borderColor: '#f59e0b', borderWidth: 1, marginBottom: 15 }]}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}><AlertCircle size={24} color="#d97706" /><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#d97706' }}>{t('guest_acc')}</Text></View>
-                      <Text style={{ color: '#b45309', marginBottom: 15, fontSize: 13 }}>{t('guest_now')}</Text>
-                      <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={{ backgroundColor: '#d97706', padding: 12, borderRadius: 12, alignItems: 'center' }}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('save_register')}</Text></TouchableOpacity>
+                  {/* --- 3. PREMIUM ALANI (Veya Misafir Uyarısı) --- */}
+                  {!isPremium && (
+                    <View style={{ marginBottom: 15 }}>
+                      {user.isGuest ? (
+                        <View style={[styles.card, { backgroundColor: '#fffbeb', borderColor: '#fcd34d', borderWidth: 1, padding: 20, borderRadius: 24 }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                            <View style={{ backgroundColor: '#fff7ed', padding: 8, borderRadius: 10 }}><AlertCircle size={24} color="#d97706" /></View>
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#9a3412' }}>{t('guest_acc')}</Text>
+                          </View>
+                          <Text style={{ color: '#9a3412', marginBottom: 15, fontSize: 13, lineHeight: 20 }}>{t('guest_now')}</Text>
+                          <TouchableOpacity onPress={() => setIsGuestModalOpen(true)} style={{ backgroundColor: '#d97706', padding: 14, borderRadius: 14, alignItems: 'center', shadowColor: "#d97706", shadowOpacity: 0.2, shadowRadius: 5 }}>
+                            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>{t('save_register')}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        /* Premium Kartı */
+                        <TouchableOpacity 
+                          onPress={async () => { 
+                              if (user.isGuest || user.isAnonymous) {
+                                  showToast(t('warning_title'), t('guest_premium_warning') || "Misafirler premium alamaz.", 'warning');
+                                  return;
+                              }
+                              try { 
+                                if (user) { 
+                                    console.log("Ödeme..."); 
+                                    showToast("Bilgi", "Ödeme sistemi yakında eklenecek.", 'info');
+                                } 
+                              } catch (e) { console.log(e); } 
+                          }} 
+                          style={[premiumStyles.ctaButton, { borderRadius: 24, marginBottom: 0 }]} // premiumStyles'ı kullanıyoruz
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: 'center' }}>
+                            <Trophy size={22} color="#fff" />
+                            <View>
+                              <Text style={premiumStyles.ctaText}>{t('premium_cta')}</Text>
+                              <Text style={[premiumStyles.ctaSubText, {textAlign: 'left'}]}>{t('premium_price')}</Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
 
-                  <View style={[styles.card, { backgroundColor: currentColors.surface }]}>
-                    <TouchableOpacity onPress={handleLogout} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 15, backgroundColor: '#fee2e2', borderRadius: 12, justifyContent: 'center' }}>
-                      <LogOut size={20} color={COLORS.danger} /><Text style={{ color: COLORS.danger, fontWeight: 'bold', fontSize: 16 }}>{t('logout')}</Text>
+                  {/* --- 4. ÇIKIŞ & SİLME --- */}
+                  <View style={{ gap: 12 }}>
+                    <TouchableOpacity onPress={handleLogout} style={[styles.card, { backgroundColor: currentColors.surface, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 20, marginBottom: 0 }]}>
+                      <LogOut size={20} color={COLORS.danger} />
+                      <Text style={{ color: COLORS.danger, fontWeight: 'bold', fontSize: 16 }}>{t('logout')}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={handleDeleteAccount} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, opacity: 0.7 }}>
+                      <Text style={{ color: currentColors.subText, fontWeight: '500', fontSize: 13 }}>{t('delete_account')}</Text>
                     </TouchableOpacity>
                   </View>
 
-                  <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                    <TouchableOpacity onPress={handleDeleteAccount} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, justifyContent: 'center' }}>
-                      <Trash2 size={20} color={currentColors.subText} /><Text style={{ color: currentColors.subText, fontWeight: '600', fontSize: 14 }}>{t('delete_account')}</Text>
-                    </TouchableOpacity>
-                  </View>
                 </ScrollView>
               </View>
             </PagerView>
