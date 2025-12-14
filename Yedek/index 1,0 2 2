@@ -14,73 +14,73 @@ import { WidgetTaskHandler } from '../../components/widget-task-handler'; // Dos
 // getAuth'u da eklemeyi unutma
 import * as Localization from 'expo-localization';
 import {
-    AlarmClock,
-    AlertCircle,
-    AlertTriangle,
-    AlignLeft,
-    Award,
-    BarChart3,
-    Bell,
-    CalendarClock,
-    CalendarDays,
-    CalendarIcon,
-    Check,
-    CheckCheck,
-    CheckCircle2,
-    ChevronDown,
-    ChevronLeft, ChevronRight,
-    ChevronUp,
-    Download,
-    Edit2,
-    FileText,
-    Flag,
-    Flame,
-    Globe,
-    Layers,
-    ListTodo,
-    Lock,
-    LogOut, Mail,
-    MessageCircle,
-    Monitor,
-    Moon,
-    MoreVertical,
-    Paperclip,
-    Plus,
-    Repeat,
-    Send,
-    Sliders,
-    Sun,
-    Trash2,
-    TrendingUp,
-    Trophy,
-    User,
-    UserMinus,
-    UserPlus,
-    Users,
-    X,
-    XCircle
+  AlarmClock,
+  AlertCircle,
+  AlertTriangle,
+  AlignLeft,
+  Award,
+  BarChart3,
+  Bell,
+  CalendarClock,
+  CalendarDays,
+  CalendarIcon,
+  Check,
+  CheckCheck,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft, ChevronRight,
+  ChevronUp,
+  Download,
+  Edit2,
+  FileText,
+  Flag,
+  Flame,
+  Globe,
+  Layers,
+  ListTodo,
+  Lock,
+  LogOut, Mail,
+  MessageCircle,
+  Monitor,
+  Moon,
+  MoreVertical,
+  Paperclip,
+  Plus,
+  Repeat,
+  Send,
+  Sliders,
+  Sun,
+  Trash2,
+  TrendingUp,
+  Trophy,
+  User,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+  XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    BackHandler,
-    FlatList, Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    LayoutAnimation,
-    Modal,
-    PanResponder,
-    Platform,
-    SafeAreaView,
-    ScrollView, StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput, TouchableOpacity,
-    TouchableWithoutFeedback,
-    UIManager,
-    useColorScheme,
-    View
+  ActivityIndicator,
+  BackHandler,
+  FlatList, Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutAnimation,
+  Modal,
+  PanResponder,
+  Platform,
+  SafeAreaView,
+  ScrollView, StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput, TouchableOpacity,
+  TouchableWithoutFeedback,
+  UIManager,
+  useColorScheme,
+  View
 } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import AnimatedSplash from '../../components/AnimatedSplash'; // Yolunu kendine göre ayarla
@@ -93,36 +93,36 @@ import { decryptMessage, encryptMessage, generateAndStoreKeys } from '../../util
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
 import {
-    createUserWithEmailAndPassword,
-    EmailAuthProvider,
-    GoogleAuthProvider,
-    linkWithCredential,
-    OAuthProvider,
-    onAuthStateChanged,
-    sendEmailVerification,
-    sendPasswordResetEmail,
-    signInAnonymously,
-    signInWithCredential,
-    signInWithEmailAndPassword,
-    signOut,
-    updateProfile
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  GoogleAuthProvider,
+  linkWithCredential,
+  OAuthProvider,
+  onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInAnonymously,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile
 } from 'firebase/auth';
 import {
-    addDoc,
-    arrayRemove,
-    arrayUnion,
-    collection,
-    collectionGroup,
-    deleteDoc, doc,
-    getDoc,
-    getDocs,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-    where
+  addDoc,
+  arrayRemove,
+  arrayUnion,
+  collection,
+  collectionGroup,
+  deleteDoc, doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import LandingPage from '../../components/LandingPage';
@@ -428,10 +428,6 @@ const passwordRef = useRef<TextInput>(null);
   const [adCounters, setAdCounters] = useState({ tasks: 0, habits: 0, assigned: 0, time: 0 });
   const [isAdVisible, setIsAdVisible] = useState(false);
   const [isUpsellVisible, setIsUpsellVisible] = useState(false);
-
-const [searchTasks, setSearchTasks] = useState(''); // Görev Arama Çubuğu için
-const [searchFriends, setSearchFriends] = useState(''); // Arkadaş Arama Çubuğu için
-const [searchHistory, setSearchHistory] = useState(''); // Geçmiş Arama Çubuğu için
   
   // YENİ: Reklam geri sayımı (Başlangıç 5 saniye)
   const [adCountdown, setAdCountdown] = useState(5); 
@@ -555,17 +551,6 @@ const [lang, setLang] = useState<LangCode>(getDeviceLang() as LangCode);
   const [taskViewMode, setTaskViewMode] = useState<'list' | 'category'>('list');
 
   const [isAllTasksModalOpen, setIsAllTasksModalOpen] = useState(false);
-
-// Mevcut filterContacts yerine/yanına bunu ekle
-const filteredSocialContacts = useMemo(() => {
-    if (!searchFriends) return contacts;
-    const lowerCaseSearch = searchFriends.toLowerCase();
-    // Hem kullanıcı adını hem de görünen ismi ara
-    return contacts.filter(contact =>
-        contact.username.toLowerCase().includes(lowerCaseSearch) ||
-        (contact.displayName && contact.displayName.toLowerCase().includes(lowerCaseSearch))
-    );
-}, [contacts, searchFriends]);
 
   // ADD MODAL STATE (Eksik olanlar eklendi)
   
@@ -4192,24 +4177,6 @@ const renderTask = (task: Task) => {
                   ) : (
                     /* --- MESAJ LİSTESİ --- */
                     <View style={{ gap: 12 }}>
-                        {/* --- MESAJ ARAMA ÇUBUĞU (YENİ EKLENDİ) --- */}
-                        {contacts.length > 0 && (
-                            <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginBottom: 10, marginTop: 10 }]}>
-                                <MessageCircle size={20} color={currentColors.subText} style={{marginRight: 10}} />
-                                <TextInput
-                                    value={searchFriends} // NOT: Burası için yeni bir state yerine mevcut searchFriends'i kullanabiliriz
-                                    onChangeText={setSearchFriends}
-                                    placeholder={t('search_chats') || "Sohbet ara (Ad veya Kullanıcı Adı)"}
-                                    placeholderTextColor={currentColors.subText}
-                                    style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                                />
-                                {searchFriends.length > 0 && (
-                                    <TouchableOpacity onPress={() => setSearchFriends('')} style={{ padding: 5 }}>
-                                        <X size={18} color={currentColors.subText} />
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        )}
                       {contacts.length === 0 ? (
                         /* BOŞ DURUM (EMPTY STATE) */
                         <View style={{ alignItems: 'center', marginTop: 60, opacity: 0.8 }}>
@@ -4224,13 +4191,8 @@ const renderTask = (task: Task) => {
                           </Text>
                         </View>
                       ) : (
-                    (contacts as Contact[]) // contacts'i Contact dizisi olarak ele alıyoruz
-                        .filter((contact: Contact) => {
-                            const lowerCaseSearch = searchFriends.toLowerCase();
-                            return contact.username.toLowerCase().includes(lowerCaseSearch) ||
-                                (contact.displayName && contact.displayName.toLowerCase().includes(lowerCaseSearch));
-                        })
-                        .sort((a, b) => {
+                        contacts
+                          .sort((a, b) => {
                             const timeA = chatPreviews[a.uid]?.timestamp?.seconds || 0;
                             const timeB = chatPreviews[b.uid]?.timestamp?.seconds || 0;
                             return timeB - timeA;
@@ -4384,42 +4346,23 @@ const renderTask = (task: Task) => {
                     </View>
                   ) : (
                     <View style={{ gap: 25 }}>
-
-                      {/* --- ARKADAŞ ARAMA ÇUBUĞU (YENİ EKLENDİ) --- */}
-                      <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginBottom: 20 }]}>
-                          <User size={20} color={currentColors.subText} style={{marginRight: 10}} />
-                          <TextInput
-                              value={searchFriends}
-                              onChangeText={setSearchFriends}
-                              placeholder={t('search_friends') || "Arkadaş ara (Ad veya Kullanıcı Adı)"}
-                              placeholderTextColor={currentColors.subText}
-                              style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                          />
-                          {searchFriends.length > 0 && (
-                              <TouchableOpacity onPress={() => setSearchFriends('')} style={{ padding: 5 }}>
-                                  <X size={18} color={currentColors.subText} />
-                              </TouchableOpacity>
-                          )}
-                      </View>
-
-                      {/* Eski <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}> satırını buraya taşıyın: */}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                          <Text style={{ fontSize: 24, fontWeight: '800', color: currentColors.text }}>
-                              {t('friends')}
-                          </Text>
-                          <TouchableOpacity 
-                              onPress={() => { if (!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true); }}
-                              style={{ 
-                                  width: 40, height: 40, borderRadius: 14, 
-                                  backgroundColor: COLORS.primary + '15', 
-                                  alignItems: 'center', justifyContent: 'center' 
-                              }}
-                          >
-                              <UserPlus size={22} color={COLORS.primary} />
-                          </TouchableOpacity>
-                      </View>
                       
-                   
+                      {/* --- BAŞLIK & EKLEME BUTONU --- */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                        <Text style={{ fontSize: 24, fontWeight: '800', color: currentColors.text }}>
+                          {t('friends')}
+                        </Text>
+                        <TouchableOpacity 
+                          onPress={() => { if (!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true); }}
+                          style={{ 
+                            width: 40, height: 40, borderRadius: 14, 
+                            backgroundColor: COLORS.primary + '15', 
+                            alignItems: 'center', justifyContent: 'center' 
+                          }}
+                        >
+                          <UserPlus size={22} color={COLORS.primary} />
+                        </TouchableOpacity>
+                      </View>
 
                       {/* --- ARKADAŞLIK İSTEKLERİ --- */}
                       {friendRequests.length > 0 && (
@@ -4497,7 +4440,7 @@ const renderTask = (task: Task) => {
                       ) : (
                         <View style={{ gap: 12 }}>
                           {/* --- SOSYAL SEKME KİŞİ LİSTESİ (TEMİZLENMİŞ) --- */}
-                          {filteredSocialContacts.map(contact => {
+                          {contacts.map(contact => {
                               const isExpanded = expandedContactId === contact.uid;
                               // Görev yorum sayısını güvenli al
                               const taskUnread = taskUnreadCounts[contact.uid] || 0;
@@ -6162,30 +6105,12 @@ const renderTask = (task: Task) => {
               </TouchableOpacity>
             </View>
 
-              {/* --- YENİ ARAMA ÇUBUĞU (YAKLAŞAN GÖREVLER) --- */}
-            <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginHorizontal: 20, marginBottom: 15 }]}>
-                <ListTodo size={20} color={currentColors.subText} style={{marginRight: 10}} />
-                <TextInput
-                    value={searchTasks}
-                    onChangeText={setSearchTasks}
-                    placeholder={t('search_tasks') || "Görev ara"}
-                    placeholderTextColor={currentColors.subText}
-                    style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                />
-                {searchTasks.length > 0 && (
-                    <TouchableOpacity onPress={() => setSearchTasks('')} style={{ padding: 5 }}>
-                        <X size={18} color={currentColors.subText} />
-                    </TouchableOpacity>
-                )}
-            </View>
-
-            {/* Liste */}
-            <FlatList
-                data={tasks
-                    .filter(t => !t.completed)
-                    .filter(t => t.text.toLowerCase().includes(searchTasks.toLowerCase())) // <--- BURASI GÜNCELLENDİ
-                    .sort((a, b) => a.date.localeCompare(b.date)) 
-                }
+            {/* Liste */}
+            <FlatList
+              data={tasks
+                .filter(t => !t.completed) // Sadece yapılmamış görevleri göster (İstersen bunu kaldırıp hepsini gösterebilirsin)
+                .sort((a, b) => a.date.localeCompare(b.date)) // Tarihe göre A'dan Z'ye (Yakından uzağa)
+              }
               keyExtractor={(item) => item.id}
               contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
               ListEmptyComponent={
@@ -6510,30 +6435,13 @@ const renderTask = (task: Task) => {
                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
               </TouchableOpacity>
             </View>
-              {/* --- YENİ ARAMA ÇUBUĞU (GEÇMİŞ GÖREVLER) --- */}
-              <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginHorizontal: 20, marginBottom: 15 }]}>
-                  <FileText size={20} color={currentColors.subText} style={{marginRight: 10}} />
-                  <TextInput
-                      value={searchHistory}
-                      onChangeText={setSearchHistory}
-                      placeholder={t('search_history') || "Geçmişten ara"}
-                      placeholderTextColor={currentColors.subText}
-                      style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                  />
-                  {searchHistory.length > 0 && (
-                      <TouchableOpacity onPress={() => setSearchHistory('')} style={{ padding: 5 }}>
-                          <X size={18} color={currentColors.subText} />
-                      </TouchableOpacity>
-                  )}
-              </View>
 
-              {/* Liste */}
-              <FlatList
-                  data={tasks
-                      .filter(t => t.completed)
-                      .filter(t => t.text.toLowerCase().includes(searchHistory.toLowerCase())) // <--- BURASI GÜNCELLENDİ
-                      .sort((a, b) => b.date.localeCompare(a.date))
-                  }
+            {/* Liste */}
+            <FlatList
+              data={tasks
+                .filter(t => t.completed) // Sadece tamamlananlar
+                .sort((a, b) => b.date.localeCompare(a.date)) // En yeni tarih en üstte
+              }
               keyExtractor={(item) => item.id}
               contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
               ListEmptyComponent={

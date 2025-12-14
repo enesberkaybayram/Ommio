@@ -1,11 +1,13 @@
-import { FirebaseApp, getApp, getApps, initializeApp } from "firebase/app";
+// firebaseConfig.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeApp } from "firebase/app";
 import {
-  Auth,
-  browserLocalPersistence,
-  getAuth,
-  initializeAuth
+  Auth, browserLocalPersistence,
+  // @ts-ignore
+  getReactNativePersistence, initializeAuth
 } from 'firebase/auth';
-import { Firestore, getFirestore } from "firebase/firestore";
+import { initializeFirestore } from 'firebase/firestore';
+import { getStorage } from "firebase/storage";
 import { Platform } from 'react-native';
 
 const firebaseConfig = {
@@ -18,30 +20,16 @@ const firebaseConfig = {
   measurementId: "G-V7WP221WRP"
 };
 
-// Uygulama tipini belirttik
-let app: FirebaseApp;
+const app = initializeApp(firebaseConfig);
 
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
-}
-
-// Auth değişkenini 'Auth' tipiyle tanımlıyoruz
 let auth: Auth;
-
 if (Platform.OS === 'web') {
-  // Web tarafında tarayıcı kalıcılığını kullanıyoruz.
-  auth = initializeAuth(app, {
-    persistence: browserLocalPersistence
-  });
+  auth = initializeAuth(app, { persistence: browserLocalPersistence });
 } else {
-  // Mobil (Android/iOS) tarafı:
-  // getAuth, React Native ortamını otomatik algılar ve AsyncStorage varsa kullanır.
-  auth = getAuth(app);
+  auth = initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
 }
 
-// DB değişkenini 'Firestore' tipiyle tanımlıyoruz
-const db: Firestore = getFirestore(app);
+const db = initializeFirestore(app, { experimentalForceLongPolling: true });
+const storage = getStorage(app);
 
-export { app, auth, db };
+export { app, auth, db, storage };
