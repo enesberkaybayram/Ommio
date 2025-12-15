@@ -6,7 +6,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { Platform } from 'react-native';
 import nacl from 'tweetnacl';
 import { decodeBase64, encodeBase64 } from 'tweetnacl-util';
-import { db } from '../app/(tabs)/index';
+import { db } from '../firebaseConfig';
 
 // --- KRİTİK DÜZELTME: PRNG (Rastgele Sayı Üreticisi) TANIMLAMASI ---
 // Tweetnacl'e rastgele sayıları expo-crypto'dan almasını söylüyoruz.

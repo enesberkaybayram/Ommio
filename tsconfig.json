@@ -4,7 +4,7 @@
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-"allowJs": true,          // JS dosyalarına izin ver
+    "allowJs": true,          // JS dosyalarına izin ver
     "jsx": "react-native",
     "skipLibCheck": true,
     "resolveJsonModule": true,
