@@ -69,6 +69,7 @@ import {
     KeyboardAvoidingView,
     LayoutAnimation,
     Modal,
+    NativeModules,
     PanResponder,
     Platform,
     ScrollView, StatusBar,
@@ -2181,7 +2182,30 @@ export default function OmmioApp() {
         }
         return uploadedUrls;
     };
+    // --- BURAYI EKLE: iOS Widget Güncelleme Yardımcısı ---
+    const updateIOSWidget = (taskData: any) => {
+        if (Platform.OS !== 'ios') return;
 
+        try {
+            const { SharedStorage } = NativeModules;
+            if (SharedStorage) {
+                const widgetPayload = {
+                    text: taskData.text,
+                    completed: taskData.completed,
+                    date: taskData.date || "Bugün",
+                    priority: taskData.priority || "normal"
+                };
+                
+                // Swift tarafındaki anahtarla (TaskWidgetSmall_data) aynı olmalı
+                const jsonValue = JSON.stringify(widgetPayload);
+                SharedStorage.set("TaskWidgetSmall_data", jsonValue);
+                console.log("📲 iOS Widget güncellendi:", widgetPayload);
+            }
+        } catch (e) {
+            console.error("Widget güncelleme hatası:", e);
+        }
+    };
+    // -----------------------------------------------------
     const addTask = async () => {
         // 1. Validasyon
         if (!inputValue.trim()) {
@@ -2283,7 +2307,14 @@ export default function OmmioApp() {
                     } catch (e) { }
                     checkAdTrigger('assigned');
                 }
-            }));
+            }));    
+            const latestTaskForWidget = {
+                text: inputValue,
+                completed: false,
+                date: formattedStart,
+                priority: priority // State'den gelen öncelik
+            };
+            updateIOSWidget(latestTaskForWidget);
 
             // --- TEMİZLİK ---
             setIsAddModalOpen(false);
