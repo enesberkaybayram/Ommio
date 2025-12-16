@@ -9,7 +9,31 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
+# Native - BU KISIM GÜNCELLENDİ 👇
+# /android  <-- BUNU SİLDİM (Native klasörleri takip etmelisin)
+# /ios      <-- BUNU EKLEME (iOS klasörü Git'e gitmeli)
+
+# iOS specific (CocoaPods ve Build dosyalarını yoksay, gerisini al)
+ios/Pods/
+ios/build/
+*.mode1v3
+*.mode2v3
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.perspectivev3
+*.hmap
+*.xccheckout
+*.xccheckout
+xcuserdata
+*.derivedData
+
+# Android specific (Android klasörünü açtık ama gereksizleri yoksayalım)
+android/build/
+android/app/build/
+android/.gradle/
+
+# Native keys
 .kotlin/
 *.orig.*
 *.jks
@@ -39,7 +63,6 @@ yarn-error.*
 app-example
 
 # generated native folders
-/android
 .vercel
 
 google-services.json
