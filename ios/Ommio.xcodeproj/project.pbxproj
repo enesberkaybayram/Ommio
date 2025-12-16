@@ -74,7 +74,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		749A0F822EF0518E009E939A /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		749A0F822EF0518E009E939A /* Exceptions for "OmmioWidgets" folder in "OmmioWidgetsExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -84,9 +84,40 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		749A0F3C2EF04EC2009E939A /* OmmioWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = OmmioWidgets; sourceTree = "<group>"; };
-		749A0F572EF050F0009E939A /* OmmioWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = OmmioWidgets; sourceTree = "<group>"; };
-		749A0F712EF0518D009E939A /* OmmioWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (749A0F822EF0518E009E939A /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = OmmioWidgets; sourceTree = "<group>"; };
+		749A0F3C2EF04EC2009E939A /* OmmioWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = OmmioWidgets;
+			sourceTree = "<group>";
+		};
+		749A0F572EF050F0009E939A /* OmmioWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = OmmioWidgets;
+			sourceTree = "<group>";
+		};
+		749A0F712EF0518D009E939A /* OmmioWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				749A0F822EF0518E009E939A /* Exceptions for "OmmioWidgets" folder in "OmmioWidgetsExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = OmmioWidgets;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -459,6 +490,7 @@
 			inputPaths = (
 				"$(SRCROOT)/.xcode.env",
 				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/OmmioWidgetsExtension.entitlements",
 				"$(SRCROOT)/Pods/Target Support Files/Pods-OmmioWidgetsExtension/expo-configure-project.sh",
 			);
 			name = "[Expo] Configure project";
