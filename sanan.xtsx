@@ -128,6 +128,7 @@ Bu özelliği en kolay ve hızlı şekilde **Agora** kütüphanesi ve onun hazı
 Terminalde şu komutları çalıştırın:
 
 ```bash
+
 npm install agora-rn-uikit react-native-agora expo-camera expo-av
 ```
 
