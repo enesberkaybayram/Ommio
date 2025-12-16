@@ -1,0 +1,109 @@
+{
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.00000,0.47843,1.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "blend-mode-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : "plus-lighter"
+            }
+          ],
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : "automatic"
+            }
+          ],
+          "glass" : false,
+          "image-name" : "Layer 2.png",
+          "name" : "Layer 2",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0.21
+            }
+          ],
+          "position" : {
+            "scale" : 0.54,
+            "translation-in-points" : [
+              71.12994094735298,
+              -99.91554277380786
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.13780,0.10231,0.23570,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Asset 3 2.svg",
+          "name" : "Asset 3 2",
+          "opacity" : 0.7,
+          "position" : {
+            "scale" : 2.2,
+            "translation-in-points" : [
+              0.030869625912600895,
+              -220.21871430919373
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.12356,0.09174,0.21133,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "Asset 3.svg",
+          "name" : "Asset 3",
+          "opacity" : 0.8,
+          "position" : {
+            "scale" : 2.2,
+            "translation-in-points" : [
+              -0.0034916467506036497,
+              222.81846571065364
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.04848,0.03283,0.15120,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "Rectangle 1.png",
+          "name" : "Rectangle 1"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
