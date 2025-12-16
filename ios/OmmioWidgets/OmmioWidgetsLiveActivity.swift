@@ -71,7 +71,7 @@ extension OmmioWidgetsAttributes.ContentState {
          OmmioWidgetsAttributes.ContentState(emoji: "🤩")
      }
 }
-
+@available(iOS 17.0, *) // <-- BU SATIRI EKLEYİN
 #Preview("Notification", as: .content, using: OmmioWidgetsAttributes.preview) {
    OmmioWidgetsLiveActivity()
 } contentStates: {

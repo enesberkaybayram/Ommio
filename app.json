@@ -13,9 +13,15 @@
       "backgroundColor": "#6366F1"
     },
     "ios": {
+      "icon": "./assets/ommio_icon.icon",
       "supportsTablet": true,
       "buildNumber": "2",
       "bundleIdentifier": "com.seninadin.ommio",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.seninadin.ommio.widget"
+        ]
+      },
       "userInterfaceStyle": "automatic",
       "newArchEnabled": true, 
       "infoPlist": {

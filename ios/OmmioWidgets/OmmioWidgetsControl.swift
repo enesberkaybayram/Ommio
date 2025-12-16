@@ -8,7 +8,7 @@
 import AppIntents
 import SwiftUI
 import WidgetKit
-
+@available(iOS 18.0, *) // <-- BU SATIRI EKLEYİN
 struct OmmioWidgetsControl: ControlWidget {
     static let kind: String = "com.seninadin.ommio.OmmioWidgets"
 
@@ -29,7 +29,7 @@ struct OmmioWidgetsControl: ControlWidget {
         .description("A an example control that runs a timer.")
     }
 }
-
+@available(iOS 18.0, *)
 extension OmmioWidgetsControl {
     struct Value {
         var isRunning: Bool
@@ -47,14 +47,14 @@ extension OmmioWidgetsControl {
         }
     }
 }
-
+@available(iOS 18.0, *)
 struct TimerConfiguration: ControlConfigurationIntent {
     static let title: LocalizedStringResource = "Timer Name Configuration"
 
     @Parameter(title: "Timer Name", default: "Timer")
     var timerName: String
 }
-
+@available(iOS 18.0, *)
 struct StartTimerIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Start a timer"
 
