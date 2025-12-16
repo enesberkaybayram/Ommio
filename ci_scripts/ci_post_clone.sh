@@ -1,24 +1,32 @@
 #!/bin/sh
 
-# Hata olursa işlemi anında durdur
+# Hata olursa işlemi hemen durdur
 set -e
 
-# Başlangıç logu
-echo "🚀 Starting ci_post_clone script..."
+# Nerede olduğumuzu görelim
+echo "📂 Current directory: $(pwd)"
 
-# 1. Homebrew ile Node.js ve Cocoapods araçlarını kur
-echo "📦 Installing Node.js and dependencies..."
-brew install node
-brew install cocoapods  # <-- DÜZELTME: Önceki kodda yanlış yazılmıştı
+# Ana dizine çık (ci_scripts klasöründen çıkıyoruz)
+cd ..
 
-# 2. React Native bağımlılıklarını yükle (Ana dizinde)
-echo "📦 Installing NPM Dependencies..."
-npm install
-# Eğer yarn kullanıyorsan üstteki satırı silip 'yarn install' yaz.
+# 1. Node Modüllerini Yükle (Yarn varsa Yarn, yoksa NPM kullan)
+if [ -f "yarn.lock" ]; then
+    echo "📦 Yarn detected. Installing dependencies..."
+    yarn install
+else
+    echo "📦 NPM detected. Installing dependencies..."
+    npm install
+fi
 
-# 3. iOS klasörüne git ve Pod'ları yükle
-echo "🍎 Setting up iOS Pods..."
+# 2. CocoaPods'u Kur (Sistemdeki Ruby'yi kullan, Brew'den hızlıdır)
+echo "💎 Installing CocoaPods..."
+export GEM_HOME=$HOME/.gem
+export PATH=$GEM_HOME/bin:$PATH
+gem install cocoapods --no-document
+
+# 3. iOS Podlarını Yükle
+echo "🍎 Installing Pods in ios directory..."
 cd ios
-pod install
+pod install --repo-update
 
-echo "✅ Post-clone script completed successfully!"
+echo "✅ CI setup completed successfully!"
