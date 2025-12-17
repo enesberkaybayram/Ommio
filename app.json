@@ -3,7 +3,7 @@
     "name": "Ommio",
     "slug": "ommio",
     "scheme": "ommioapp",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/Logo/Icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     "ios": {
       "icon": "./assets/ommio_icon.icon",
       "supportsTablet": true,
-      "buildNumber": "3",
+      "buildNumber": "1",
       "bundleIdentifier": "com.seninadin.ommio",
       "entitlements": {
         "com.apple.security.application-groups": [
