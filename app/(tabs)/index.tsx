@@ -8,8 +8,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SMS from 'expo-sms';
+import SharedGroupPreferences from 'react-native-shared-group-preferences';
+import WidgetCenter from 'react-native-widget-center';
 import { WidgetTaskHandler } from '../../components/widget-task-handler'; // Dosya yolunuza göre düzeltin
 // getAuth'u da eklemeyi unutma
 import * as Localization from 'expo-localization';
@@ -244,7 +246,7 @@ const CATEGORY_COLORS = [
 Notifications.setNotificationHandler({
     handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }),
 });
-
+const APP_GROUP_ID = 'group.com.seninadin.ommio.widget'; // Kendi ID'niz
 const isValidEmail = (email: string) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(email);
@@ -719,6 +721,20 @@ export default function OmmioApp() {
             showToast(t('warning_title'), t('google_connection_error'), 'error');
         }
     }, [response]);
+    
+   // --- EXPO ROUTER İLE WIDGET YÖNLENDİRMESİ ---
+    const params = useLocalSearchParams();
+
+    useEffect(() => {
+        if (params.tab === 'habits') {
+            // Biraz bekletiyoruz ki sayfa tam yüklensin
+            setTimeout(() => onBottomTabPress('habits'), 100);
+        } 
+        else if (params.tab === 'list') {
+            setTimeout(() => onBottomTabPress('list'), 100);
+        }
+    }, [params.tab]);
+    
     // --- EKSİK OLAN PARÇA: SEÇİLİ SOHBETİN MESAJLARINI DİNLEME ---
     useEffect(() => {
         // Eğer bir sohbet seçilmediyse veya kullanıcı yoksa işlem yapma
@@ -2183,6 +2199,74 @@ export default function OmmioApp() {
         return uploadedUrls;
     };
     // --- BURAYI EKLE: iOS Widget Güncelleme Yardımcısı ---
+    // --- WIDGET GÜNCELLEME FONKSİYONU (iOS & Android) ---
+  // --- WIDGET GÜNCELLEME FONKSİYONU (iOS & Android Uyumlu) ---
+  // --- WIDGET GÜNCELLEME FONKSİYONU (GÖREVLER + ALIŞKANLIKLAR) ---
+  const updateWidgetData = async (currentTasks: Task[], currentHabits: Habit[]) => {
+    try {
+      const todayISO = getISODate(new Date());
+
+      // 1. GÖREVLERİ HAZIRLA
+      const filteredTasks = currentTasks
+        .filter(t => {
+          if (t.date === todayISO) return true;
+          if (t.showEveryDayUntilDue && t.dueDate) {
+            return todayISO >= t.date && todayISO <= convertDDMMYYYYtoISO(t.dueDate);
+          }
+          return false;
+        })
+        .filter(t => !t.completed) // Yapılmamışlar öncelikli
+        .sort((a, b) => {
+           const priorityMap: Record<string, number> = { high: 1, medium: 2, low: 3 };
+           return (priorityMap[a.priority || 'medium'] || 2) - (priorityMap[b.priority || 'medium'] || 2);
+        })
+        .slice(0, 4); // Max 4 görev
+
+      // 2. ALIŞKANLIKLARI HAZIRLA
+      const filteredHabits = currentHabits
+        .filter(h => {
+          if (h.endDate && h.endDate < todayISO) return false;
+          if (h.frequency === 'daily') return true;
+          if (h.frequency === 'weekly') return h.selectedDays.includes(new Date().getDay());
+          return false;
+        })
+        .map(h => ({
+            title: h.title,
+            isCompleted: h.completedDates.includes(todayISO)
+        }))
+        .slice(0, 4); // Max 4 alışkanlık
+
+      // --- iOS GÜNCELLEME ---
+      if (Platform.OS === 'ios') {
+        // Swift tarafına hem 'tasks' hem 'habits' dizisini gönderiyoruz
+        const combinedData = {
+            tasks: filteredTasks.map(t => ({ title: t.text, isCompleted: t.completed })),
+            habits: filteredHabits // {title, isCompleted} formatında
+        };
+
+        await SharedGroupPreferences.setItem('widgetData', JSON.stringify(combinedData), APP_GROUP_ID);
+        WidgetCenter.reloadAllTimelines();
+        console.log("📲 iOS Widget Paketi Güncellendi:", combinedData);
+      }
+
+      // --- ANDROID GÜNCELLEME (Değişmedi) ---
+      if (Platform.OS === 'android') {
+        const androidTasks = filteredTasks.map(t => ({ text: t.text, completed: t.completed }));
+        const androidHabits = filteredHabits.map(h => ({ title: h.title, completed: h.isCompleted }));
+
+        requestWidgetUpdate({
+          widgetName: 'OmmioWidget',
+          renderWidget: () => (
+            <WidgetTaskHandler tasks={androidTasks} habits={androidHabits} />
+          ),
+          widgetNotFound: () => console.log("Android widget bulunamadı")
+        });
+      }
+
+    } catch (error) {
+      console.error("Widget Update Error:", error);
+    }
+  };
     const updateIOSWidget = (taskData: any) => {
         if (Platform.OS !== 'ios') return;
 
@@ -3240,6 +3324,13 @@ export default function OmmioApp() {
             }
         }
     };
+    // --- DATA DEĞİŞTİĞİNDE WIDGET'I GÜNCELLE ---
+  useEffect(() => {
+    // Sadece kullanıcı giriş yapmışsa ve veri varsa güncelle
+    if (user && (tasks.length > 0 || habits.length > 0)) {
+        updateWidgetData(tasks, habits);
+    }
+  }, [tasks, habits, user]); // Tasks, Habits veya User değişirse çalışır
     const styles = useMemo(() => getDynamicStyles(currentColors, isDark), [currentColors, isDark]);
     // --- renderTask FONKSİYONUNU BUNUNLA DEĞİŞTİR ---
     const renderTask = (task: Task) => {

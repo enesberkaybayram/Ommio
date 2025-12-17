@@ -72,5 +72,6 @@ target 'Ommio' do
         # C++ 20 standardını zorla
         config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++20'
       end
+    end
   end
 end

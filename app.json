@@ -15,7 +15,7 @@
     "ios": {
       "icon": "./assets/ommio_icon.icon",
       "supportsTablet": true,
-      "buildNumber": "2",
+      "buildNumber": "3",
       "bundleIdentifier": "com.seninadin.ommio",
       "entitlements": {
         "com.apple.security.application-groups": [
