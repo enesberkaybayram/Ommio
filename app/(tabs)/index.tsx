@@ -721,7 +721,7 @@ export default function OmmioApp() {
             showToast(t('warning_title'), t('google_connection_error'), 'error');
         }
     }, [response]);
-    
+
    // --- EXPO ROUTER İLE WIDGET YÖNLENDİRMESİ ---
     const params = useLocalSearchParams();
 
@@ -734,6 +734,7 @@ export default function OmmioApp() {
             setTimeout(() => onBottomTabPress('list'), 100);
         }
     }, [params.tab]);
+    
     
     // --- EKSİK OLAN PARÇA: SEÇİLİ SOHBETİN MESAJLARINI DİNLEME ---
     useEffect(() => {
