@@ -76,7 +76,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		749A0F822EF0518E009E939A /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		749A0F822EF0518E009E939A /* Exceptions for "OmmioWidgets" folder in "OmmioWidgetsExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -88,6 +88,8 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		749A0F3C2EF04EC2009E939A /* OmmioWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			explicitFileTypes = {
 			};
 			explicitFolders = (
@@ -97,6 +99,8 @@
 		};
 		749A0F572EF050F0009E939A /* OmmioWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			explicitFileTypes = {
 			};
 			explicitFolders = (
@@ -107,7 +111,7 @@
 		749A0F712EF0518D009E939A /* OmmioWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				749A0F822EF0518E009E939A /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				749A0F822EF0518E009E939A /* Exceptions for "OmmioWidgets" folder in "OmmioWidgetsExtension" target */,
 			);
 			explicitFileTypes = {
 			};
@@ -407,13 +411,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Ommio/Pods-Ommio-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Ommio/Pods-Ommio-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -450,13 +450,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Ommio/Pods-Ommio-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Ommio/Pods-Ommio-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -569,7 +565,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.seninadin.ommio;
-				PRODUCT_NAME = "Ommio";
+				PRODUCT_NAME = Ommio;
 				SWIFT_OBJC_BRIDGING_HEADER = "Ommio/Ommio-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -601,7 +597,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.seninadin.ommio;
-				PRODUCT_NAME = "Ommio";
+				PRODUCT_NAME = Ommio;
 				SWIFT_OBJC_BRIDGING_HEADER = "Ommio/Ommio-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

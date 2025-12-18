@@ -12,7 +12,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SMS from 'expo-sms';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import WidgetCenter from 'react-native-widget-center';
-import { WidgetTaskHandler } from '../../components/widget-task-handler'; // Dosya yolunuza göre düzeltin
+import { WidgetTaskHandler } from '../../widget-task-handler.android'; // Dosya yolunuza göre düzeltin
+import { useUser } from '../_layout'; // Layout'tan oluşturduğumuz hook'u çekiyoruz
 // getAuth'u da eklemeyi unutma
 import * as Localization from 'expo-localization';
 import {
@@ -448,12 +449,14 @@ export default function OmmioApp() {
     // Landing Page mi gösterilsin yoksa Auth ekranı mı?
     // Web değilse (Android/iOS) direkt true başlasın.
     const [showAuth, setShowAuth] = useState(Platform.OS !== 'web');
+    
 
     // Grup Alışkanlıkları State'leri
     const [groupHabits, setGroupHabits] = useState<GroupHabit[]>([]);
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [newGroupTitle, setNewGroupTitle] = useState("");
     const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([]); // Seçilen arkadaşların UID'leri
+    const [expandedGroupAnalysisId, setExpandedGroupAnalysisId] = useState<string | null>(null);
 
     const handlePageScroll = (e: any) => {
         const index = e.nativeEvent.position;
@@ -463,6 +466,8 @@ export default function OmmioApp() {
             setActiveTab(TAB_ORDER[index]);
         }
     };
+
+    const { isPremium, setIsPremium } = useUser(); // Fonksiyonu da buradan çekiyoruz // Artık isPremium verisi globalden geliyor!
 
     // PagerView kontrolü için referans
     const pagerRef = useRef<PagerView>(null);
@@ -533,8 +538,6 @@ export default function OmmioApp() {
     const [chatTarget, setChatTarget] = useState<Contact | null>(null);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [chatInput, setChatInput] = useState("");
-
-    const [isPremium, setIsPremium] = useState(false);
 
     const [isTyping, setIsTyping] = useState(false); // Karşı taraf yazıyor mu?
     const [lastVisibleMsg, setLastVisibleMsg] = useState<any>(null); // Pagination için
@@ -1462,6 +1465,7 @@ export default function OmmioApp() {
                         <WidgetTaskHandler
                             tasks={todaysTasks}
                             habits={todaysHabitsData}
+                            isPremium={isPremium}
                         />
                     ),
                     widgetNotFound: () => {
@@ -1533,12 +1537,10 @@ export default function OmmioApp() {
             return;
         }
 
-        // --- HATA ÇÖZÜMÜ: KULLANICI KONTROLÜ ---
         if (!auth.currentUser) {
             showToast(t('warning_title'), t('session_not_found'), 'error');
             return;
         }
-        // ---------------------------------------
 
         setIsAuthLoading(true);
 
@@ -1560,17 +1562,19 @@ export default function OmmioApp() {
 
             // 3. HESAP BAĞLAMA İŞLEMİ
             const credential = EmailAuthProvider.credential(email, password);
-
-            // HATA ÇÖZÜMÜ: Artık auth.currentUser'ın null olmadığını garanti ettiğimiz için hata vermez.
             const userCredential = await linkWithCredential(auth.currentUser, credential);
             const linkedUser = userCredential.user;
+
+            // --- YENİ EKLENEN KISIM: E-POSTA DOĞRULAMA GÖNDER ---
+            await sendEmailVerification(linkedUser);
+            // -----------------------------------------------------
 
             // 4. Firestore Verilerini Güncelleme
             const updates = {
                 username: cleanUsername,
                 displayName: username,
                 email: email,
-                isGuest: false,
+                isGuest: false, // Artık misafir değil
                 categories: categories
             };
 
@@ -1589,9 +1593,13 @@ export default function OmmioApp() {
 
             // 5. Başarılı
             setIsAuthLoading(false);
-            // Modalı kapatmak için state'i false yapın (isGuestModalOpen varsa)
-            setIsGuestModalOpen(false);
-            showToast(t('success'), t('account_created_success'), 'success');
+            setIsGuestModalOpen(false); // Modalı kapat
+
+            // Kullanıcıya bilgi ver
+            showToast(t('success'), "Hesap oluşturuldu! Lütfen e-postanıza gelen doğrulama linkine tıklayın.", 'success');
+
+            // Not: Kullanıcı artık "isGuest: false" olduğu için ve "emailVerified: false" olduğu için,
+            // return bloğundaki "E-posta Doğrulama Ekranı" otomatik olarak devreye girecektir.
 
         } catch (error: any) {
             setIsAuthLoading(false);
@@ -2203,7 +2211,7 @@ export default function OmmioApp() {
     // --- WIDGET GÜNCELLEME FONKSİYONU (iOS & Android) ---
   // --- WIDGET GÜNCELLEME FONKSİYONU (iOS & Android Uyumlu) ---
   // --- WIDGET GÜNCELLEME FONKSİYONU (GÖREVLER + ALIŞKANLIKLAR) ---
-  const updateWidgetData = async (currentTasks: Task[], currentHabits: Habit[]) => {
+  const updateWidgetData = async (currentTasks: Task[], currentHabits: Habit[], isPremiumUser: boolean) => {
     try {
       const todayISO = getISODate(new Date());
 
@@ -2238,27 +2246,33 @@ export default function OmmioApp() {
         .slice(0, 4); // Max 4 alışkanlık
 
       // --- iOS GÜNCELLEME ---
-      if (Platform.OS === 'ios') {
-        // Swift tarafına hem 'tasks' hem 'habits' dizisini gönderiyoruz
+     if (Platform.OS === 'ios') {
         const combinedData = {
             tasks: filteredTasks.map(t => ({ title: t.text, isCompleted: t.completed })),
-            habits: filteredHabits // {title, isCompleted} formatında
+            habits: filteredHabits,
+            isPremium: isPremiumUser // 👈 YENİ: Premium bilgisini ekledik
         };
 
         await SharedGroupPreferences.setItem('widgetData', JSON.stringify(combinedData), APP_GROUP_ID);
         WidgetCenter.reloadAllTimelines();
-        console.log("📲 iOS Widget Paketi Güncellendi:", combinedData);
+        console.log("📲 iOS Widget Güncellendi. Premium:", isPremiumUser);
       }
 
       // --- ANDROID GÜNCELLEME (Değişmedi) ---
       if (Platform.OS === 'android') {
+        // Verileri Android formatına çevir
         const androidTasks = filteredTasks.map(t => ({ text: t.text, completed: t.completed }));
         const androidHabits = filteredHabits.map(h => ({ title: h.title, completed: h.isCompleted }));
 
         requestWidgetUpdate({
           widgetName: 'OmmioWidget',
           renderWidget: () => (
-            <WidgetTaskHandler tasks={androidTasks} habits={androidHabits} />
+            // 👇 BURADA 'isPremium' prop'unu geçiyoruz ve TypeScript artık bunu tanıyor
+            <WidgetTaskHandler 
+                tasks={androidTasks} 
+                habits={androidHabits} 
+                isPremium={isPremiumUser} 
+            />
           ),
           widgetNotFound: () => console.log("Android widget bulunamadı")
         });
@@ -2637,6 +2651,7 @@ export default function OmmioApp() {
         }
 
         if (selected) {
+            setSelectedDate(selected);
             const formatted = formatDateDDMMYYYY(selected);
             // Hangi input için açıldıysa onu güncelle
             if (datePickerTarget === 'start') setInputStartDate(formatted);
@@ -3162,6 +3177,20 @@ export default function OmmioApp() {
         const today = getISODate(new Date());
         const doneToday = group.completions && group.completions[today] ? group.completions[today] : [];
         const isMeDone = doneToday.includes(user.uid);
+        const isExpanded = expandedGroupAnalysisId === group.id;
+
+        // --- ANALİZ HESAPLAMA ---
+        // Her üyenin toplam tamamlama sayısını hesapla
+        const memberStats = group.memberDetails?.map(member => {
+            // Tüm tarihleri dolaş, bu üye kaç kere yapmış say
+            let count = 0;
+            if (group.completions) {
+                Object.values(group.completions).forEach((doneList: any) => {
+                    if (doneList.includes(member.uid)) count++;
+                });
+            }
+            return { ...member, count };
+        }).sort((a, b) => b.count - a.count); // En çok yapana göre sırala
 
         return (
             <View key={group.id} style={{
@@ -3175,9 +3204,9 @@ export default function OmmioApp() {
             }}>
                 {/* Üst Kısım: Başlık ve Buton */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-                    <View>
+                    <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 18, fontWeight: '800', color: currentColors.text }}>{group.title}</Text>
-                        <Text style={{ fontSize: 12, color: currentColors.subText }}>{group.memberDetails?.length || 0} Üye • {doneToday.length} kişi tamamladı</Text>
+                        <Text style={{ fontSize: 12, color: currentColors.subText }}>{group.memberDetails?.length || 0} Üye • Bugün {doneToday.length} kişi yaptı</Text>
                     </View>
 
                     <TouchableOpacity
@@ -3202,38 +3231,66 @@ export default function OmmioApp() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Alt Kısım: Üyeler ve Durumları */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#f8fafc', padding: 10, borderRadius: 16 }}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                        {group.memberDetails?.map((member: any) => {
-                            const isDone = doneToday.includes(member.uid);
-                            return (
-                                <View key={member.uid} style={{ alignItems: 'center', opacity: isDone ? 1 : 0.5 }}>
-                                    <View style={{
-                                        width: 44, height: 44, borderRadius: 22,
-                                        borderWidth: 3,
-                                        borderColor: isDone ? '#10b981' : 'transparent', // Yapanlar yeşil çerçeve
-                                        padding: 2, // Boşluk
-                                        marginBottom: 4
+                {/* Alt Kısım: Üyeler (Avatar Listesi) */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flexDirection: 'row', flex: 1 }}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: -10, paddingLeft: 5 }}>
+                            {group.memberDetails?.map((member: any) => {
+                                const isDone = doneToday.includes(member.uid);
+                                return (
+                                    <View key={member.uid} style={{ 
+                                        width: 36, height: 36, borderRadius: 18, borderWidth: 2, 
+                                        borderColor: currentColors.surface, overflow: 'hidden',
+                                        opacity: isDone ? 1 : 0.5 // Yapmayanlar silik
                                     }}>
                                         <Image
-                                            source={member.photoURL ? { uri: member.photoURL } : require('../../assets/Logo/Logo.png')} // Default avatar yoksa logo koydum, sen User ikonu koyabilirsin
-                                            style={{ width: '100%', height: '100%', borderRadius: 20, backgroundColor: '#cbd5e1' }}
+                                            source={member.photoURL ? { uri: member.photoURL } : require('../../assets/Logo/Logo.png')}
+                                            style={{ width: '100%', height: '100%', backgroundColor: '#cbd5e1' }}
                                         />
-                                        {isDone && (
-                                            <View style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: '#10b981', borderRadius: 8, padding: 2, borderWidth: 1, borderColor: '#fff' }}>
-                                                <Check size={10} color="#fff" strokeWidth={4} />
-                                            </View>
-                                        )}
                                     </View>
-                                    <Text style={{ fontSize: 10, color: currentColors.text, fontWeight: isDone ? 'bold' : '400', maxWidth: 50 }} numberOfLines={1}>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+                    
+                    {/* Analiz Aç/Kapa Butonu */}
+                    <TouchableOpacity 
+                        onPress={() => {
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setExpandedGroupAnalysisId(isExpanded ? null : group.id);
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 5, padding: 8, backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 10 }}
+                    >
+                        <BarChart3 size={16} color={COLORS.primary} />
+                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primary }}>
+                            {isExpanded ? "Gizle" : "Analiz"}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* --- GENİŞLEYEN ANALİZ ALANI (LEADERBOARD) --- */}
+                {isExpanded && (
+                    <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>🏆 Skor Tablosu</Text>
+                        {memberStats?.map((member, index) => (
+                            <View key={member.uid} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: index === 0 ? '#eab308' : (index === 1 ? '#94a3b8' : (index === 2 ? '#b45309' : currentColors.subText)), width: 20 }}>
+                                        #{index + 1}
+                                    </Text>
+                                    <Text style={{ fontSize: 14, color: currentColors.text }}>
                                         {member.uid === user.uid ? "Sen" : member.displayName}
                                     </Text>
                                 </View>
-                            );
-                        })}
-                    </ScrollView>
-                </View>
+                                <View style={{ backgroundColor: index === 0 ? '#fef9c3' : (isDark ? '#334155' : '#f1f5f9'), paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: index === 0 ? '#ca8a04' : currentColors.text }}>
+                                        {member.count} kez
+                                    </Text>
+                                </View>
+                            </View>
+                        ))}
+                    </View>
+                )}
             </View>
         );
     }
@@ -3329,9 +3386,9 @@ export default function OmmioApp() {
   useEffect(() => {
     // Sadece kullanıcı giriş yapmışsa ve veri varsa güncelle
     if (user && (tasks.length > 0 || habits.length > 0)) {
-        updateWidgetData(tasks, habits);
+        updateWidgetData(tasks, habits,isPremium);
     }
-  }, [tasks, habits, user]); // Tasks, Habits veya User değişirse çalışır
+  }, [tasks, habits, user,isPremium]); // Tasks, Habits veya User değişirse çalışır
     const styles = useMemo(() => getDynamicStyles(currentColors, isDark), [currentColors, isDark]);
     // --- renderTask FONKSİYONUNU BUNUNLA DEĞİŞTİR ---
     const renderTask = (task: Task) => {
@@ -3696,7 +3753,12 @@ export default function OmmioApp() {
 
                 {activeTab !== 'chat_room' && (
                     <View style={[styles.header, { justifyContent: 'center', paddingBottom: 5 }]}>
-                        <TouchableOpacity onPress={() => setActiveTab('list')} activeOpacity={0.7}>
+                        {/* 👇 GÜNCELLENEN KISIM BURASI 👇 */}
+                        <TouchableOpacity 
+                            onPress={() => setActiveTab('list')} 
+                            activeOpacity={0.7}
+                            disabled={Platform.OS !== 'web'} // Sadece Web'de tıklanabilir, mobilde tıklanamaz
+                        >
                             <Image
                                 source={require('../../assets/Logo/Logo.png')}
                                 style={{ width: 150, height: 50, resizeMode: 'contain' }}
@@ -4281,6 +4343,32 @@ export default function OmmioApp() {
                                             </View>
                                         )}
                                     </View>
+                                    {/* --- 3. GRUP ALIŞKANLIKLARI (EN ALTTA) --- */}
+                                    <View style={{ marginTop: 25 }}>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                                            <Text style={{ fontSize: 18, fontWeight: '800', color: currentColors.text }}>
+                                                {t('groups') || "Grup Hedefleri"}
+                                            </Text>
+                                            <TouchableOpacity
+                                                onPress={() => setIsGroupModalOpen(true)}
+                                                style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', padding: 8, borderRadius: 12 }}
+                                            >
+                                                <Plus size={20} color={COLORS.primary} />
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        {groupHabits.length > 0 ? (
+                                            <View>
+                                                {groupHabits.map(group => renderGroupHabitCard(group))}
+                                            </View>
+                                        ) : (
+                                            <TouchableOpacity onPress={() => setIsGroupModalOpen(true)} style={{ padding: 20, backgroundColor: currentColors.surface, borderRadius: 20, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: currentColors.subText }}>
+                                                <Users size={32} color={currentColors.subText} style={{ marginBottom: 10 }} />
+                                                <Text style={{ color: currentColors.subText, textAlign: 'center' }}>Arkadaşlarınla ortak bir hedef belirle!</Text>
+                                                <Text style={{ color: COLORS.primary, fontWeight: 'bold', marginTop: 5 }}>+ Grup Oluştur</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
                                 </ScrollView>
                             </View>
 
@@ -4630,32 +4718,7 @@ export default function OmmioApp() {
                                                     ))}
                                                 </View>
                                             )}
-                                            {/* --- GRUP ALIŞKANLIKLARI BÖLÜMÜ --- */}
-                                            <View>
-                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
-                                                    <Text style={{ fontSize: 20, fontWeight: '800', color: currentColors.text }}>{t('groups') || "Gruplar"}</Text>
-                                                    <TouchableOpacity
-                                                        onPress={() => setIsGroupModalOpen(true)}
-                                                        style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', padding: 8, borderRadius: 12 }}
-                                                    >
-                                                        <Plus size={20} color={COLORS.primary} />
-                                                    </TouchableOpacity>
-                                                </View>
-
-                                                {groupHabits.length > 0 ? (
-                                                    <View>
-                                                        {groupHabits.map(group => renderGroupHabitCard(group))}
-                                                    </View>
-                                                ) : (
-                                                    <View style={{ padding: 20, backgroundColor: currentColors.surface, borderRadius: 20, alignItems: 'center', marginBottom: 20, borderStyle: 'dashed', borderWidth: 1, borderColor: currentColors.subText }}>
-                                                        <Users size={32} color={currentColors.subText} style={{ marginBottom: 10 }} />
-                                                        <Text style={{ color: currentColors.subText, textAlign: 'center' }}>Arkadaşlarınla ortak bir hedef belirle!</Text>
-                                                        <TouchableOpacity onPress={() => setIsGroupModalOpen(true)}>
-                                                            <Text style={{ color: COLORS.primary, fontWeight: 'bold', marginTop: 5 }}>+ Grup Oluştur</Text>
-                                                        </TouchableOpacity>
-                                                    </View>
-                                                )}
-                                            </View>
+                                        
 
                                             {/* --- ARKADAŞ LİSTESİ --- */}
                                             {contacts.length === 0 && friendRequests.length === 0 ? (
@@ -4985,7 +5048,7 @@ export default function OmmioApp() {
                                                 /* B. PREMIUM SATIN ALMA KARTI (Ana Renk) */
                                                 <TouchableOpacity
                                                     activeOpacity={0.9}
-                                                    onPress={() => setIsUpsellVisible(true)}
+                                                    onPress={() => router.push('/paywall')}
                                                     style={{
                                                         backgroundColor: COLORS.primary, // Ana tema rengin
                                                         borderRadius: 24,
@@ -5285,48 +5348,118 @@ export default function OmmioApp() {
                                         />
                                     </View>
 
-                                    {/* Bölüm: Tarihler */}
-                                    <View style={styles.dateRow}>
-                                        {/* Başlangıç Tarihi */}
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.sectionTitle}>{t('start_date')}</Text>
-                                            <View style={styles.dateInputWrapper}>
-                                                <TextInput
-                                                    value={inputStartDate}
-                                                    onChangeText={handleInputStartDateChange}
-                                                    placeholder="DD-MM-YYYY"
-                                                    placeholderTextColor={currentColors.subText}
-                                                    maxLength={10}
-                                                    keyboardType="numeric"
-                                                    style={[styles.dateInput, { backgroundColor: currentColors.bg, color: currentColors.text }]}
-                                                    onSubmitEditing={addTask}
-                                                />
-                                                <TouchableOpacity onPress={() => openDatePicker('start')} style={styles.calendarBtn}>
-                                                    <CalendarIcon size={16} color="#fff" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        </View>
-
-                                        {/* Bitiş Tarihi */}
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.sectionTitle}>{t('due_date')}</Text>
-                                            <View style={styles.dateInputWrapper}>
-                                                <TextInput
-                                                    value={inputDueDate}
-                                                    onChangeText={handleInputDueDateChange}
-                                                    placeholder="DD-MM-YYYY"
-                                                    placeholderTextColor={currentColors.subText}
-                                                    maxLength={10}
-                                                    keyboardType="numeric"
-                                                    style={[styles.dateInput, { backgroundColor: currentColors.bg, color: currentColors.text }]}
-                                                    onSubmitEditing={addTask}
-                                                />
-                                                <TouchableOpacity onPress={() => openDatePicker('due')} style={styles.calendarBtn}>
-                                                    <CalendarIcon size={16} color="#fff" />
-                                                </TouchableOpacity>
-                                            </View>
+                                    {/* Bölüm: Tarihler (Görsel Olarak Düzeltilmiş) */}
+                                <View style={{ flexDirection: 'row', gap: 15, marginBottom: 15 }}>
+                                    
+                                    {/* 1. Başlangıç Tarihi */}
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ 
+                                            fontSize: 12, 
+                                            fontWeight: 'bold', 
+                                            color: currentColors.subText, 
+                                            marginBottom: 6, 
+                                            textTransform: 'uppercase' 
+                                        }}>
+                                            {t('start_date') || "Başlangıç"}
+                                        </Text>
+                                        
+                                        <View style={{ 
+                                            flexDirection: 'row', 
+                                            alignItems: 'center', 
+                                            backgroundColor: isDark ? '#1e293b' : '#f8fafc', // Input arka planı
+                                            borderRadius: 12, 
+                                            borderWidth: 1, 
+                                            borderColor: isDark ? '#334155' : '#e2e8f0',
+                                            overflow: 'hidden',
+                                            height: 48 // Sabit yükseklik ile hizalama garantisi
+                                        }}>
+                                            <TextInput
+                                                value={inputStartDate}
+                                                onChangeText={handleInputStartDateChange}
+                                                placeholder="GG-AA-YYYY"
+                                                placeholderTextColor={currentColors.subText}
+                                                maxLength={10}
+                                                keyboardType="numeric"
+                                                style={{ 
+                                                    flex: 1, 
+                                                    color: currentColors.text, 
+                                                    paddingHorizontal: 12,
+                                                    fontSize: 14,
+                                                    height: '100%' 
+                                                }}
+                                                onSubmitEditing={addTask} // Klavyeden "Git" deyince ekle
+                                            />
+                                            <TouchableOpacity 
+                                                onPress={() => openDatePicker('start')} 
+                                                style={{ 
+                                                    paddingHorizontal: 12, 
+                                                    height: '100%', 
+                                                    justifyContent: 'center',
+                                                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0', // İkon arkası hafif farklı ton
+                                                    borderLeftWidth: 1,
+                                                    borderLeftColor: isDark ? '#334155' : '#cbd5e1'
+                                                }}
+                                            >
+                                                <CalendarIcon size={18} color={COLORS.primary} />
+                                            </TouchableOpacity>
                                         </View>
                                     </View>
+
+                                    {/* 2. Bitiş Tarihi */}
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ 
+                                            fontSize: 12, 
+                                            fontWeight: 'bold', 
+                                            color: currentColors.subText, 
+                                            marginBottom: 6, 
+                                            textTransform: 'uppercase' 
+                                        }}>
+                                            {t('due_date') || "Bitiş"}
+                                        </Text>
+                                        
+                                        <View style={{ 
+                                            flexDirection: 'row', 
+                                            alignItems: 'center', 
+                                            backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                                            borderRadius: 12, 
+                                            borderWidth: 1, 
+                                            borderColor: isDark ? '#334155' : '#e2e8f0',
+                                            overflow: 'hidden',
+                                            height: 48
+                                        }}>
+                                            <TextInput
+                                                value={inputDueDate}
+                                                onChangeText={handleInputDueDateChange}
+                                                placeholder="GG-AA-YYYY"
+                                                placeholderTextColor={currentColors.subText}
+                                                maxLength={10}
+                                                keyboardType="numeric"
+                                                style={{ 
+                                                    flex: 1, 
+                                                    color: currentColors.text, 
+                                                    paddingHorizontal: 12,
+                                                    fontSize: 14,
+                                                    height: '100%'
+                                                }}
+                                                onSubmitEditing={addTask}
+                                            />
+                                            <TouchableOpacity 
+                                                onPress={() => openDatePicker('due')} 
+                                                style={{ 
+                                                    paddingHorizontal: 12, 
+                                                    height: '100%', 
+                                                    justifyContent: 'center',
+                                                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0',
+                                                    borderLeftWidth: 1,
+                                                    borderLeftColor: isDark ? '#334155' : '#cbd5e1'
+                                                }}
+                                            >
+                                                <CalendarIcon size={18} color={COLORS.danger} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+
+                                </View>
 
                                     {/* Bölüm: Kategoriler veya Uyarı */}
                                     <View style={[styles.divider, { borderColor: isDark ? '#334155' : '#f1f5f9' }]}>
@@ -5646,39 +5779,86 @@ export default function OmmioApp() {
                 {/* 1. Genel Date Picker */}
                 {showDatePicker && (
                     Platform.OS === 'android' ? (
-                        <DateTimePicker value={selectedDate || new Date()} mode="date" display="default" onChange={onDateChange} />
+                        <DateTimePicker 
+                            value={selectedDate || new Date()} 
+                            mode="date" 
+                            display="default" 
+                            onChange={onDateChange} 
+                        />
                     ) : (
                         <Modal transparent visible={true} animationType="fade">
-                            <TouchableOpacity activeOpacity={1} onPress={() => setShowDatePicker(false)} style={styles.centerModalOverlay}>
-                                <View style={[styles.centerCard, { width: 340, padding: 0 }]}>
-                                    <View style={{ padding: 20, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <Text style={styles.modalTitle}>Tarih Seç</Text>
-                                        <TouchableOpacity onPress={() => setShowDatePicker(false)}><X size={24} color={currentColors.subText} /></TouchableOpacity>
+                            <TouchableOpacity 
+                                activeOpacity={1} 
+                                onPress={() => setShowDatePicker(false)} 
+                                style={styles.centerModalOverlay}
+                            >
+                                <View style={[
+                                    styles.centerCard, 
+                                    { 
+                                        width: '90%', // Sabit 340 yerine %90 genişlik
+                                        maxWidth: 380, // Çok geniş ekranlarda yayılmasın
+                                        padding: 0, 
+                                        overflow: 'hidden',
+                                        backgroundColor: currentColors.surface // Arka plan rengini garantiye al
+                                    }
+                                ]}>
+                                    {/* Modal Header */}
+                                    <View style={{ 
+                                        padding: 16, 
+                                        borderBottomWidth: 1, 
+                                        borderColor: isDark ? '#334155' : '#f1f5f9', 
+                                        flexDirection: 'row', 
+                                        justifyContent: 'space-between', 
+                                        alignItems: 'center',
+                                        backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc' // Hafif header tonu
+                                    }}>
+                                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>
+                                            {t('select_date') || "Tarih Seç"}
+                                        </Text>
+                                        <TouchableOpacity 
+                                            onPress={() => setShowDatePicker(false)}
+                                            style={{ padding: 4 }}
+                                        >
+                                            <X size={22} color={currentColors.subText} />
+                                        </TouchableOpacity>
                                     </View>
-                                    <View style={{ padding: 10 }}>
+
+                                    {/* Takvim Gövdesi */}
+                                    <View style={{ paddingVertical: 10 }}>
                                         <Calendar
-                                            current={selectedStr}
-                                            key={`${lang}-${selectedStr}`}
-                                            onDayPress={(day) => {
+                                            current={getISODate(selectedDate)}
+                                            key={`${lang}-${isDark ? 'dark' : 'light'}`} // Tema değişince render'ı zorla
+                                            onDayPress={(day: any) => {
                                                 const newDate = new Date(day.timestamp);
+                                                // Saat dilimi kaymasını düzelt
                                                 newDate.setMinutes(newDate.getMinutes() + newDate.getTimezoneOffset());
                                                 onDateChange(null, newDate);
                                             }}
                                             theme={{
-                                                backgroundColor: 'transparent',
-                                                calendarBackground: 'transparent',
+                                                backgroundColor: currentColors.surface,
+                                                calendarBackground: currentColors.surface, // Transparent yerine solid renk
                                                 textSectionTitleColor: currentColors.subText,
                                                 selectedDayBackgroundColor: COLORS.primary,
                                                 selectedDayTextColor: '#ffffff',
                                                 todayTextColor: COLORS.primary,
                                                 dayTextColor: currentColors.text,
+                                                textDisabledColor: isDark ? '#475569' : '#d9e1e8',
+                                                dotColor: COLORS.primary,
+                                                selectedDotColor: '#ffffff',
                                                 arrowColor: COLORS.primary,
+                                                disabledArrowColor: '#d9e1e8',
                                                 monthTextColor: currentColors.text,
+                                                indicatorColor: COLORS.primary,
                                                 textDayFontWeight: '600',
-                                                textMonthFontWeight: 'bold'
+                                                textMonthFontWeight: 'bold',
+                                                textDayHeaderFontWeight: '600',
+                                                textDayFontSize: 15,
+                                                textMonthFontSize: 16,
+                                                textDayHeaderFontSize: 13
                                             }}
                                             markingType={'custom'}
                                             markedDates={calendarMarks}
+                                            enableSwipeMonths={true} // Kaydırma özelliği
                                         />
                                     </View>
                                 </View>
@@ -6791,6 +6971,68 @@ export default function OmmioApp() {
                             }}
                         />
                     </View>
+                </Modal>
+                {/* --- EKSİK OLAN KISIM: PROFİL DÜZENLEME MODALI --- */}
+                <Modal visible={isEditProfileVisible} transparent animationType="fade">
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                        <View style={styles.centerModalOverlay}>
+                            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: '100%', alignItems: 'center' }}>
+                                <View style={styles.centerCard}>
+                                    
+                                    {/* Başlık ve Kapatma Butonu */}
+                                    <View style={styles.modalHeader}>
+                                        <Text style={styles.modalTitle}>{t('edit_profile') || "Profili Düzenle"}</Text>
+                                        <TouchableOpacity onPress={() => setIsEditProfileVisible(false)}>
+                                            <X size={24} color={currentColors.subText} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.formGap}>
+                                        
+                                        {/* İsim Soyisim Input */}
+                                        <View>
+                                            <Text style={styles.sectionLabel}>{t('display_name_label') || "Görünen İsim"}</Text>
+                                            <View style={styles.iconInputRow}>
+                                                <User size={20} color={currentColors.subText} />
+                                                <TextInput 
+                                                    value={editDisplayNameInput} 
+                                                    onChangeText={setEditDisplayNameInput} 
+                                                    placeholder="İsminiz" 
+                                                    placeholderTextColor={currentColors.subText} 
+                                                    style={styles.flexInput} 
+                                                />
+                                            </View>
+                                        </View>
+
+                                        {/* Kullanıcı Adı Input */}
+                                        <View>
+                                            <Text style={styles.sectionLabel}>{t('username_label') || "Kullanıcı Adı"}</Text>
+                                            <View style={styles.iconInputRow}>
+                                                <Text style={{ fontSize: 18, color: currentColors.subText, fontWeight: 'bold', paddingLeft: 5 }}>@</Text>
+                                                <TextInput 
+                                                    value={editUsernameInput} 
+                                                    onChangeText={setEditUsernameInput} 
+                                                    placeholder="kullaniciadi" 
+                                                    placeholderTextColor={currentColors.subText} 
+                                                    style={styles.flexInput} 
+                                                    autoCapitalize='none'
+                                                />
+                                            </View>
+                                            <Text style={{ fontSize: 11, color: COLORS.warning, marginTop: 5 }}>
+                                                ⚠️ {t('username_change_warning') || "Kullanıcı adını değiştirmek arkadaşlarınızın sizi bulmasını zorlaştırabilir."}
+                                            </Text>
+                                        </View>
+
+                                        {/* Kaydet Butonu */}
+                                        <TouchableOpacity onPress={handleUpdateProfile} style={[styles.primaryButton, { marginTop: 10 }]}>
+                                            <Text style={styles.primaryButtonText}>{t('save_changes') || "Değişiklikleri Kaydet"}</Text>
+                                        </TouchableOpacity>
+
+                                    </View>
+                                </View>
+                            </KeyboardAvoidingView>
+                        </View>
+                    </TouchableWithoutFeedback>
                 </Modal>
 
                 {/* CONFIRM (Onay) */}
