@@ -154,7 +154,7 @@ export default function BlogPostScreen() {
                       resizeMode="contain"
                   />
                   <View style={styles.verticalDivider} />
-                  <Text style={styles.brandText}>Blog</Text>
+                  <Text style={styles.brandText}>{t('blog1')}</Text> 
               </TouchableOpacity>
 
         <TouchableOpacity 

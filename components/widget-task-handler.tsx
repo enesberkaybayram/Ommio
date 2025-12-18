@@ -4,6 +4,7 @@ import {
   IconWidget,
   TextWidget
 } from 'react-native-android-widget';
+import { TRANSLATIONS } from '../constants/translations';
 
 interface TaskData {
   text: string;
@@ -14,6 +15,11 @@ interface HabitData {
   title: string;
   completed: boolean;
 }
+
+const t = (key: string) => {
+    // @ts-ignore
+    return TRANSLATIONS[currentLang]?.[key] || TRANSLATIONS['en']?.[key] || key;
+  };
 
 // Interface'i dışarı aktarıyoruz ki _layout.tsx hata vermesin
 export interface WidgetProps {
@@ -49,11 +55,11 @@ export function WidgetTaskHandler({ tasks, habits, isPremium }: WidgetProps) {
           style={{ color: '#f59e0b', marginBottom: 10 }}
         />
         <TextWidget
-          text="Premium Özellik"
+          text={t('premium_oz')}
           style={{ fontSize: 16, fontWeight: 'bold', color: '#1e293b', marginBottom: 5 }}
         />
         <TextWidget
-          text="Widget'ı açmak için dokun."
+          text={t('tab_wdgt')}
           style={{ fontSize: 12, color: '#64748b' }}
         />
       </FlexWidget>
@@ -79,14 +85,14 @@ export function WidgetTaskHandler({ tasks, habits, isPremium }: WidgetProps) {
       {/* --- BAŞLIK: GÖREVLER --- */}
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
         <TextWidget
-          text="GÖREVLER"
+          text={t('task_progress_label')}
           style={{ fontSize: 11, fontWeight: 'bold', color: '#6366f1', letterSpacing: 1 }}
         />
       </FlexWidget>
 
       {tasks.length === 0 ? (
         <TextWidget
-          text="Görevler tamamlandı! 🎉"
+          text={t('task_cop')}
           style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic', marginBottom: 8 }}
         />
       ) : (
@@ -130,14 +136,14 @@ export function WidgetTaskHandler({ tasks, habits, isPremium }: WidgetProps) {
       {/* --- BAŞLIK: ALIŞKANLIKLAR --- */}
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
         <TextWidget
-          text="ALIŞKANLIKLAR"
+          text={t('habit_progress_label')}
           style={{ fontSize: 11, fontWeight: 'bold', color: '#f97316', letterSpacing: 1 }}
         />
       </FlexWidget>
 
       {habits.length === 0 ? (
         <TextWidget
-          text="Yeni bir hedef belirle 🚀"
+          text={t('new_hbt_t')}
           style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}
         />
       ) : (

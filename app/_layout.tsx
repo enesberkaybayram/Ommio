@@ -35,7 +35,7 @@ if (Platform.OS === 'android') {
 }
 
 // API Anahtarlarınız
-const API_KEY_IOS = "test_CCeaIBTLrhxUYhgkTdQcpZjFcLZ"; 
+const API_KEY_IOS = "appl_FVIiiqWmMwTSBrzzmJEYvkLiTCn"; 
 const API_KEY_ANDROID = "test_CCeaIBTLrhxUYhgkTdQcpZjFcLZ"; 
 
 // Splash ekranını otomatik gizlemeyi durdur (Gerekli işlemler bitene kadar)

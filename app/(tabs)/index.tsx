@@ -8,8 +8,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as SMS from 'expo-sms';
+import { useCallback } from 'react';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import WidgetCenter from 'react-native-widget-center';
 import { WidgetTaskHandler } from '../../widget-task-handler.android'; // Dosya yolunuza göre düzeltin
@@ -130,7 +131,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import LandingPage from '../../components/LandingPage';
-import { TRANSLATIONS } from '../../constants/translations'; // YENİ IMPORT
+import { TRANSLATIONS } from '../../constants/translations/index'; // YENİ IMPORT
 // Auth tipini güvenli hale getiriyoruz
 
 import * as WebBrowser from 'expo-web-browser';
@@ -945,7 +946,7 @@ export default function OmmioApp() {
             setTaskCommentInput("");
         } catch (e: any) {
             console.error("Yorum Gönderme Hatası:", e);
-            showToast(t('warning_title'), "Mesaj gönderilemedi: " + e.message, 'error');
+            showToast(t('warning_title'), t('cant_snd') + e.message, 'error');
         }
     };
     // --- GRUP ALIŞKANLIKLARINI DİNLEME ---
@@ -1596,7 +1597,7 @@ export default function OmmioApp() {
             setIsGuestModalOpen(false); // Modalı kapat
 
             // Kullanıcıya bilgi ver
-            showToast(t('success'), "Hesap oluşturuldu! Lütfen e-postanıza gelen doğrulama linkine tıklayın.", 'success');
+            showToast(t('success'), t('crct_maill'), 'success');
 
             // Not: Kullanıcı artık "isGuest: false" olduğu için ve "emailVerified: false" olduğu için,
             // return bloğundaki "E-posta Doğrulama Ekranı" otomatik olarak devreye girecektir.
@@ -1777,7 +1778,7 @@ export default function OmmioApp() {
     // --- ŞİFRE SIFIRLAMA E-POSTASI GÖNDERME ---
     const handlePasswordChange = async () => {
         if (!user || !user.email) {
-            showToast(t('error_title'), "E-posta adresi bulunamadı.", 'error');
+            showToast(t('error_title'), t('mail_cnt_f'), 'error');
             return;
         }
 
@@ -1798,7 +1799,7 @@ export default function OmmioApp() {
                 errorMsg = "Çok sık istek gönderdiniz, lütfen biraz bekleyin.";
             }
 
-            showToast(t('error_title'), "İşlem başarısız: " + errorMsg, 'error');
+            showToast(t('error_title'), t('faill') + errorMsg, 'error');
         } finally {
             setIsAuthLoading(false);
         }
@@ -1879,7 +1880,7 @@ export default function OmmioApp() {
 
             // 2. SIKI E-POSTA FORMAT KONTROLÜ (Regex)
             if (!isValidEmail(inputVal)) {
-                showToast(t('error_title'), "Lütfen geçerli bir e-posta adresi giriniz (örn: isim@mail.com).", 'warning');
+                showToast(t('error_title'), t('valid_mail_aub'), 'warning');
                 return;
             }
 
@@ -1901,7 +1902,7 @@ export default function OmmioApp() {
                 const checkUser = await getDocs(q);
                 if (!checkUser.empty) {
                     setIsAuthLoading(false);
-                    showToast("Hata", t('profile_username_taken'), 'warning');
+                    showToast(t('error_title'), t('profile_username_taken'), 'warning');
                     return;
                 }
 
@@ -1944,21 +1945,21 @@ export default function OmmioApp() {
                 setIsAuthLoading(false);
 
                 // Kullanıcıya bilgi ver
-                showToast(t('success'), "Kayıt başarılı! Lütfen e-postanıza gelen doğrulama linkine tıklayın.", 'success');
+                showToast(t('success'),t('scs_verify'), 'success');
 
             } catch (e: any) {
                 setIsAuthLoading(false);
                 console.error("Signup Error:", e);
-                let errorMsg = t('login_failed') || "Giriş başarısız.";
+                let errorMsg = t('login_failed');
 
                 if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                    errorMsg = t('wrong_password_msg') || "Girdiğiniz şifre hatalı.";
+                    errorMsg = t('wrong_password_msg') ;
                 } else if (e.message === "USER_NOT_FOUND" || e.code === 'auth/user-not-found') {
-                    errorMsg = t('username_not_found') || "Bu kullanıcı adı veya e-posta kayıtlı değil.";
+                    errorMsg = t('username_not_found');
                 } else if (e.code === 'auth/too-many-requests') {
-                    errorMsg = t('too_many_requests') || "Çok fazla deneme yaptınız, lütfen biraz bekleyin.";
+                    errorMsg = t('too_many_requests') ;
                 } else if (e.code === 'auth/invalid-email') {
-                    errorMsg = t('invalid_email') || "Geçersiz e-posta formatı.";
+                    errorMsg = t('invalid_email') ;
                 }
 
                 showToast(t('error_title'), errorMsg, 'error');
@@ -1967,11 +1968,28 @@ export default function OmmioApp() {
     }
 
     const handleLogout = async () => {
-        await signOut(auth); setTasks([]);
+    try {
+        // 1. ÖNCE WIDGET'I TEMİZLE (Boş veri gönder)
+        // Görevler: [], Alışkanlıklar: [], Premium: false
+        await updateWidgetData([], [], false); 
+        console.log("Widget temizlendi.");
+
+        // 2. SONRA ÇIKIŞ YAP
+        await signOut(auth);
+        setTasks([]);
+        setHabits([]);
+        
+        // Web için auth ekranı kontrolü
         if (Platform.OS === 'web') {
             setShowAuth(false);
         }
-    };
+        
+        showToast(t('success'), t('logout_success'), 'success');
+
+    } catch (e) {
+        console.error("Çıkış hatası:", e);
+    }
+};
 
     const pickImage = async () => {
         try {
@@ -2080,7 +2098,7 @@ export default function OmmioApp() {
 
                 // 3. State'i Güncelle (Anlık değişim için)
                 setUser((prev: any) => ({ ...prev, displayName: cleanDisplayName }));
-                showToast(t('success_label'), "İsminiz güncellendi.", 'success');
+                showToast(t('success_label'), t('updt_naam'), 'success');
             }
 
             // --- SENARYO B: Kullanıcı Adı Değişiyor (Zor olan) ---
@@ -2090,7 +2108,7 @@ export default function OmmioApp() {
                 const check = await getDocs(q);
 
                 if (!check.empty) {
-                    showToast("Hata", t('profile_username_taken'), 'error');
+                    showToast(t('error_title'), t('profile_username_taken'), 'error');
                     return;
                 }
 
@@ -2106,7 +2124,7 @@ export default function OmmioApp() {
 
                 // State Güncelle
                 setUser((prev: any) => ({ ...prev, ...updates }));
-                showToast(t('success_label'), "Profiliniz tamamen güncellendi.", 'success');
+                showToast(t('success_label'), t('prof_comp'), 'success');
             }
 
             setIsEditProfileVisible(false); // Modalı kapat
@@ -2457,7 +2475,7 @@ export default function OmmioApp() {
             if (habitNotifInput.length === 5 && Platform.OS !== 'web') {
                 const { status } = await Notifications.getPermissionsAsync();
                 if (status !== 'granted') {
-                    showToast(t('permission_required'), "Alışkanlık hatırlatıcıları için bildirim izni gerekli.", 'warning');
+                    showToast(t('permission_required'), t('prm_reqir'), 'warning');
                     // İzin yoksa bildirim kurmadan devam etsin mi yoksa dursun mu? 
                     // Genelde kullanıcıyı durdurmak iyidir ama kayıt edip bildirim kurmamayı da seçebilirsin.
                     // Aşağıdaki 'return' eklenirse işlem durur, kaldırılırsa bildirim kurmadan kaydeder.
@@ -2517,11 +2535,11 @@ export default function OmmioApp() {
     // --- GRUP OLUŞTURMA ---
     const handleCreateGroup = async () => {
         if (!newGroupTitle.trim()) {
-            showToast(t('warning_title'), "Lütfen grup adı girin.", 'warning');
+            showToast(t('warning_title'), t('grup_naam_als'), 'warning');
             return;
         }
         if (selectedGroupMembers.length === 0) {
-            showToast(t('warning_title'), "En az bir arkadaş seçmelisin.", 'warning');
+            showToast(t('warning_title'), t('least_1'), 'warning');
             return;
         }
 
@@ -2541,7 +2559,7 @@ export default function OmmioApp() {
             // Bildirim Gönderme (Seçilen arkadaşlara)
             // ... (Burada sendPushNotification fonksiyonunu döngüyle çağırabilirsin)
 
-            showToast(t('success'), "Grup alışkanlığı oluşturuldu!", 'success');
+            showToast(t('success'), t('ghbt_scs'), 'success');
             setIsGroupModalOpen(false);
             setNewGroupTitle("");
             setSelectedGroupMembers([]);
@@ -2566,7 +2584,7 @@ export default function OmmioApp() {
             // Yapmamışım, ekle
             newList = [...todaysList, user.uid];
             // Motivasyon efekti (Konfeti vb. eklenebilir)
-            showToast("Tebrikler!", "Bugünkü grup görevini tamamladın! 🎉", 'success');
+            showToast(t('premium_congrats'), t('grp_cong'), 'success');
         }
 
         // Firestore Update (Map içinde array güncelleme)
@@ -3102,7 +3120,7 @@ export default function OmmioApp() {
                                 >
                                     <Trash2 size={18} color={COLORS.danger} style={{ marginRight: 10 }} />
                                     <Text style={{ color: COLORS.danger, fontWeight: '600', fontSize: 14 }}>
-                                        Sohbeti Sil
+                                        {t('delete_chat')}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -3141,7 +3159,7 @@ export default function OmmioApp() {
                             <TextInput
                                 value={chatInput}
                                 onChangeText={setChatInput}
-                                placeholder="Mesaj yazın..."
+                                placeholder={t('write_message')}
                                 placeholderTextColor={currentColors.subText}
                                 multiline={true}
                                 blurOnSubmit={false}
@@ -3223,10 +3241,10 @@ export default function OmmioApp() {
                         {isMeDone ? (
                             <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
                                 <Check size={16} color="#16a34a" strokeWidth={3} />
-                                <Text style={{ color: '#16a34a', fontWeight: 'bold' }}>Tamam</Text>
+                                <Text style={{ color: '#16a34a', fontWeight: 'bold' }}>{t('ok_btn')}</Text>
                             </View>
                         ) : (
-                            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Ben Yaptım</Text>
+                            <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('i_did')}</Text>
                         )}
                     </TouchableOpacity>
                 </View>
@@ -3271,7 +3289,7 @@ export default function OmmioApp() {
                 {/* --- GENİŞLEYEN ANALİZ ALANI (LEADERBOARD) --- */}
                 {isExpanded && (
                     <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>🏆 Skor Tablosu</Text>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>{t('score_tbl')}</Text>
                         {memberStats?.map((member, index) => (
                             <View key={member.uid} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -3389,6 +3407,14 @@ export default function OmmioApp() {
         updateWidgetData(tasks, habits,isPremium);
     }
   }, [tasks, habits, user,isPremium]); // Tasks, Habits veya User değişirse çalışır
+  useFocusEffect(
+    useCallback(() => {
+        // Kullanıcı uygulamayı her açtığında widget'ı mevcut son durumla güncelle
+        if (user) {
+            updateWidgetData(tasks, habits, isPremium);
+        }
+    }, [tasks, habits, user, isPremium])
+);
     const styles = useMemo(() => getDynamicStyles(currentColors, isDark), [currentColors, isDark]);
     // --- renderTask FONKSİYONUNU BUNUNLA DEĞİŞTİR ---
     const renderTask = (task: Task) => {
@@ -3668,7 +3694,7 @@ export default function OmmioApp() {
                     </View>
 
                     <Text style={{ fontSize: 22, fontWeight: 'bold', color: currentColors.text, textAlign: 'center', marginBottom: 10 }}>
-                        E-posta Doğrulaması
+                       {t('mail_check')}
                     </Text>
 
                     <Text style={{ fontSize: 14, color: currentColors.subText, textAlign: 'center', marginBottom: 30, lineHeight: 22 }}>
@@ -3684,9 +3710,9 @@ export default function OmmioApp() {
                                 if (auth.currentUser?.emailVerified) {
                                     // State'i güncelle ki ekran değişsin
                                     setUser({ ...user, emailVerified: true });
-                                    showToast(t('success'), "Hesabınız doğrulandı!", 'success');
+                                    showToast(t('success'), t('acc_ok'), 'success');
                                 } else {
-                                    showToast(t('info'), "Henüz doğrulanmamış görünüyor. Lütfen mailinizi kontrol edip tekrar deneyin.", 'warning');
+                                    showToast(t('info'), t('nt_yt_chck'), 'warning');
                                 }
                             } catch (e) {
                                 console.log(e);
@@ -3696,7 +3722,7 @@ export default function OmmioApp() {
                         }}
                         style={{ backgroundColor: COLORS.primary, width: '100%', padding: 15, borderRadius: 12, alignItems: 'center', marginBottom: 15 }}
                     >
-                        {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Doğrulamayı Kontrol Et</Text>}
+                        {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{t('check_chck')}</Text>}
                     </TouchableOpacity>
 
                     {/* 2. Tekrar Gönder Butonu */}
@@ -3704,24 +3730,24 @@ export default function OmmioApp() {
                         onPress={async () => {
                             try {
                                 await sendEmailVerification(user);
-                                showToast(t('success'), "Doğrulama e-postası tekrar gönderildi.", 'success');
+                                showToast(t('success'), t('send_again_mail_cc'), 'success');
                             } catch (e: any) {
                                 if (e.code === 'auth/too-many-requests') {
-                                    showToast("Hata", "Çok sık istek gönderdiniz, lütfen bekleyin.", 'error');
+                                    showToast("Hata", t('te_veel_req') , 'error');
                                 } else {
-                                    showToast("Hata", "E-posta gönderilemedi.", 'error');
+                                    showToast("Hata", t('uns_sen_mail'), 'error');
                                 }
                             }
                         }}
                         style={{ padding: 15, width: '100%', alignItems: 'center', marginBottom: 15 }}
                     >
-                        <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Tekrar E-posta Gönder</Text>
+                        <Text style={{ color: COLORS.primary, fontWeight: '600' }}>{t('send_again')}</Text>
                     </TouchableOpacity>
 
                     {/* 3. Çıkış Yap / Yanlış Mail */}
                     <TouchableOpacity onPress={handleLogout}>
                         <Text style={{ color: currentColors.subText, fontSize: 13, textDecorationLine: 'underline' }}>
-                            Farklı bir e-posta ile giriş yap
+                            {t('different_mail')}
                         </Text>
                     </TouchableOpacity>
 
@@ -4347,7 +4373,7 @@ export default function OmmioApp() {
                                     <View style={{ marginTop: 25 }}>
                                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
                                             <Text style={{ fontSize: 18, fontWeight: '800', color: currentColors.text }}>
-                                                {t('groups') || "Grup Hedefleri"}
+                                                {t('groups_t')}
                                             </Text>
                                             <TouchableOpacity
                                                 onPress={() => setIsGroupModalOpen(true)}
@@ -4364,8 +4390,8 @@ export default function OmmioApp() {
                                         ) : (
                                             <TouchableOpacity onPress={() => setIsGroupModalOpen(true)} style={{ padding: 20, backgroundColor: currentColors.surface, borderRadius: 20, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: currentColors.subText }}>
                                                 <Users size={32} color={currentColors.subText} style={{ marginBottom: 10 }} />
-                                                <Text style={{ color: currentColors.subText, textAlign: 'center' }}>Arkadaşlarınla ortak bir hedef belirle!</Text>
-                                                <Text style={{ color: COLORS.primary, fontWeight: 'bold', marginTop: 5 }}>+ Grup Oluştur</Text>
+                                                <Text style={{ color: currentColors.subText, textAlign: 'center' }}>{t('frnd_hbt')}</Text>
+                                                <Text style={{ color: COLORS.primary, fontWeight: 'bold', marginTop: 5 }}>{t('crt_group')}</Text>
                                             </TouchableOpacity>
                                         )}
                                     </View>
@@ -4440,7 +4466,7 @@ export default function OmmioApp() {
                                                     <TextInput
                                                         value={searchFriends}
                                                         onChangeText={setSearchFriends}
-                                                        placeholder={t('search_chats') || "Sohbet ara (Ad veya Kullanıcı Adı)"}
+                                                        placeholder={t('search_chats')}
                                                         placeholderTextColor={currentColors.subText}
                                                         style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
                                                     />
@@ -4463,7 +4489,7 @@ export default function OmmioApp() {
                                                         {t('no_connections')}
                                                     </Text>
                                                     <Text style={{ color: currentColors.subText, textAlign: 'center', maxWidth: 250 }}>
-                                                        Arkadaş ekleyerek sohbet etmeye başlayın.
+                                                        {t('ad_frnd')}
                                                     </Text>
                                                 </View>
                                             ) : (
@@ -4650,7 +4676,7 @@ export default function OmmioApp() {
                                                 <TextInput
                                                     value={searchFriends}
                                                     onChangeText={setSearchFriends}
-                                                    placeholder={t('search_friends') || "Arkadaş ara (Ad veya Kullanıcı Adı)"}
+                                                    placeholder={t('search_chats')}
                                                     placeholderTextColor={currentColors.subText}
                                                     style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
                                                 />
@@ -4704,7 +4730,7 @@ export default function OmmioApp() {
                                                         >
                                                             <View>
                                                                 <Text style={{ color: currentColors.text, fontWeight: '700', fontSize: 16 }}>{req.fromUsername}</Text>
-                                                                <Text style={{ color: currentColors.subText, fontSize: 12, marginTop: 2 }}>İstek gönderdi</Text>
+                                                                <Text style={{ color: currentColors.subText, fontSize: 12, marginTop: 2 }}>{t('istek')}</Text>
                                                             </View>
                                                             <View style={{ flexDirection: 'row', gap: 12 }}>
                                                                 <TouchableOpacity onPress={() => rejectRequest(req.id)} style={{ padding: 6, backgroundColor: '#fee2e2', borderRadius: 10 }}>
@@ -4938,7 +4964,7 @@ export default function OmmioApp() {
 
                                             {(user.isAnonymous || user.isGuest) && (
                                                 <View style={{ marginTop: 8, backgroundColor: '#fff7ed', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' }}>
-                                                    <Text style={{ fontSize: 11, color: '#c2410c', fontWeight: 'bold' }}>Misafir Hesabı</Text>
+                                                    <Text style={{ fontSize: 11, color: '#c2410c', fontWeight: 'bold' }}>{t('guest_acc')}</Text>
                                                 </View>
                                             )}
                                         </View>
@@ -5100,8 +5126,8 @@ export default function OmmioApp() {
                                                     <Check size={24} color="#fff" strokeWidth={3} />
                                                 </View>
                                                 <View>
-                                                    <Text style={{ color: currentColors.text, fontWeight: 'bold', fontSize: 16 }}>Premium Üyesiniz</Text>
-                                                    <Text style={{ color: currentColors.subText, fontSize: 12, marginTop: 2 }}>Tüm özellikler aktif ✨</Text>
+                                                    <Text style={{ color: currentColors.text, fontWeight: 'bold', fontSize: 16 }}>{t('uyesiniz')}</Text>
+                                                    <Text style={{ color: currentColors.subText, fontSize: 12, marginTop: 2 }}>{t('all_active')}</Text>
                                                 </View>
                                             </View>
                                         )}
@@ -5292,7 +5318,7 @@ export default function OmmioApp() {
                                     <View style={{ flexDirection: 'row', gap: 15, marginBottom: 15 }}>
                                         {/* Öncelik Seçimi */}
                                         <View style={{ flex: 1 }}>
-                                            <Text style={styles.sectionTitle}>Öncelik</Text>
+                                            <Text style={styles.sectionTitle}>{t('priority')}</Text>
                                             <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 12, padding: 4 }}>
                                                 {['low', 'medium', 'high'].map((p) => {
                                                     const isSelected = priority === p;
@@ -5318,7 +5344,7 @@ export default function OmmioApp() {
 
                                         {/* Dosya Ekleme */}
                                         <View style={{ flex: 1 }}>
-                                            <Text style={styles.sectionTitle}>Ekler ({attachments.length})</Text>
+                                            <Text style={styles.sectionTitle}>{t('ekler')} ({attachments.length})</Text>
                                             <TouchableOpacity
                                                 onPress={pickDocument}
                                                 style={{
@@ -5360,7 +5386,7 @@ export default function OmmioApp() {
                                             marginBottom: 6, 
                                             textTransform: 'uppercase' 
                                         }}>
-                                            {t('start_date') || "Başlangıç"}
+                                            {t('start_date')}
                                         </Text>
                                         
                                         <View style={{ 
@@ -5414,7 +5440,7 @@ export default function OmmioApp() {
                                             marginBottom: 6, 
                                             textTransform: 'uppercase' 
                                         }}>
-                                            {t('due_date') || "Bitiş"}
+                                            {t('due_date')}
                                         </Text>
                                         
                                         <View style={{ 
@@ -5669,7 +5695,7 @@ export default function OmmioApp() {
                                             style={[styles.freqPill, newHabitFreq === freq && styles.freqPillActive]}
                                         >
                                             <Text style={[styles.freqText, newHabitFreq === freq && styles.freqTextActive]}>
-                                                {t(freq)}
+                                                {t('freq')}
                                             </Text>
                                         </TouchableOpacity>
                                     ))}
@@ -5759,7 +5785,7 @@ export default function OmmioApp() {
                                     </View>
                                     <View style={styles.iconInputRow}>
                                         <Mail size={20} color={currentColors.subText} />
-                                        <TextInput value={email} onChangeText={setEmail} placeholder="E-posta" placeholderTextColor={currentColors.subText} style={styles.flexInput} autoCapitalize='none' keyboardType="email-address" />
+                                        <TextInput value={email} onChangeText={setEmail} placeholder={t('email')} placeholderTextColor={currentColors.subText} style={styles.flexInput} autoCapitalize='none' keyboardType="email-address" />
                                     </View>
                                     <View style={styles.iconInputRow}>
                                         <Lock size={20} color={currentColors.subText} />
@@ -5813,7 +5839,7 @@ export default function OmmioApp() {
                                         backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc' // Hafif header tonu
                                     }}>
                                         <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>
-                                            {t('select_date') || "Tarih Seç"}
+                                            {t('select_date')}
                                         </Text>
                                         <TouchableOpacity 
                                             onPress={() => setShowDatePicker(false)}
@@ -5945,7 +5971,7 @@ export default function OmmioApp() {
                                         </View>
                                         {selectedTask?.attachments && selectedTask.attachments.length > 0 && (
                                             <View>
-                                                <Text style={styles.sectionLabel}>Ekli Dosyalar</Text>
+                                                <Text style={styles.sectionLabel}>{t('atch')}</Text>
                                                 <View style={{ gap: 8 }}>
                                                     {selectedTask.attachments.map((file: any, index: number) => (
                                                         <TouchableOpacity
@@ -5965,7 +5991,7 @@ export default function OmmioApp() {
                                                             </View>
                                                             <View style={{ flex: 1 }}>
                                                                 <Text numberOfLines={1} style={{ color: currentColors.text, fontWeight: '600' }}>{file.name}</Text>
-                                                                <Text style={{ fontSize: 10, color: currentColors.subText }}>Doküman / Görsel</Text>
+                                                                <Text style={{ fontSize: 10, color: currentColors.subText }}>{t('doc_pic')}</Text>
                                                             </View>
                                                             <Download size={20} color={currentColors.subText} />
                                                         </TouchableOpacity>
@@ -6040,7 +6066,7 @@ export default function OmmioApp() {
                                                         <MessageCircle size={40} color={currentColors.subText} />
                                                     </View>
                                                     <Text style={{ color: currentColors.text, fontWeight: '600' }}>{t('no_comments_yet')}</Text>
-                                                    <Text style={{ color: currentColors.subText, fontSize: 12 }}>Bu görev hakkında not veya yorum ekleyin.</Text>
+                                                    <Text style={{ color: currentColors.subText, fontSize: 12 }}>{t('tsk_note')}</Text>
                                                 </View>
                                             }
                                         />
@@ -6144,7 +6170,7 @@ export default function OmmioApp() {
 
                             {/* Header */}
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>{t('connections') || "Bağlantılar"}</Text>
+                                <Text style={styles.modalTitle}>{t('connections')}</Text>
                                 <TouchableOpacity onPress={() => setIsNetworkModalOpen(false)}>
                                     <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
                                 </TouchableOpacity>
@@ -6157,7 +6183,7 @@ export default function OmmioApp() {
                                     style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'ommio' ? (isDark ? '#1e293b' : '#fff') : 'transparent', shadowColor: networkTab === 'ommio' ? "#000" : "transparent", shadowOpacity: 0.1, elevation: networkTab === 'ommio' ? 2 : 0 }}
                                 >
                                     <Text style={{ fontWeight: 'bold', color: networkTab === 'ommio' ? currentColors.text : currentColors.subText }}>
-                                        {t('auth_username_placeholder') || "Kullanıcı Adı"}
+                                        {t('auth_username_placeholder')}
                                     </Text>
                                 </TouchableOpacity>
 
@@ -6166,7 +6192,7 @@ export default function OmmioApp() {
                                     style={{ flex: 1, padding: 8, alignItems: 'center', borderRadius: 10, backgroundColor: networkTab === 'contacts' ? (isDark ? '#1e293b' : '#fff') : 'transparent', shadowColor: networkTab === 'contacts' ? "#000" : "transparent", shadowOpacity: 0.1, elevation: networkTab === 'contacts' ? 2 : 0 }}
                                 >
                                     <Text style={{ fontWeight: 'bold', color: networkTab === 'contacts' ? currentColors.text : currentColors.subText }}>
-                                        {t('find_from_contacts') || "Rehber"}
+                                        {t('find_from_contacts')}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -6175,7 +6201,7 @@ export default function OmmioApp() {
                             {networkTab === 'ommio' ? (
                                 <View style={{ gap: 20 }}>
                                     <Text style={{ color: currentColors.subText, fontSize: 14 }}>
-                                        {t('add_friend_prompt') || "Arkadaşının kullanıcı adını girerek istek gönder."}
+                                        {t('add_friend_prompt')}
                                     </Text>
 
                                     <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -6184,7 +6210,7 @@ export default function OmmioApp() {
                                             <TextInput
                                                 value={searchUsername}
                                                 onChangeText={setSearchUsername}
-                                                placeholder={t('search_username') || "kullaniciadi"}
+                                                placeholder={t('search_username')}
                                                 placeholderTextColor={currentColors.subText}
                                                 style={[styles.authInput, { color: currentColors.text }]}
                                                 autoCapitalize='none'
@@ -6202,7 +6228,7 @@ export default function OmmioApp() {
                                     {/* Bilgilendirme */}
                                     <View style={{ backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : '#eff6ff', padding: 15, borderRadius: 12, borderLeftWidth: 4, borderLeftColor: COLORS.primary }}>
                                         <Text style={{ color: currentColors.text, fontSize: 13 }}>
-                                            💡 Kullanıcı adı tam eşleşmelidir. Büyük/küçük harf duyarlı değildir.
+                                            {t('usr_exctly')}
                                         </Text>
                                     </View>
                                 </View>
@@ -6220,13 +6246,13 @@ export default function OmmioApp() {
                                             </View>
                                             <TouchableOpacity onPress={() => inviteContact(item.phoneNumber)} style={{ backgroundColor: isDark ? '#334155' : '#eff6ff', padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                                                 <Send size={14} color={COLORS.primary} />
-                                                <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: 'bold' }}>Davet Et</Text>
+                                                <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: 'bold' }}>{t('social_invite_btn')}</Text>
                                             </TouchableOpacity>
                                         </View>
                                     )}
                                     ListEmptyComponent={
                                         <Text style={{ textAlign: 'center', color: currentColors.subText, marginTop: 40 }}>
-                                            {t('contacts_loading_or_denied') || "Kişiler yükleniyor veya izin verilmedi."}
+                                            {t('contacts_loading_or_denied')}
                                         </Text>
                                     }
                                 />
@@ -6317,7 +6343,7 @@ export default function OmmioApp() {
                                 {/* Header */}
                                 <View style={styles.modalHeader}>
                                     <Text style={styles.modalTitle}>
-                                        {t('change_password') || "Şifre Değiştir"}
+                                        {t('change_password')}
                                     </Text>
                                     <TouchableOpacity onPress={() => setIsPasswordModalOpen(false)}>
                                         <X size={24} color={currentColors.subText} />
@@ -6330,7 +6356,7 @@ export default function OmmioApp() {
                                         <Mail size={30} color="#0284c7" />
                                     </View>
                                     <Text style={{ textAlign: 'center', color: currentColors.text, fontSize: 16, fontWeight: '600', marginBottom: 5 }}>
-                                        E-posta Gönderilsin mi?
+                                        {t('snd_maill')}
                                     </Text>
                                     <Text style={{ textAlign: 'center', color: currentColors.subText, fontSize: 14, lineHeight: 20 }}>
                                         <Text style={{ fontWeight: 'bold' }}>{user?.email}</Text> adresine şifrenizi yenilemeniz için bir bağlantı göndereceğiz.
@@ -6343,12 +6369,12 @@ export default function OmmioApp() {
                                         {isAuthLoading ? (
                                             <ActivityIndicator color="#fff" />
                                         ) : (
-                                            <Text style={styles.primaryButtonText}>Bağlantıyı Gönder</Text>
+                                            <Text style={styles.primaryButtonText}>{t('snd_cnc')}</Text>
                                         )}
                                     </TouchableOpacity>
 
                                     <TouchableOpacity onPress={() => setIsPasswordModalOpen(false)} style={{ padding: 10, alignItems: 'center' }}>
-                                        <Text style={{ color: currentColors.subText }}>Vazgeç</Text>
+                                        <Text style={{ color: currentColors.subText }}>{t('cancel_btn')}</Text>
                                     </TouchableOpacity>
                                 </View>
 
@@ -6366,7 +6392,7 @@ export default function OmmioApp() {
                     >
                         <View style={[styles.centerCard, { padding: 0, overflow: 'hidden', maxHeight: 500 }]}>
                             <View style={{ padding: 20, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text style={styles.modalTitle}>{t('select_language') || "Dil Seçimi"}</Text>
+                                <Text style={styles.modalTitle}>{t('select_language')}</Text>
                                 <TouchableOpacity onPress={() => setIsLangModalOpen(false)}>
                                     <X size={24} color={currentColors.subText} />
                                 </TouchableOpacity>
@@ -6417,7 +6443,7 @@ export default function OmmioApp() {
                             <View style={{ padding: 20, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <View>
                                     <Text style={styles.modalTitle}>{friendTasksModal.friendName}</Text>
-                                    <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('my_assigned_tasks') || "Atadığım Görevler"}</Text>
+                                    <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('my_assigned_tasks')}</Text>
                                 </View>
                                 <TouchableOpacity onPress={() => setFriendTasksModal({ visible: false, tasks: [], friendName: '' })}>
                                     <X size={24} color={currentColors.subText} />
@@ -6432,7 +6458,7 @@ export default function OmmioApp() {
                                 ListEmptyComponent={
                                     <View style={{ alignItems: 'center', marginTop: 50, opacity: 0.6 }}>
                                         <ListTodo size={40} color={currentColors.subText} />
-                                        <Text style={{ marginTop: 10, color: currentColors.subText }}>Henüz aktif bir görev atamadın.</Text>
+                                        <Text style={{ marginTop: 10, color: currentColors.subText }}>{t('geen_tsk')}</Text>
                                     </View>
                                 }
                                 renderItem={({ item }) => (
@@ -6505,7 +6531,7 @@ export default function OmmioApp() {
                         <View style={{ padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View>
                                 <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('agenda') || "Tüm Planlar"}</Text>
-                                <Text style={{ fontSize: 12, color: currentColors.subText }}>Yaklaşan görevleriniz (Tarihe göre)</Text>
+                                <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('tsk_soon')}</Text>
                             </View>
                             <TouchableOpacity onPress={() => setIsAllTasksModalOpen(false)} style={{ padding: 5 }}>
                                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
@@ -6518,7 +6544,7 @@ export default function OmmioApp() {
                             <TextInput
                                 value={searchTasks}
                                 onChangeText={setSearchTasks}
-                                placeholder={t('search_tasks') || "Görev ara"}
+                                placeholder={t('search_tasks')}
                                 placeholderTextColor={currentColors.subText}
                                 style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
                             />
@@ -6541,7 +6567,7 @@ export default function OmmioApp() {
                             ListEmptyComponent={
                                 <View style={{ alignItems: 'center', marginTop: 100, opacity: 0.6 }}>
                                     <CalendarDays size={50} color={currentColors.subText} />
-                                    <Text style={{ marginTop: 15, color: currentColors.subText, fontSize: 16 }}>Planlanmış görev yok.</Text>
+                                    <Text style={{ marginTop: 15, color: currentColors.subText, fontSize: 16 }}>{t('no_plan_tsk')}</Text>
                                 </View>
                             }
                             renderItem={({ item }) => {
@@ -6622,8 +6648,8 @@ export default function OmmioApp() {
                         {/* Header */}
                         <View style={{ padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View>
-                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('analysis') || "Analiz Raporu"}</Text>
-                                <Text style={{ fontSize: 12, color: currentColors.subText }}>Alışkanlık performansın</Text>
+                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('analysis')}</Text>
+                                <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('prfm_hbt')}</Text>
                             </View>
                             <TouchableOpacity onPress={() => setIsHabitStatsModalOpen(false)} style={{ padding: 5 }}>
                                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
@@ -6669,7 +6695,7 @@ export default function OmmioApp() {
                                                 <View style={{ padding: 8, backgroundColor: '#eff6ff', borderRadius: 10 }}>
                                                     <TrendingUp size={20} color="#3b82f6" />
                                                 </View>
-                                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>Son 7 Gün Aktivitesi</Text>
+                                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{t('last_svn')}</Text>
                                             </View>
 
                                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 150 }}>
@@ -6710,13 +6736,13 @@ export default function OmmioApp() {
                                                         <Award size={24} color="#16a34a" />
                                                     </View>
                                                     <View>
-                                                        <Text style={{ fontSize: 13, color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>En İstikrarlı</Text>
+                                                        <Text style={{ fontSize: 13, color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('istikrar')}</Text>
                                                         <Text style={{ fontSize: 18, color: '#14532d', fontWeight: '900' }}>{bestHabit.title}</Text>
                                                     </View>
                                                 </View>
                                                 <View style={{ marginTop: 15, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                                                     <Text style={{ fontSize: 32, fontWeight: '900', color: '#16a34a' }}>{bestHabit.completedDates.length}</Text>
-                                                    <Text style={{ fontSize: 14, color: '#15803d', fontWeight: '500', marginBottom: 5 }}>kez tamamlandı</Text>
+                                                    <Text style={{ fontSize: 14, color: '#15803d', fontWeight: '500', marginBottom: 5 }}>{t('times_done')}</Text>
                                                 </View>
                                             </View>
                                         )}
@@ -6729,19 +6755,19 @@ export default function OmmioApp() {
                                                         <AlertTriangle size={24} color="#ea580c" />
                                                     </View>
                                                     <View>
-                                                        <Text style={{ fontSize: 13, color: '#c2410c', fontWeight: 'bold', textTransform: 'uppercase' }}>İlgi Bekliyor</Text>
+                                                        <Text style={{ fontSize: 13, color: '#c2410c', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('bekli')}</Text>
                                                         <Text style={{ fontSize: 18, color: '#7c2d12', fontWeight: '900' }}>{worstHabit.title}</Text>
                                                     </View>
                                                 </View>
                                                 <Text style={{ marginTop: 10, color: '#9a3412', fontSize: 14 }}>
-                                                    Bu alışkanlığı düzenli yapmakta zorlanıyorsun. Belki hedefini küçültebilirsin?
+                                                    {t('sml_tsk')}
                                                 </Text>
                                             </View>
                                         )}
 
                                         {/* --- 5. DETAYLI LİSTE --- */}
                                         <View>
-                                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>Detaylı Sıralama</Text>
+                                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>{t('detail_sira')}</Text>
                                             {sortedHabits.map((habit, index) => (
                                                 <View key={habit.id} style={{
                                                     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -6753,7 +6779,7 @@ export default function OmmioApp() {
                                                     </View>
                                                     <View style={{ backgroundColor: index === 0 ? '#dcfce7' : (isDark ? '#334155' : '#f1f5f9'), paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
                                                         <Text style={{ fontWeight: 'bold', color: index === 0 ? '#166534' : currentColors.text, fontSize: 12 }}>
-                                                            {habit.completedDates.length} <Text style={{ fontSize: 10 }}>kez</Text>
+                                                            {habit.completedDates.length} <Text style={{ fontSize: 10 }}>{t('kez')}</Text>
                                                         </Text>
                                                     </View>
                                                 </View>
@@ -6774,7 +6800,7 @@ export default function OmmioApp() {
 
                             {/* Header */}
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>Yeni Grup Alışkanlığı</Text>
+                                <Text style={styles.modalTitle}>{t('new_ghbt')}</Text>
                                 <TouchableOpacity onPress={() => setIsGroupModalOpen(false)}>
                                     <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('cancel')}</Text>
                                 </TouchableOpacity>
@@ -6784,11 +6810,11 @@ export default function OmmioApp() {
 
                                 {/* İsim */}
                                 <View>
-                                    <Text style={styles.sectionLabel}>Grup / Alışkanlık Adı</Text>
+                                    <Text style={styles.sectionLabel}>{t('gname')}</Text>
                                     <TextInput
                                         value={newGroupTitle}
                                         onChangeText={setNewGroupTitle}
-                                        placeholder="Örn: Her gün 10K Adım, Kitap Okuma..."
+                                        placeholder={t('example_hbbt')}
                                         placeholderTextColor={currentColors.subText}
                                         style={styles.inputField}
                                     />
@@ -6796,9 +6822,9 @@ export default function OmmioApp() {
 
                                 {/* Arkadaş Seçimi */}
                                 <View>
-                                    <Text style={styles.sectionLabel}>Arkadaşlarını Davet Et</Text>
+                                    <Text style={styles.sectionLabel}>{t('feat_social_link')}</Text>
                                     {contacts.length === 0 ? (
-                                        <Text style={{ color: currentColors.subText, fontStyle: 'italic' }}>Henüz arkadaşın yok. Önce arkadaş eklemelisin.</Text>
+                                        <Text style={{ color: currentColors.subText, fontStyle: 'italic' }}>{t('add_none_f')}</Text>
                                     ) : (
                                         <View style={{ gap: 10 }}>
                                             {contacts.map(contact => {
@@ -6838,7 +6864,7 @@ export default function OmmioApp() {
                                 </View>
 
                                 <TouchableOpacity onPress={handleCreateGroup} style={[styles.primaryButton, { marginTop: 20 }]}>
-                                    {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Grubu Kur</Text>}
+                                    {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{t('set_grp')}</Text>}
                                 </TouchableOpacity>
 
                             </ScrollView>
@@ -6853,8 +6879,8 @@ export default function OmmioApp() {
                         {/* Header */}
                         <View style={{ padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View>
-                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>Tamamlananlar</Text>
-                                <Text style={{ fontSize: 12, color: currentColors.subText }}>Başardığın görevlerin listesi</Text>
+                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('completed')}</Text>
+                                <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('cmp_tsk')}</Text>
                             </View>
                             <TouchableOpacity onPress={() => setIsHistoryModalOpen(false)} style={{ padding: 5 }}>
                                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
@@ -6866,7 +6892,7 @@ export default function OmmioApp() {
                             <TextInput
                                 value={searchHistory}
                                 onChangeText={setSearchHistory}
-                                placeholder={t('search_history') || "Geçmişten ara"}
+                                placeholder={t('search_history')}
                                 placeholderTextColor={currentColors.subText}
                                 style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
                             />
@@ -6891,7 +6917,7 @@ export default function OmmioApp() {
                                     <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
                                         <CheckCircle2 size={40} color={COLORS.success} />
                                     </View>
-                                    <Text style={{ marginTop: 15, color: currentColors.subText, fontSize: 16 }}>Henüz tamamlanmış görev yok.</Text>
+                                    <Text style={{ marginTop: 15, color: currentColors.subText, fontSize: 16 }}>{t('no_done_tsk')}</Text>
                                 </View>
                             }
                             renderItem={({ item }) => {
@@ -6981,7 +7007,7 @@ export default function OmmioApp() {
                                     
                                     {/* Başlık ve Kapatma Butonu */}
                                     <View style={styles.modalHeader}>
-                                        <Text style={styles.modalTitle}>{t('edit_profile') || "Profili Düzenle"}</Text>
+                                        <Text style={styles.modalTitle}>{t('edit_profile')}</Text>
                                         <TouchableOpacity onPress={() => setIsEditProfileVisible(false)}>
                                             <X size={24} color={currentColors.subText} />
                                         </TouchableOpacity>
@@ -6991,13 +7017,13 @@ export default function OmmioApp() {
                                         
                                         {/* İsim Soyisim Input */}
                                         <View>
-                                            <Text style={styles.sectionLabel}>{t('display_name_label') || "Görünen İsim"}</Text>
+                                            <Text style={styles.sectionLabel}>{t('display_name_label')}</Text>
                                             <View style={styles.iconInputRow}>
                                                 <User size={20} color={currentColors.subText} />
                                                 <TextInput 
                                                     value={editDisplayNameInput} 
                                                     onChangeText={setEditDisplayNameInput} 
-                                                    placeholder="İsminiz" 
+                                                    placeholder={t('jouw_naam')} 
                                                     placeholderTextColor={currentColors.subText} 
                                                     style={styles.flexInput} 
                                                 />
@@ -7006,26 +7032,26 @@ export default function OmmioApp() {
 
                                         {/* Kullanıcı Adı Input */}
                                         <View>
-                                            <Text style={styles.sectionLabel}>{t('username_label') || "Kullanıcı Adı"}</Text>
+                                            <Text style={styles.sectionLabel}>{t('auth_username_placeholder')}</Text>
                                             <View style={styles.iconInputRow}>
                                                 <Text style={{ fontSize: 18, color: currentColors.subText, fontWeight: 'bold', paddingLeft: 5 }}>@</Text>
                                                 <TextInput 
                                                     value={editUsernameInput} 
                                                     onChangeText={setEditUsernameInput} 
-                                                    placeholder="kullaniciadi" 
+                                                    placeholder={t('auth_username_placeholder')}
                                                     placeholderTextColor={currentColors.subText} 
                                                     style={styles.flexInput} 
                                                     autoCapitalize='none'
                                                 />
                                             </View>
                                             <Text style={{ fontSize: 11, color: COLORS.warning, marginTop: 5 }}>
-                                                ⚠️ {t('username_change_warning') || "Kullanıcı adını değiştirmek arkadaşlarınızın sizi bulmasını zorlaştırabilir."}
+                                                 {t('username_change_warning')}
                                             </Text>
                                         </View>
 
                                         {/* Kaydet Butonu */}
                                         <TouchableOpacity onPress={handleUpdateProfile} style={[styles.primaryButton, { marginTop: 10 }]}>
-                                            <Text style={styles.primaryButtonText}>{t('save_changes') || "Değişiklikleri Kaydet"}</Text>
+                                            <Text style={styles.primaryButtonText}>{t('save_changes')}</Text>
                                         </TouchableOpacity>
 
                                     </View>

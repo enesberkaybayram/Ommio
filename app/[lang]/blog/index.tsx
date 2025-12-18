@@ -84,7 +84,7 @@ export default function BlogListScreen() {
               resizeMode="contain"
           />
           <View style={styles.verticalDivider} />
-          <Text style={styles.brandText}>t('blog_header')</Text>
+          <Text style={styles.brandText}>{t('blog_header')}</Text>
       </TouchableOpacity>
 
         {/* Sağ: Dil Seçimi */}
