@@ -654,7 +654,6 @@ export default function OmmioApp() {
     const currentRedirectUri = React.useMemo(() => {
         return AuthSession.makeRedirectUri({
             scheme: 'ommioapp',
-            path: 'auth' // Bunu eklemek bazen sorunu çözer
         });
     }, []);
 
