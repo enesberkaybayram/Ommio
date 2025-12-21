@@ -1,94 +1,102 @@
-import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
-// --- GERÇEK UYGULAMA İÇİN (Development Build aldığında burayı aç) ---
-// import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
-// const adUnitId = __DEV__ ? TestIds.BANNER : 'ca-app-pub-xxxxxxxxxxxxx/yyyyyyyyyy';
+// -----------------------------------------------------------------------
+// 🚨 AYARLAR BÖLÜMÜ
+// -----------------------------------------------------------------------
+
+// 1. GERÇEK REKLAM ID'NİZİ BURAYA YAZIN (AdMob Sitesinden aldığınız /'lı olan)
+
+// const PRODUCTION_ID = 'ca-app-pub-2340385969287749/2487423264'; 
+
+// 2. ID SEÇİM MANTIĞI:
+// - __DEV__ true ise (Bilgisayarda kod yazıyorsanız): TEST ID kullanır.
+// - __DEV__ false ise (TestFlight veya App Store): GERÇEK ID kullanır.
+
+// const adUnitId = __DEV__ ? TestIds.BANNER : PRODUCTION_ID;
+const adUnitId = TestIds.BANNER;
+// -----------------------------------------------------------------------
 
 export default function OmmioAdBanner({ isPremium }: { isPremium: boolean }) {
-  // 1. Premium ise hiçbir şey gösterme
+  // Hata durumunu takip etmek için state (Opsiyonel, reklam yüklenmezse alanı gizler)
+  const [adError, setAdError] = useState(false);
+
+  // 1. KULLANICI PREMIUM İSE -> HİÇBİR ŞEY GÖSTERME
   if (isPremium) return null;
 
-  // 2. WEB İSE -> Web'e özel geniş kutu göster (AdMob Web'de çalışmaz)
+  // 2. WEB İSE -> ADSENSE YER TUTUCUSU GÖSTER
   if (Platform.OS === 'web') {
     return (
-      <View style={styles.container}>
-        <View style={[styles.placeholder, styles.webPlaceholder]}>
-          <Text style={styles.text}>Reklam Alanı (Web)</Text>
-          <Text style={styles.subText}>Google AdSense entegrasyonu buraya yapılacak.</Text>
-          {/* GERÇEK WEB REKLAMI İÇİN:
-           Buraya Google AdSense scriptini veya iframe'ini koymalısınız.
-           Örnek:
-           <iframe 
-             src="https://your-adsense-url..." 
-             style={{border: 0, width: 320, height: 50}} 
-           />
-        */}
+      <View style={styles.webContainer}>
+        <View style={styles.webPlaceholder}>
+          <Text style={styles.webText}>Reklam Alanı (Web)</Text>
+          <Text style={styles.webSubText}>Google AdSense buraya gelecek.</Text>
         </View>
       </View>
     );
   }
 
-  // 3. MOBİL (EXPO GO / SİMÜLATÖR) İSE -> Küçük kutu göster
-  // (Çünkü Expo Go'da 'react-native-google-mobile-ads' çalıştırırsan uygulama çöker)
+  // 3. MOBİL (IOS / ANDROID) -> GERÇEK ADMOB REKLAMI
   return (
-    <View style={styles.container}>
-      <View style={styles.placeholder}>
-        <Text style={styles.text}>Reklam Alanı (Mobile)</Text>
-        <Text style={styles.subText}>Expo Go modunda reklamlar görünmez.</Text>
-      </View>
+    <View style={styles.mobileContainer}>
+      {/* Eğer hata aldıysak boş kutu gösterme, alanı gizle */}
+      {!adError && (
+        <BannerAd
+          unitId={adUnitId}
+          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          requestOptions={{
+            requestNonPersonalizedAdsOnly: true,
+          }}
+          // 👇 BU KISMI EKLEYİN
+        onAdFailedToLoad={(error) => {
+          // Reklam yüklenemezse hatayı ekrana bas
+          Alert.alert(
+            "AdMob ID Bulucu", 
+            "Hata Mesajı: " + error.message
+    );
+  }}
+        />
+      )}
     </View>
   );
-
-  // --- 4. GERÇEK MOBİL REKLAM KODU (BUILD SONRASI BU BLOĞU AÇACAKSIN) ---
-  /*
-  return (
-    <View style={{ alignItems: 'center', marginVertical: 10 }}>
-      <BannerAd
-        unitId={adUnitId}
-        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-        requestOptions={{
-          requestNonPersonalizedAdsOnly: true,
-        }}
-      />
-    </View>
-  );
-  */
 }
 
 const styles = StyleSheet.create({
-  container: {
+  // --- MOBİL STİLLERİ ---
+  mobileContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 10,
+    // Arka plan rengi vermiyoruz, reklam şeffaf gelebilir.
+  },
+
+  // --- WEB STİLLERİ ---
+  webContainer: {
     alignItems: 'center',
     marginVertical: 10,
     width: '100%',
   },
-  placeholder: {
-    width: 320,
-    height: 50,
-    backgroundColor: '#e2e8f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-  },
-  // Web için daha geniş ve belirgin bir alan
   webPlaceholder: {
     width: '90%', 
-    maxWidth: 728, // Standart Leaderboard reklam boyutu
+    maxWidth: 728,
     height: 90,
     backgroundColor: '#f8fafc',
     borderColor: '#e2e8f0',
-    borderStyle: 'solid'
+    borderWidth: 1,
+    borderStyle: 'solid',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8
   },
-  text: {
-    fontSize: 12,
+  webText: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#64748b',
   },
-  subText: {
-    fontSize: 10,
+  webSubText: {
+    fontSize: 12,
     color: '#94a3b8',
     marginTop: 2
   }

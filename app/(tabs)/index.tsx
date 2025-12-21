@@ -127,7 +127,7 @@ import {
     serverTimestamp,
     setDoc,
     updateDoc,
-    where
+    where, writeBatch
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import LandingPage from '../../components/LandingPage';
@@ -236,6 +236,17 @@ const COLORS = {
     textDark: '#1e293b', textLight: '#64748b', textMuted: '#94a3b8',
     success: '#10b981', danger: '#ef4444', warning: '#f59e0b', darkBg: '#0f172a', darkSurface: '#1e293b',
 };
+const DEFAULT_HABITS = [
+    { titleKey: 'habit_gym', colorId: 'blue' },
+    { titleKey: 'habit_water', colorId: 'blue' },
+    { titleKey: 'habit_walk', colorId: 'green' },
+    { titleKey: 'habit_read', colorId: 'purple' },
+    { titleKey: 'habit_meditate', colorId: 'purple' },
+    { titleKey: 'habit_fresh_air', colorId: 'blue' },
+    { titleKey: 'habit_vitamins', colorId: 'blue' },
+    { titleKey: 'habit_edu_video', colorId: 'green' },
+    { titleKey: 'habit_skill', colorId: 'purple' },
+];
 
 const CATEGORY_COLORS = [
     { id: 'blue', hex: '#3b82f6', bg: '#eff6ff' },
@@ -679,40 +690,69 @@ export default function OmmioApp() {
                     const docSnap = await getDoc(userRef);
 
                     if (!docSnap.exists()) {
+                    // 1. Kullanıcı Adı Oluşturma
+                    const randomSuffix = Math.floor(Math.random() * 10000);
+                    const baseName = (user.displayName || "user").toLowerCase()
+                        .replace(/\s+/g, '')
+                        .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+                        .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
 
-                        // Google'dan gelen isimden kullanıcı adı türetelim
-                        // Örn: "Enes Berkay" -> "enesberkay_4821"
-                        const randomSuffix = Math.floor(Math.random() * 10000);
-                        const baseName = (user.displayName || "user").toLowerCase()
-                            .replace(/\s+/g, '')
-                            .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
-                            .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+                    const autoUsername = `${baseName}_${randomSuffix}`;
 
-                        const autoUsername = `${baseName}_${randomSuffix}`;
+                    // 2. Batch İşlemini Başlat
+                    const batch = writeBatch(db);
 
-                        // Veritabanına yaz
-                        await setDoc(userRef, {
-                            uid: user.uid,
-                            email: user.email,
-                            username: autoUsername, // OTOMATİK OLUŞTURDUK
-                            displayName: user.displayName || "Google User",
-                            createdAt: serverTimestamp(),
-                            photoURL: user.photoURL,
-                            categories: [
-                                { id: 'work', name: t('work'), color: 'blue' },
-                                { id: 'home', name: t('home'), color: 'orange' },
-                                { id: 'personal', name: t('personal'), color: 'green' }
-                            ]
-                        });
+                    // A) Ana Kullanıcı Dokümanını Batch'e Ekle
+                    // userRef zaten yukarıda tanımlı varsayıyorum: const userRef = doc(db, "users", user.uid);
+                    batch.set(userRef, {
+                        uid: user.uid,
+                        email: user.email,
+                        username: autoUsername,
+                        displayName: user.displayName || "Google User",
+                        createdAt: serverTimestamp(),
+                        photoURL: user.photoURL,
+                        categories: [
+                            // DÜZELTME: ID'ler sabit ('work'), İsimler çevrili (t('work'))
+                            { id: 'work', name: t('work'), color: 'blue' },
+                            { id: 'home', name: t('home'), color: 'orange' },
+                            { id: 'personal', name: t('personal'), color: 'green' }
+                        ]
+                    });
 
-                        // Public profil
-                        await setDoc(doc(db, "public_users", user.uid), {
-                            uid: user.uid,
-                            username: autoUsername,
-                            email: user.email,
-                            photoURL: user.photoURL
+                    // B) Public Profil Dokümanını Batch'e Ekle
+                    const publicUserRef = doc(db, "public_users", user.uid);
+                    batch.set(publicUserRef, {
+                        uid: user.uid,
+                        username: autoUsername,
+                        email: user.email,
+                        photoURL: user.photoURL
+                    });
+
+                    // C) Varsayılan Alışkanlıkları Batch'e Ekle
+                    // Not: DEFAULT_HABITS dizisinin tanımlı olduğundan emin olun
+                    if (typeof DEFAULT_HABITS !== 'undefined') {
+                        DEFAULT_HABITS.forEach((habit) => {
+                            // Yeni bir ID ile referans oluştur
+                            const newHabitRef = doc(collection(db, "users", user.uid, "habits"));
+                            
+                            batch.set(newHabitRef, {
+                                title: habit.titleKey, 
+                                frequency: 'daily',
+                                selectedDays: [],
+                                endDate: null,
+                                completedDates: [],
+                                notificationTime: null,
+                                notificationIds: [],
+                                categoryId: 'personal',
+                                createdAt: serverTimestamp()
+                            });
                         });
                     }
+
+                    // 3. TÜM İŞLEMLERİ TEK SEFERDE GÖNDER (Atomik İşlem)
+                    await batch.commit();
+                }
+                        
                 })
                 .catch((error) => {
                     console.log("Google Sign-In Error:", error);
@@ -1788,7 +1828,7 @@ export default function OmmioApp() {
             // Firebase'in şifre sıfırlama mailini gönder
             await sendPasswordResetEmail(auth, user.email);
 
-            showToast(t('success'), `Şifre değiştirme bağlantısı ${user.email} adresine gönderildi.`, 'success');
+            showToast(t('success'), tFormat('password_reset_link_sent', { email: user.email }), 'success');
             setIsPasswordModalOpen(false); // Modalı kapat
 
         } catch (error: any) {
@@ -1942,10 +1982,33 @@ export default function OmmioApp() {
                     email: inputVal
                 });
 
+
+                const batch = writeBatch(db); // Toplu yazma işlemi başlat (Performans için)
+
+                DEFAULT_HABITS.forEach((habit) => {
+                    // Yeni bir döküman referansı oluştur
+                    const newHabitRef = doc(collection(db, "users", cred.user.uid, "habits"));
+                    
+                    batch.set(newHabitRef, {
+                        title: habit.titleKey, // DİKKAT: Buraya çeviri anahtarını ('habit_gym') kaydediyoruz. Gösterirken t() fonksiyonuna sokacağız.
+                        frequency: 'daily',
+                        selectedDays: [], // Daily olduğu için boş
+                        endDate: null,
+                        completedDates: [],
+                        notificationTime: null,
+                        notificationIds: [],
+                        categoryId: 'personal', // Varsayılan kategori (ID'sinin 'personal' olduğundan emin olun)
+                        createdAt: serverTimestamp()
+                    });
+                });
+
+                await batch.commit(); // Hepsini tek seferde veritabanına gönder
+
                 setIsAuthLoading(false);
 
                 // Kullanıcıya bilgi ver
                 showToast(t('success'),t('scs_verify'), 'success');
+
 
             } catch (e: any) {
                 setIsAuthLoading(false);
@@ -2220,7 +2283,7 @@ export default function OmmioApp() {
                 });
             } catch (e) {
                 console.error("Yükleme hatası:", e);
-                showToast("Hata", `${file.name} yüklenemedi.`, 'error');
+                showToast(t('error'), tFormat('file_upload_failed', { filename: file.name }), 'error');
             }
         }
         return uploadedUrls;
@@ -2444,7 +2507,7 @@ export default function OmmioApp() {
             setPriority('medium'); // Önceliği sıfırla
             setIsInputExpanded(false);
             Keyboard.dismiss();
-            showToast(t('success'), targetList.length > 1 ? "Görev herkese atandı." : t('task_added'), 'success');
+            showToast(t('success'), targetList.length > 1 ? t('task_assigned_to_all') : t('task_added'), 'success');
 
         } catch (error: any) {
             console.error(error);
@@ -3070,7 +3133,7 @@ export default function OmmioApp() {
                                 setChatMessages([]);
                                 setActiveTab('messages');
                             }}
-                            style={[styles.iconButton, dynamicStyles.backBtn]}
+                            style={getIconButtonStyle(isDark)}
                         >
                             <ChevronLeft size={24} color={currentColors.text} />
                         </TouchableOpacity>
@@ -3103,7 +3166,7 @@ export default function OmmioApp() {
                     <View style={{ position: 'relative', zIndex: 50 }}>
                         <TouchableOpacity
                             onPress={() => setIsMenuOpen(!isMenuOpen)}
-                            style={[styles.iconButton, { backgroundColor: 'transparent' }]}
+                            style={getIconButtonStyle(isDark)}
                         >
                             <MoreVertical size={24} color={currentColors.text} />
                         </TouchableOpacity>
@@ -3224,8 +3287,10 @@ export default function OmmioApp() {
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
                     <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 18, fontWeight: '800', color: currentColors.text }}>{group.title}</Text>
-                        <Text style={{ fontSize: 12, color: currentColors.subText }}>{group.memberDetails?.length || 0} Üye • Bugün {doneToday.length} kişi yaptı</Text>
-                    </View>
+                        <Text style={{ fontSize: 12, color: currentColors.subText }}>
+                        {tFormat('group_status_line', { members: group.memberDetails?.length || 0, done: doneToday.length })}
+                        </Text>
+                 </View>
 
                     <TouchableOpacity
                         onPress={() => toggleGroupHabit(group.id, group.completions)}
@@ -3281,7 +3346,7 @@ export default function OmmioApp() {
                     >
                         <BarChart3 size={16} color={COLORS.primary} />
                         <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primary }}>
-                            {isExpanded ? "Gizle" : "Analiz"}
+                        {isExpanded ? t('hide') : t('analysis_btn')}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -3612,7 +3677,7 @@ export default function OmmioApp() {
                                 {/* GİRİŞ / KAYIT GEÇİŞİ */}
                                 <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 25, alignItems: 'center' }}>
                                     <Text style={{ color: currentColors.subText, fontSize: 14 }}>
-                                        {authMode === 'login' ? "Hesabın yok mu? " : "Zaten hesabın var mı? "}
+                                       {authMode === 'login' ? t('no_account') : t('already_have_account')}
                                     </Text>
                                     <TouchableOpacity onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}>
                                         <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 14 }}>
@@ -3698,17 +3763,20 @@ export default function OmmioApp() {
                     </Text>
 
                     <Text style={{ fontSize: 14, color: currentColors.subText, textAlign: 'center', marginBottom: 30, lineHeight: 22 }}>
-                        Güvenliğiniz için lütfen <Text style={{ fontWeight: 'bold', color: currentColors.text }}>{user.email}</Text> adresine gönderdiğimiz bağlantıya tıklayarak hesabınızı onaylayın.
+                         {tFormat('verify_email_info', { email: user.email })}
                     </Text>
 
-                    {/* 1. Kontrol Butonu: Kullanıcı maildeki linke tıkladıktan sonra buraya basıp sayfayı yeniler */}
+                    {/* 1. Kontrol Butonu: Logic Güçlendirildi */}
                     <TouchableOpacity
                         onPress={async () => {
                             setIsAuthLoading(true);
                             try {
-                                await user.reload(); // Firebase'den güncel veriyi çek
-                                if (auth.currentUser?.emailVerified) {
-                                    // State'i güncelle ki ekran değişsin
+                                // auth.currentUser üzerinden yenileme yapmak daha garantidir
+                                await auth.currentUser?.reload(); 
+                                const currentUser = auth.currentUser;
+
+                                if (currentUser?.emailVerified) {
+                                    // State'i güncelle ve içeri al
                                     setUser({ ...user, emailVerified: true });
                                     showToast(t('success'), t('acc_ok'), 'success');
                                 } else {
@@ -3716,6 +3784,7 @@ export default function OmmioApp() {
                                 }
                             } catch (e) {
                                 console.log(e);
+                                showToast(t('error_title'), t('c_err'), 'error');
                             } finally {
                                 setIsAuthLoading(false);
                             }
@@ -3725,35 +3794,52 @@ export default function OmmioApp() {
                         {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{t('check_chck')}</Text>}
                     </TouchableOpacity>
 
-                    {/* 2. Tekrar Gönder Butonu */}
+                    {/* 2. Tekrar Gönder Butonu: Hata Yakalama ve Token Yenileme Eklendi */}
                     <TouchableOpacity
                         onPress={async () => {
+                            setIsAuthLoading(true); // Yükleniyor aç
                             try {
-                                await sendEmailVerification(user);
-                                showToast(t('success'), t('send_again_mail_cc'), 'success');
-                            } catch (e: any) {
-                                if (e.code === 'auth/too-many-requests') {
-                                    showToast("Hata", t('te_veel_req') , 'error');
-                                } else {
-                                    showToast("Hata", t('uns_sen_mail'), 'error');
+                                if (auth.currentUser) {
+                                    // Önce kullanıcıyı yenile (Bayat oturum hatasını önler)
+                                    await auth.currentUser.reload();
+                                    // Sonra maili gönder
+                                    await sendEmailVerification(auth.currentUser);
+                                    showToast(t('success'), t('send_again_mail_cc'), 'success');
                                 }
+                            } catch (e: any) {
+                                console.error("Mail Error:", e);
+
+                                if (e.code === 'auth/too-many-requests') {
+                                    showToast(t('error_title'), t('te_veel_req'), 'error');
+                                } else if (e.code === 'auth/requires-recent-login') {
+                                    // KRİTİK EKLEME: Oturum çok eskiyse kullanıcıyı uyar
+                                    showToast(t('error_title'), t('log_again'), 'error');
+                                } else {
+                                    showToast(t('error_title'), t('uns_sen_mail'), 'error');
+                                }
+                            } finally {
+                                setIsAuthLoading(false); // Yükleniyor kapat
                             }
                         }}
-                        style={{ padding: 15, width: '100%', alignItems: 'center', marginBottom: 15 }}
+                        style={{ padding: 15, width: '100%', alignItems: 'center', marginBottom: 15, borderWidth: 1, borderColor: currentColors.subText, borderRadius: 12 }}
                     >
-                        <Text style={{ color: COLORS.primary, fontWeight: '600' }}>{t('send_again')}</Text>
+                        <Text style={{ color: currentColors.text, fontWeight: '600' }}>{t('send_again')}</Text>
                     </TouchableOpacity>
 
                     {/* 3. Çıkış Yap / Yanlış Mail */}
-                    <TouchableOpacity onPress={handleLogout}>
-                        <Text style={{ color: currentColors.subText, fontSize: 13, textDecorationLine: 'underline' }}>
-                            {t('different_mail')}
+                    <TouchableOpacity onPress={handleLogout} style={{ alignItems: 'center' }}>
+                        <Text style={{ color: COLORS.danger, fontSize: 14, textDecorationLine: 'underline', fontWeight: '600' }}>
+                            {t('different_mail')} {t('logout')}
+                        </Text>
+                        {/* Kullanıcıya ipucu vermek için küçük bir metin ekledim, istersen kaldırabilirsin */}
+                        <Text style={{ color: currentColors.subText, fontSize: 11, marginTop: 4 }}>
+                            {t('out_in')}
                         </Text>
                     </TouchableOpacity>
 
                 </View>
 
-                {/* Toast Mesajı Göstermek İçin */}
+                {/* Toast Mesajı */}
                 {customToast.visible && (
                     <View style={{
                         position: 'absolute', top: 50, left: 20, right: 20,
@@ -3773,66 +3859,79 @@ export default function OmmioApp() {
     {/* 1. HEADER (LOGO) - Chat odası hariç her yerde görünür */ }
     {/* ================================================================================= */ }
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <SafeAreaView style={[styles.container, { backgroundColor: currentColors.bg }]}>
-                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.container, { backgroundColor: currentColors.bg }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-                {activeTab !== 'chat_room' && (
-                    <View style={[styles.header, { justifyContent: 'center', paddingBottom: 5 }]}>
-                        {/* 👇 GÜNCELLENEN KISIM BURASI 👇 */}
-                        <TouchableOpacity 
-                            onPress={() => setActiveTab('list')} 
-                            activeOpacity={0.7}
-                            disabled={Platform.OS !== 'web'} // Sadece Web'de tıklanabilir, mobilde tıklanamaz
+        {activeTab !== 'chat_room' && (
+            <View style={{
+                flexDirection: 'row',       // Yan yana dizilim
+                alignItems: 'center',       // Dikeyde ortala
+                justifyContent: 'space-between', // Öğeler arasına boşluk bırak
+                paddingHorizontal: 16,      // Sağdan soldan boşluk
+                paddingVertical: 10,        // Üstten alttan boşluk
+                height: 60,                 // Sabit bir yükseklik (gerekirse artırılabilir)
+                backgroundColor: currentColors.bg, // Arka plan rengi
+                // İsteğe bağlı: Hafif alt çizgi veya gölge eklenebilir
+                // borderBottomWidth: 1,
+                // borderBottomColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+            }}>
+                
+                {/* --- 1. SOL TARAFTAKİ ALAN (Sabit Genişlik) --- */}
+                <View style={{ width: 40, alignItems: 'flex-start' }}>
+                    {activeTab === 'list' ? (
+                        <TouchableOpacity
+                            onPress={() => setIsHistoryModalOpen(true)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} // Tıklama alanını genişletir
+                            style={getIconButtonStyle(isDark)}
                         >
-                            <Image
-                                source={require('../../assets/Logo/Logo.png')}
-                                style={{ width: 150, height: 50, resizeMode: 'contain' }}
-                            />
+                            <CheckCircle2 size={22} color={COLORS.success} />
                         </TouchableOpacity>
-                        {/* --- 1. YENİ EKLENEN: SOL BUTON (GEÇMİŞ) --- */}
-                        {activeTab === 'list' && (
-                            <TouchableOpacity
-                                onPress={() => setIsHistoryModalOpen(true)}
-                                style={{
-                                    position: 'absolute',
-                                    left: 20, // SOL TARAFTA
-                                    top: 25,
-                                    padding: 8,
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9',
-                                    borderRadius: 12
-                                }}
-                            >
-                                <CheckCircle2 size={22} color={COLORS.success} />
-                            </TouchableOpacity>
-                        )}
-                        {/* SAĞ BUTON: TÜM GÖREVLER (Sadece 'list' sekmesinde görünsün) */}
-                        {activeTab === 'list' && (
-                            <TouchableOpacity
-                                onPress={() => setIsAllTasksModalOpen(true)}
-                                style={{
-                                    position: 'absolute',
-                                    right: 20,
-                                    top: 25, // Hizalamayı ayarlamak gerekebilir
-                                    padding: 8,
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9',
-                                    borderRadius: 12
-                                }}
-                            >
-                                <CalendarDays size={22} color={COLORS.primary} />
-                            </TouchableOpacity>
-                        )}
-                        {/* SAĞ BUTON: ALIŞKANLIK ANALİZİ (Sadece 'habits' sekmesinde) */}
-                        {activeTab === 'habits' && (
-                            <TouchableOpacity
-                                onPress={() => setIsHabitStatsModalOpen(true)}
-                                style={{ position: 'absolute', right: 20, top: 25, padding: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', borderRadius: 12 }}
-                            >
-                                <BarChart3 size={22} color={COLORS.primary} />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                )}
+                    ) : (
+                        // Eğer sol buton yoksa boşluk bırakır, böylece logo kaymaz
+                        <View />
+                    )}
+                </View>
+
+                {/* --- 2. ORTA ALAN (Logo) --- */}
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <TouchableOpacity
+                        onPress={() => setActiveTab('list')}
+                        activeOpacity={0.7}
+                        disabled={Platform.OS !== 'web'}
+                    >
+                        <Image
+                            source={require('../../assets/Logo/Logo.png')}
+                            style={{ width: 140, height: 40, resizeMode: 'contain' }} // Boyutlar optimize edildi
+                        />
+                    </TouchableOpacity>
+                </View>
+
+                {/* --- 3. SAĞ TARAFTAKİ ALAN (Sabit Genişlik) --- */}
+                <View style={{ width: 40, alignItems: 'flex-end' }}>
+                    {activeTab === 'list' && (
+                        <TouchableOpacity
+                            onPress={() => setIsAllTasksModalOpen(true)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={getIconButtonStyle(isDark)}
+                        >
+                            <CalendarDays size={22} color={COLORS.primary} />
+                        </TouchableOpacity>
+                    )}
+
+                    {activeTab === 'habits' && (
+                        <TouchableOpacity
+                            onPress={() => setIsHabitStatsModalOpen(true)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={getIconButtonStyle(isDark)}
+                        >
+                            <BarChart3 size={22} color={COLORS.primary} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+            </View>
+        )}
 
                 {/* ================================================================================= */}
                 {/* 2. MODERN TARİH NAVİGASYONU & TAKVİM */}
@@ -4304,7 +4403,7 @@ export default function OmmioApp() {
                                                                         textDecorationLine: isDone ? 'line-through' : 'none',
                                                                         marginBottom: 6
                                                                     }}>
-                                                                        {habit.title}
+                                                                        {habit.title.startsWith('habit_') ? t(habit.title) : habit.title}
                                                                     </Text>
 
                                                                     {/* Rozetler (Badges) */}
@@ -4450,34 +4549,6 @@ export default function OmmioApp() {
                                         /* gap: 12 zaten öğeler arası boşluğu yönetiyor, marginlere gerek yok */
                                         <View style={{ gap: 12 }}>
 
-                                            {/* --- MESAJ ARAMA ÇUBUĞU --- */}
-                                            {contacts.length > 0 && (
-                                                <View style={[
-                                                    styles.inputField,
-                                                    {
-                                                        flexDirection: 'row',
-                                                        alignItems: 'center',
-                                                        paddingHorizontal: 15,
-                                                        /* Marginleri kaldırdık, gap:12 zaten üstten ve alttan ayıracak */
-                                                        height: 50
-                                                    }
-                                                ]}>
-                                                    <MessageCircle size={20} color={currentColors.subText} style={{ marginRight: 10 }} />
-                                                    <TextInput
-                                                        value={searchFriends}
-                                                        onChangeText={setSearchFriends}
-                                                        placeholder={t('search_chats')}
-                                                        placeholderTextColor={currentColors.subText}
-                                                        style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                                                    />
-                                                    {searchFriends.length > 0 && (
-                                                        <TouchableOpacity onPress={() => setSearchFriends('')} style={{ padding: 5 }}>
-                                                            <X size={18} color={currentColors.subText} />
-                                                        </TouchableOpacity>
-                                                    )}
-                                                </View>
-                                            )}
-
                                             {/* --- DURUM KONTROLÜ --- */}
                                             {contacts.length === 0 ? (
                                                 /* HİÇ ARKADAŞ YOKSA (EMPTY STATE) */
@@ -4513,7 +4584,7 @@ export default function OmmioApp() {
                                                         return (
                                                             <View style={{ alignItems: 'center', marginTop: 30, opacity: 0.6 }}>
                                                                 <Text style={{ color: currentColors.subText }}>
-                                                                    "{searchFriends}" için sonuç bulunamadı.
+                                                                      {tFormat('no_results_for', { query: searchFriends })}
                                                                 </Text>
                                                             </View>
                                                         );
@@ -4618,6 +4689,50 @@ export default function OmmioApp() {
                                         </View>
                                     )}
                                 </ScrollView>
+                    
+                            {/* --- 2. SAYFA (MESAJLAR) İÇİN YENİ ARAMA ÇUBUĞU --- */}
+                            <KeyboardAvoidingView
+                                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                                keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 20, // Alt menünün hemen üstünde dursun
+                                    width: '100%',
+                                    alignItems: 'center',
+                                    zIndex: 999,
+                                }}
+                            >
+                                <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    width: '90%',
+                                    height: 50,
+                                    backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                    borderRadius: 25,
+                                    paddingHorizontal: 15,
+                                    shadowColor: "#000",
+                                    shadowOffset: { width: 0, height: 4 },
+                                    shadowOpacity: 0.15,
+                                    shadowRadius: 10,
+                                    elevation: 5,
+                                    borderWidth: 1,
+                                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                                }}>
+                                    <MessageCircle size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                                    <TextInput
+                                        value={searchFriends}
+                                        onChangeText={setSearchFriends}
+                                        placeholder={t('search_chats')}
+                                        placeholderTextColor={currentColors.subText}
+                                        style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
+                                    />
+                                    {searchFriends.length > 0 && (
+                                        <TouchableOpacity onPress={() => setSearchFriends('')} style={{ padding: 5 }}>
+                                            <X size={18} color={currentColors.subText} />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            </KeyboardAvoidingView>
                             </View>
 
                             {/* --- SAYFA 3: SOSYAL (SOCIAL) --- */}
@@ -4669,42 +4784,6 @@ export default function OmmioApp() {
                                         </View>
                                     ) : (
                                         <View style={{ gap: 25 }}>
-
-                                            {/* --- ARKADAŞ ARAMA ÇUBUĞU (YENİ EKLENDİ) --- */}
-                                            <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginBottom: 20 }]}>
-                                                <User size={20} color={currentColors.subText} style={{ marginRight: 10 }} />
-                                                <TextInput
-                                                    value={searchFriends}
-                                                    onChangeText={setSearchFriends}
-                                                    placeholder={t('search_chats')}
-                                                    placeholderTextColor={currentColors.subText}
-                                                    style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                                                />
-                                                {searchFriends.length > 0 && (
-                                                    <TouchableOpacity onPress={() => setSearchFriends('')} style={{ padding: 5 }}>
-                                                        <X size={18} color={currentColors.subText} />
-                                                    </TouchableOpacity>
-                                                )}
-                                            </View>
-
-                                            {/* Eski <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}> satırını buraya taşıyın: */}
-                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                                                <Text style={{ fontSize: 24, fontWeight: '800', color: currentColors.text }}>
-                                                    {t('friends')}
-                                                </Text>
-                                                <TouchableOpacity
-                                                    onPress={() => { if (!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true); }}
-                                                    style={{
-                                                        width: 40, height: 40, borderRadius: 14,
-                                                        backgroundColor: COLORS.primary + '15',
-                                                        alignItems: 'center', justifyContent: 'center'
-                                                    }}
-                                                >
-                                                    <UserPlus size={22} color={COLORS.primary} />
-                                                </TouchableOpacity>
-                                            </View>
-
-
 
                                             {/* --- ARKADAŞLIK İSTEKLERİ --- */}
                                             {friendRequests.length > 0 && (
@@ -4886,6 +4965,50 @@ export default function OmmioApp() {
                                         </View>
                                     )}
                                 </ScrollView>
+                                {!user.isAnonymous && (
+                                <KeyboardAvoidingView
+                                    behavior={Platform.OS === "ios" ? "padding" : undefined}
+                                    keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+                                    style={{
+                                        position: 'absolute',
+                                        bottom: 20,
+                                        width: '100%',
+                                        alignItems: 'center',
+                                        zIndex: 999,
+                                    }}
+                                >
+                                    <View style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        width: '90%',
+                                        height: 50,
+                                        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                        borderRadius: 25,
+                                        paddingHorizontal: 15,
+                                        shadowColor: "#000",
+                                        shadowOffset: { width: 0, height: 4 },
+                                        shadowOpacity: 0.15,
+                                        shadowRadius: 10,
+                                        elevation: 5,
+                                        borderWidth: 1,
+                                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                                    }}>
+                                        <User size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                                        <TextInput
+                                            value={searchFriends}
+                                            onChangeText={setSearchFriends}
+                                            placeholder={t('friends')} // Burası farklı (Arkadaş Ara)
+                                            placeholderTextColor={currentColors.subText}
+                                            style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
+                                        />
+                                        {searchFriends.length > 0 && (
+                                            <TouchableOpacity onPress={() => setSearchFriends('')} style={{ padding: 5 }}>
+                                                <X size={18} color={currentColors.subText} />
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                </KeyboardAvoidingView>
+                            )}
                             </View>
 
                             {/* --- SAYFA 4: PROFİL (PROFILE) --- */}
@@ -5355,7 +5478,9 @@ export default function OmmioApp() {
                                             >
                                                 <Paperclip size={18} color={attachments.length > 0 ? COLORS.primary : currentColors.subText} />
                                                 <Text style={{ fontSize: 12, fontWeight: '600', color: attachments.length > 0 ? COLORS.primary : currentColors.subText }}>
-                                                    {attachments.length > 0 ? `${attachments.length} Dosya` : "Dosya Ekle"}
+                                                {attachments.length > 0
+                                                    ? tFormat('files_count', { count: attachments.length })
+                                                    : t('add_file')}
                                                 </Text>
                                             </TouchableOpacity>
                                         </View>
@@ -6358,9 +6483,10 @@ export default function OmmioApp() {
                                     <Text style={{ textAlign: 'center', color: currentColors.text, fontSize: 16, fontWeight: '600', marginBottom: 5 }}>
                                         {t('snd_maill')}
                                     </Text>
-                                    <Text style={{ textAlign: 'center', color: currentColors.subText, fontSize: 14, lineHeight: 20 }}>
-                                        <Text style={{ fontWeight: 'bold' }}>{user?.email}</Text> adresine şifrenizi yenilemeniz için bir bağlantı göndereceğiz.
-                                    </Text>
+                                    <Text style={{ fontWeight: 'bold' }}>{user?.email}</Text>
+                                        <Text>
+                                        {tFormat('reset_password_info', { email: user?.email || '' })}
+                                        </Text>
                                 </View>
 
                                 {/* Gönder Butonu */}
@@ -6617,7 +6743,7 @@ export default function OmmioApp() {
                                                 </View>
                                                 {item.dueDate && (
                                                     <Text style={{ fontSize: 10, color: COLORS.danger, fontWeight: 'bold' }}>
-                                                        (Bitiş: {item.dueDate})
+                                                    {tFormat('due_label', { date: item.dueDate })}
                                                     </Text>
                                                 )}
                                             </View>
@@ -6775,7 +6901,7 @@ export default function OmmioApp() {
                                                 }}>
                                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                                         <Text style={{ fontSize: 14, color: currentColors.subText, fontWeight: 'bold', width: 20 }}>#{index + 1}</Text>
-                                                        <Text style={{ fontSize: 15, color: currentColors.text, fontWeight: '600' }}>{habit.title}</Text>
+                                                        <Text style={{ fontSize: 15, color: currentColors.text, fontWeight: '600' }}>{habit.title.startsWith('habit_') ? t(habit.title) : habit.title}</Text>
                                                     </View>
                                                     <View style={{ backgroundColor: index === 0 ? '#dcfce7' : (isDark ? '#334155' : '#f1f5f9'), paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
                                                         <Text style={{ fontWeight: 'bold', color: index === 0 ? '#166534' : currentColors.text, fontSize: 12 }}>
@@ -7081,6 +7207,8 @@ export default function OmmioApp() {
                         </View>
                     </View>
                 </Modal>
+
+                
             </SafeAreaView>
         </KeyboardAvoidingView>
     );
@@ -7353,6 +7481,20 @@ const premiumStyles = StyleSheet.create({
         alignItems: 'center'
     }
 });
+const getIconButtonStyle = (isDark: boolean): import('react-native').ViewStyle => ({
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Gölge ayarları
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1.41,
+    elevation: 2,
+});
 
 
 const getDynamicStyles = (currentColors: any, isDark: boolean) => StyleSheet.create({
@@ -7396,14 +7538,6 @@ const getDynamicStyles = (currentColors: any, isDark: boolean) => StyleSheet.cre
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
-    },
-    iconButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 10,
     },
     avatarContainer: {
         marginRight: 12,
@@ -7537,6 +7671,7 @@ const getDynamicStyles = (currentColors: any, isDark: boolean) => StyleSheet.cre
         marginBottom: 20,
         lineHeight: 20,
     },
+    
 
     // FORM ELEMENTS
     formGap: {

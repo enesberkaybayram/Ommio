@@ -30,7 +30,7 @@ import {
 } from 'react-native';
 
 // LANGUAGES listesini ve Çevirileri buradan çekiyoruz
-import { LANGUAGES, TRANSLATIONS } from '../constants/translations';
+import { LANGUAGES, TRANSLATIONS } from '../constants/translations/index';
 
 const COLORS = {
   primary: '#6366f1',

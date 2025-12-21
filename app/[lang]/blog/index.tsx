@@ -14,7 +14,7 @@ import {
   View
 } from 'react-native';
 // Veri ve Çeviri dosyalarını import ediyoruz
-import { LANGUAGES, TRANSLATIONS } from '../../../constants/translations';
+import { LANGUAGES, TRANSLATIONS } from '../../../constants/translations/index';
 import { allBlogPosts, SupportedLangs } from '../../../data/blog';
 
 // Modern Renk Paleti
@@ -102,11 +102,7 @@ export default function BlogListScreen() {
         {/* Sayfa Başlığı Alanı */}
         <View style={styles.heroSection}>
             <Text style={styles.pageTitle}>{t('latest_articles')}</Text>
-            <Text style={styles.pageSubtitle}>
-                {currentLang === 'tr' 
-                    ? 'Ommio ekibinden güncel haberler, ipuçları ve rehberler.' 
-                    : 'Latest news, tips and guides from the Ommio team.'}
-            </Text>
+            <Text style={styles.pageSubtitle}>{t('blog_subtitle')}</Text>
         </View>
 
         {/* Blog Kartları */}

@@ -15,7 +15,7 @@ import { auth, db } from '../../firebaseConfig';
 
 // --- DEĞİŞİKLİK BURADA ---
 // Sabit tr objesini sildik, yerine dışarıdan import ediyoruz:
-import { TRANSLATIONS, } from '../../constants/translations';
+import { TRANSLATIONS, } from '../../constants/translations/index';
 
 // Kodun geri kalanında "tr.forgot_title" gibi kullanımların çalışması için
 // TRANSLATIONS içinden "tr" kısmını alıyoruz.

@@ -13,6 +13,9 @@
       "backgroundColor": "#6366F1"
     },
     "ios": {
+      "config": {
+        "googleMobileAdsAppId": "ca-app-pub-2340385969287749~2566319123" 
+      },
       "icon": "./assets/ommio_icon.icon",
       "supportsTablet": true,
       "buildNumber": "1",
@@ -35,6 +38,9 @@
         "foregroundImage": "./assets/Logo/Icon.png",
         "backgroundColor": "#ffffff"
       },
+      "config": {
+            "googleMobileAdsAppId": "ca-app-pub-2340385969287749~2530111366"
+        },
       "newArchEnabled": true,
       "package": "com.seninadin.ommio",
       "permissions": [
@@ -61,6 +67,12 @@
           "icon": "./assets/Logo/Icon.png",
           "color": "#6366F1",
           "sounds": []
+        }
+      ],
+      ["react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2340385969287749~2530111366", 
+          "iosAppId": "ca-app-pub-2340385969287749~2566319123"
         }
       ],
       [

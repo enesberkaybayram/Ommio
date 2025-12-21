@@ -18,6 +18,12 @@ import {
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { privacyData, SupportedLangs } from '../../constants/privacyContent';
+import { TRANSLATIONS } from '../../constants/translations/index';
+
+ const t = (key: string) => {
+    // @ts-ignore
+    return TRANSLATIONS[currentLang]?.[key] || TRANSLATIONS['en']?.[key] || key;
+  };
 
 // Ommio Renk Paleti (Index'ten alındı)
 const COLORS = {
@@ -89,7 +95,7 @@ export default function PrivacyScreen() {
         {/* 4. FOOTER / CONTACT */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            {currentLang === 'tr' ? 'Sorularınız mı var?' : 'Questions?'}
+            {t('questions')}
           </Text>
           <TouchableOpacity 
             style={styles.contactBtn}
@@ -97,7 +103,7 @@ export default function PrivacyScreen() {
           >
             <Mail size={16} color="#fff" />
             <Text style={styles.contactBtnText}>
-               {currentLang === 'tr' ? 'İletişime Geç' : 'Contact Support'}
+              {t('contact_support')}
             </Text>
           </TouchableOpacity>
         </View>
