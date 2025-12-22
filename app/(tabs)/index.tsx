@@ -56,7 +56,6 @@ import {
     Sliders,
     Sun,
     Trash2,
-    TrendingUp,
     Trophy,
     User,
     UserMinus,
@@ -119,7 +118,9 @@ import {
     arrayUnion,
     collection,
     collectionGroup,
-    deleteDoc, doc,
+    deleteDoc,
+    deleteField,
+    doc,
     getDoc,
     getDocs,
     onSnapshot,
@@ -621,6 +622,8 @@ export default function OmmioApp() {
     // ... diğer state tanımları
     const [newCategoryName, setNewCategoryName] = useState("");
 
+    const [analysisTab, setAnalysisTab] = useState<'weekly' | 'monthly'>('weekly');
+
     const [categories, setCategories] = useState<Category[]>([
         { id: 'work', name: 'İş', color: 'blue' },
         { id: 'home', name: 'Ev', color: 'orange' },
@@ -634,6 +637,8 @@ export default function OmmioApp() {
     const [detailText, setDetailText] = useState("");
     const [detailDesc, setDetailDesc] = useState("");
     const [detailDueDate, setDetailDueDate] = useState("");
+
+    const [selectedGroupForAnalysis, setSelectedGroupForAnalysis] = useState<GroupHabit | null>(null);
 
     // DATE PICKERS
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -2033,6 +2038,44 @@ export default function OmmioApp() {
             }
         }
     };
+    // --- STREAK (SERİ) HESAPLAMA ---
+        const calculateCurrentStreak = (completedDates: string[]) => {
+            if (!completedDates || completedDates.length === 0) return 0;
+
+            const sortedDates = [...completedDates].sort((a, b) => new Date(b).getTime() - new Date(a).getTime()); // Yeniden eskiye
+            const today = getISODate(new Date());
+            
+            // Dünü bul
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            const yesterday = getISODate(d);
+
+            // Eğer son yapılan tarih bugün DEĞİLSE ve dün DEĞİLSE, zincir kopmuş demektir.
+            const lastDate = sortedDates[0];
+            if (lastDate !== today && lastDate !== yesterday) {
+                return 0;
+            }
+
+            let streak = 0;
+            let checkDate = new Date(); // Kontrol etmeye bugünden başla
+
+            // Eğer bugün yapılmamışsa, kontrole dünden başla (çünkü bugün henüz bitmedi, zincir kopmuş sayılmaz)
+            if (!completedDates.includes(today)) {
+                checkDate.setDate(checkDate.getDate() - 1);
+            }
+
+            while (true) {
+                const dateStr = getISODate(checkDate);
+                if (completedDates.includes(dateStr)) {
+                    streak++;
+                    checkDate.setDate(checkDate.getDate() - 1); // Bir gün geriye git
+                } else {
+                    break; // Zincir koptu
+                }
+            }
+            return streak;
+        };
+
     // --- SATIN ALIMLARI GERİ YÜKLE FONKSİYONU ---
         const handleRestorePurchases = async () => {
             setIsAuthLoading(true);
@@ -2067,28 +2110,53 @@ export default function OmmioApp() {
             }
         };
     const handleLogout = async () => {
-    try {
-        // 1. ÖNCE WIDGET'I TEMİZLE (Boş veri gönder)
-        // Görevler: [], Alışkanlıklar: [], Premium: false
-        await updateWidgetData([], [], false); 
-        console.log("Widget temizlendi.");
+        try {
+            // 1. ÖNCE VERİTABANINDAN BİLDİRİM TOKEN'INI SİL
+            // (Bu işlem signOut'tan ÖNCE yapılmalı, yoksa yetki hatası alırsın)
+            if (user) {
+                try {
+                    const batch = writeBatch(db);
+                    
+                    // 'users' tablosundan token'ı sil
+                    const userRef = doc(db, "users", user.uid);
+                    batch.update(userRef, { pushToken: deleteField() });
 
-        // 2. SONRA ÇIKIŞ YAP
-        await signOut(auth);
-        setTasks([]);
-        setHabits([]);
-        
-        // Web için auth ekranı kontrolü
-        if (Platform.OS === 'web') {
-            setShowAuth(false);
+                    // 'public_users' tablosundan token'ı sil (Arkadaşların buradan bakıyor)
+                    // Eğer public_users belgesi yoksa hata vermemesi için try-catch içindeyiz
+                    const publicUserRef = doc(db, "public_users", user.uid);
+                    batch.update(publicUserRef, { pushToken: deleteField() });
+
+                    await batch.commit();
+                    console.log("Push Token veritabanından silindi.");
+                } catch (tokenError) {
+                    console.log("Token silinirken hata (Önemsiz, çıkış devam ediyor):", tokenError);
+                }
+            }
+
+            // 2. WIDGET'I TEMİZLE (Boş veri gönder)
+            await updateWidgetData([], [], false); 
+            console.log("Widget temizlendi.");
+
+            // 3. SONRA ÇIKIŞ YAP
+            await signOut(auth);
+            
+            // 4. EKRANI VE STATE'İ TEMİZLE
+            setTasks([]);
+            setHabits([]);
+            setUser(null); // Kullanıcıyı state'ten de düşür
+            
+            // Web için auth ekranı kontrolü
+            if (Platform.OS === 'web') {
+                setShowAuth(false);
+            }
+            
+            showToast(t('success'), t('logout_success'), 'success');
+
+        } catch (e) {
+            console.error("Çıkış hatası:", e);
+            // Hata olsa bile kullanıcıyı atmak istersen buraya da setUser(null) ekleyebilirsin
         }
-        
-        showToast(t('success'), t('logout_success'), 'success');
-
-    } catch (e) {
-        console.error("Çıkış hatası:", e);
-    }
-};
+    };
 
     const pickImage = async () => {
         try {
@@ -2630,6 +2698,26 @@ export default function OmmioApp() {
             showToast(t('error_title'), error.message, 'error');
         }
     };
+    // --- GRUP OLUŞTURMA KONTROLÜ (YENİ FONKSİYON) ---
+    const handleOpenGroupModal = () => {
+        if (!user) return;
+
+        // 1. Misafir Kontrolü
+        if (checkGuest("Grup Oluşturma")) return;
+
+        // 2. Arkadaş Kontrolü
+        if (contacts.length === 0) {
+            showToast(t('warning_title'), "Grup oluşturmak için önce arkadaş eklemelisin!", 'warning');
+            
+            // Kullanıcıyı otomatik olarak Sosyal sekmesine gönder
+            setActiveTab('social');
+            pagerRef.current?.setPage(3); // 3 = Social tab index'i
+            return;
+        }
+
+        // 3. Her şey yolundaysa Modalı Aç
+        setIsGroupModalOpen(true);
+    };
 
     // --- GRUP OLUŞTURMA ---
     const handleCreateGroup = async () => {
@@ -2671,9 +2759,13 @@ export default function OmmioApp() {
     };
 
     // --- GRUP GÖREVİNİ İŞARETLEME ---
+    // --- GRUP GÖREVİNİ İŞARETLEME (DÜZELTİLMİŞ) ---
     const toggleGroupHabit = async (groupId: string, currentCompletions: any) => {
         const today = getISODate(new Date());
-        const todaysList = currentCompletions[today] || [];
+        
+        // currentCompletions undefined gelirse boş obje kabul et
+        const safeCompletions = currentCompletions || {};
+        const todaysList = safeCompletions[today] || [];
 
         let newList;
         if (todaysList.includes(user.uid)) {
@@ -2682,15 +2774,20 @@ export default function OmmioApp() {
         } else {
             // Yapmamışım, ekle
             newList = [...todaysList, user.uid];
-            // Motivasyon efekti (Konfeti vb. eklenebilir)
             showToast(t('premium_congrats'), t('grp_cong'), 'success');
         }
 
-        // Firestore Update (Map içinde array güncelleme)
-        const groupRef = doc(db, "habit_groups", groupId);
-        await updateDoc(groupRef, {
-            [`completions.${today}`]: newList
-        });
+        try {
+            // setDoc ile merge: true kullanarak veritabanı yapısı bozuksa bile onararak yaz
+            await setDoc(doc(db, "habit_groups", groupId), {
+                completions: {
+                    [today]: newList
+                }
+            }, { merge: true });
+        } catch (e) {
+            console.error("Grup güncelleme hatası:", e);
+            showToast(t('error_title'), "Bağlantı hatası, kaydedilemedi.", 'error');
+        }
     };
 
     const toggleTask = async (task: Task) => {
@@ -2728,34 +2825,51 @@ export default function OmmioApp() {
     const [taskUnreadCounts, setTaskUnreadCounts] = useState<any>({});
 
     // Hemen altına bu useEffect'i yapıştır:
+   // --- GÖREV YORUMLARI BİLDİRİM SAYACI (DÜZELTİLMİŞ & FİLTRELİ) ---
     useEffect(() => {
         if (!user) return;
 
-        // Veritabanındaki TÜM görev yorumlarını tarar (TaskChatButton mantığının aynısı ama hepsi için)
+        // Veritabanındaki TÜM okunmamış yorumları getir
         const q = query(
             collectionGroup(db, 'comments'),
-            where('read', '==', false) // Sadece okunmamışları al
+            where('read', '==', false)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const counts: any = {};
 
             snapshot.docs.forEach((doc) => {
-                // TypeScript hatası olmaması için 'as any' kullanıyoruz
                 const data = doc.data() as any;
 
-                // Kendi yorumlarımızı sayma
+                // 1. Kendi attığım mesajları sayma (Kendime bildirim gelmesin)
                 if (data.senderId === user.uid) return;
 
-                // Yorumu atan kişinin ID'sine göre sayacı artır
-                counts[data.senderId] = (counts[data.senderId] || 0) + 1;
+                // 2. Yorumun bulunduğu adresi kontrol et
+                // Firestore Yolu: users/{USER_ID}/tasks/{TASK_ID}/comments/{COMMENT_ID}
+                const pathSegments = doc.ref.path.split('/');
+                const taskOwnerId = pathSegments[1]; // Bu yorum kimin görev listesinde?
+
+                // SENARYO A: Yorum BENİM görevimdeyse -> Kesin bana gelmiştir. SAY.
+                if (taskOwnerId === user.uid) {
+                    counts[data.senderId] = (counts[data.senderId] || 0) + 1;
+                    return;
+                }
+
+                // SENARYO B: Yorum BAŞKASININ görevindeyse (Örn: Ben ona görev atadım, o cevap yazdı)
+                // Bu kişinin benim ARKADAŞ LİSTEMDE olup olmadığına bak.
+                // Eğer kimse ekli değilse (contacts boşsa), burası false döner ve o bildirimi yoksayarız.
+                const isMyContact = contacts.some(c => c.uid === taskOwnerId);
+                
+                if (isMyContact) {
+                    counts[data.senderId] = (counts[data.senderId] || 0) + 1;
+                }
             });
 
             setTaskUnreadCounts(counts);
         });
 
         return () => unsubscribe();
-    }, [user]);
+    }, [user, contacts]); // contacts listesi değişince tekrar hesapla
 
     const toggleExpand = (taskId: string) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedTaskId(expandedTaskId === taskId ? null : taskId); };
     const openEditModal = (task: Task) => { if (task.assignedBy !== user.uid && task.assignedTo !== user.uid) { showToast(t('error_title'), t('task_unauth_edit'), 'error'); return; } setSelectedTask(task); setDetailText(task.text); setDetailDesc(task.description || ""); setDetailDueDate(task.dueDate || ""); };
@@ -3372,44 +3486,20 @@ export default function OmmioApp() {
                         </ScrollView>
                     </View>
                     
-                    {/* Analiz Aç/Kapa Butonu */}
+                    {/* Analiz Butonu (GÜNCELLENDİ) */}
                     <TouchableOpacity 
-                        onPress={() => {
-                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                            setExpandedGroupAnalysisId(isExpanded ? null : group.id);
-                        }}
+                        onPress={() => setSelectedGroupForAnalysis(group)} // Yeni Modalı Açar
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 5, padding: 8, backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 10 }}
                     >
                         <BarChart3 size={16} color={COLORS.primary} />
                         <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primary }}>
-                        {isExpanded ? t('hide') : t('analysis_btn')}
+                            {t('analysis_btn')}
                         </Text>
                     </TouchableOpacity>
+
                 </View>
 
-                {/* --- GENİŞLEYEN ANALİZ ALANI (LEADERBOARD) --- */}
-                {isExpanded && (
-                    <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>{t('score_tbl')}</Text>
-                        {memberStats?.map((member, index) => (
-                            <View key={member.uid} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: index === 0 ? '#eab308' : (index === 1 ? '#94a3b8' : (index === 2 ? '#b45309' : currentColors.subText)), width: 20 }}>
-                                        #{index + 1}
-                                    </Text>
-                                    <Text style={{ fontSize: 14, color: currentColors.text }}>
-                                        {member.uid === user.uid ? "Sen" : member.displayName}
-                                    </Text>
-                                </View>
-                                <View style={{ backgroundColor: index === 0 ? '#fef9c3' : (isDark ? '#334155' : '#f1f5f9'), paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
-                                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: index === 0 ? '#ca8a04' : currentColors.text }}>
-                                        {member.count} kez
-                                    </Text>
-                                </View>
-                            </View>
-                        ))}
-                    </View>
-                )}
+               
             </View>
         );
     }
@@ -4393,7 +4483,7 @@ export default function OmmioApp() {
                                         {todaysHabits.length > 0 ? (
                                             todaysHabits.map((habit, index) => {
                                                 const isDone = habit.completedDates.includes(currentISODate);
-                                                const streak = habit.completedDates.length;
+                                                const streak = calculateCurrentStreak(habit.completedDates);
                                                 const cat = categories.find(c => c.id === habit.categoryId);
                                                 const cc = getCategoryColor(cat?.color || 'purple');
 
@@ -4511,8 +4601,8 @@ export default function OmmioApp() {
                                             <Text style={{ fontSize: 18, fontWeight: '800', color: currentColors.text }}>
                                                 {t('groups_t')}
                                             </Text>
-                                            <TouchableOpacity
-                                                onPress={() => setIsGroupModalOpen(true)}
+                                            <TouchableOpacity 
+                                                onPress={handleOpenGroupModal} // <-- Eski kod: setIsGroupModalOpen(true)
                                                 style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', padding: 8, borderRadius: 12 }}
                                             >
                                                 <Plus size={20} color={COLORS.primary} />
@@ -4585,7 +4675,7 @@ export default function OmmioApp() {
                                         /* --- MESAJ LİSTESİ KAPSAYICISI --- */
                                         /* gap: 12 zaten öğeler arası boşluğu yönetiyor, marginlere gerek yok */
                                         <View style={{ gap: 12 }}>
-
+                                            
                                             {/* --- DURUM KONTROLÜ --- */}
                                             {contacts.length === 0 ? (
                                                 /* HİÇ ARKADAŞ YOKSA (EMPTY STATE) */
@@ -4649,6 +4739,7 @@ export default function OmmioApp() {
                                                                     /* BURADAKİ marginBottom: 10 SİLİNDİ (Parent gap: 12 kullanıyor) */
                                                                 }}
                                                             >
+                                                                
                                                                 {/* Avatar */}
                                                                 <View style={{ position: 'relative', marginRight: 15 }}>
                                                                     <View style={{
@@ -4687,7 +4778,7 @@ export default function OmmioApp() {
                                                                             </Text>
                                                                         )}
                                                                     </View>
-
+                                                                        
                                                                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                                                         <Text
                                                                             numberOfLines={1}
@@ -4821,6 +4912,25 @@ export default function OmmioApp() {
                                         </View>
                                     ) : (
                                         <View style={{ gap: 25 }}>
+                                            {/* 1. Başlık ve Arkadaş Ekleme Butonu */}
+                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <Text style={{ fontSize: 28, fontWeight: '900', color: currentColors.text }}>
+                                                    {t('social_tab') || "Sosyal"}
+                                                </Text>
+                                                
+                                                <TouchableOpacity
+                                                    onPress={() => {
+                                                        if (!checkGuest("Arkadaş Ekleme")) setIsNetworkModalOpen(true);
+                                                    }}
+                                                    style={{
+                                                        width: 44, height: 44, borderRadius: 14,
+                                                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9',
+                                                        alignItems: 'center', justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <UserPlus size={24} color={COLORS.primary} />
+                                                </TouchableOpacity>
+                                            </View>
 
                                             {/* --- ARKADAŞLIK İSTEKLERİ --- */}
                                             {friendRequests.length > 0 && (
@@ -4871,7 +4981,9 @@ export default function OmmioApp() {
                                                     </Text>
                                                 </View>
                                             ) : (
+                                                
                                                 <View style={{ gap: 12 }}>
+                                                    
                                                     {/* --- SOSYAL SEKME KİŞİ LİSTESİ (TEMİZLENMİŞ) --- */}
                                                     {filteredSocialContacts.map(contact => {
                                                         const isExpanded = expandedContactId === contact.uid;
@@ -5006,6 +5118,7 @@ export default function OmmioApp() {
                                 <KeyboardAvoidingView
                                     behavior={Platform.OS === "ios" ? "padding" : undefined}
                                     keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+                            
                                     style={{
                                         position: 'absolute',
                                         bottom: 20,
@@ -5013,7 +5126,9 @@ export default function OmmioApp() {
                                         alignItems: 'center',
                                         zIndex: 999,
                                     }}
+                                    
                                 >
+                                    
                                     <View style={{
                                         flexDirection: 'row',
                                         alignItems: 'center',
@@ -5362,52 +5477,74 @@ export default function OmmioApp() {
                 {!isSettingsOpen && (<OmmioAdBanner isPremium={isPremium} />)}
 
                 {/* ================================================================================= */}
-                {/* 5. BOTTOM TABS */}
+                {/* 5. BOTTOM TABS (GÜNCELLENMİŞ - DAHA CANLI) */}
                 {/* ================================================================================= */}
                 {!isSettingsOpen && (
-                    <View style={[styles.tabBar, { backgroundColor: currentColors.surface, borderTopColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                    <View style={[
+                        styles.tabBar, 
+                        { 
+                            backgroundColor: currentColors.surface, 
+                            borderTopColor: isDark ? '#334155' : '#cbd5e1', // Çizgi rengi koyulaştırıldı
+                            borderTopWidth: 1, // Çizgi kalınlığı netleştirildi
+                            shadowOpacity: 0.15, // Gölge belirginleştirildi
+                        }
+                    ]}>
                         {[
                             { key: 'list', Icon: ListTodo, label: t('tasks_tab') },
                             { key: 'habits', Icon: Repeat, label: t('habits_tab') },
-                            { key: 'messages', Icon: MessageCircle, label: t('messages_tab') }, // Normal Chat Buraya
-                            { key: 'social', Icon: Users, label: t('social_tab') }, // Task Chat Buraya
+                            { key: 'messages', Icon: MessageCircle, label: t('messages_tab') },
+                            { key: 'social', Icon: Users, label: t('social_tab') },
                             { key: 'profile', Icon: User, label: t('profile_tab') },
                         ].map((item) => {
                             const isActive = activeTab === item.key;
-                            const iconColor = isActive ? COLORS.primary : currentColors.subText;
+                            
+                            // İnaktif ikon rengini daha koyu/belirgin bir gri yapıyoruz
+                            const inactiveColor = isDark ? '#94a3b8' : '#64748b'; 
+                            const iconColor = isActive ? COLORS.primary : inactiveColor;
 
-                            // --- HESAPLAMA MANTIĞI ---
+                            // --- HESAPLAMA MANTIĞI (Aynen Korundu) ---
                             let badgeCount = 0;
-
-                            // Eğer SOSYAL sekmesiyse -> SADECE GÖREV YORUMLARINI Say
                             if (item.key === 'social') {
                                 badgeCount = Object.values(taskUnreadCounts).reduce((acc: number, curr: any) => acc + (curr || 0), 0);
                             }
-
-                            // Eğer MESAJLAR sekmesiyse -> Normal Chatleri Say (İstersen bunu kaldırabilirsin)
                             if (item.key === 'messages') {
                                 badgeCount = Object.values(chatPreviews).reduce((acc: number, curr: any) => acc + (curr.unread || 0), 0);
                             }
                             // -------------------------
 
                             return (
-                                <TouchableOpacity key={item.key} onPress={() => onBottomTabPress(item.key)} style={styles.tabItem}>
-                                    <View style={{ opacity: isActive ? 1 : 0.5, alignItems: 'center' }}>
+                                <TouchableOpacity 
+                                    key={item.key} 
+                                    onPress={() => onBottomTabPress(item.key)} 
+                                    style={styles.tabItem}
+                                    activeOpacity={0.7} // Tıklama efekti
+                                >
+                                    {/* 👇 DEĞİŞİKLİK BURADA: Opacity 0.5 yerine 1 yapıldı (veya kaldırıldı) */}
+                                    <View style={{ alignItems: 'center', opacity: isActive ? 1 : 0.8 }}> 
                                         <View>
-                                            <item.Icon size={24} color={iconColor} />
+                                            <item.Icon size={26} color={iconColor} strokeWidth={isActive ? 2.5 : 2} /> 
 
-                                            {/* KIRMIZI KUTUCUK (TaskChatButton'daki mantığın aynısı) */}
+                                            {/* KIRMIZI KUTUCUK (Badge) */}
                                             {badgeCount > 0 && (
                                                 <View style={{
-                                                    position: 'absolute', top: -4, right: -6, minWidth: 16, height: 16,
-                                                    borderRadius: 8, backgroundColor: COLORS.danger, alignItems: 'center', justifyContent: 'center',
-                                                    borderWidth: 1.5, borderColor: currentColors.surface, zIndex: 999
+                                                    position: 'absolute', top: -4, right: -6, minWidth: 18, height: 18,
+                                                    borderRadius: 9, backgroundColor: COLORS.danger, alignItems: 'center', justifyContent: 'center',
+                                                    borderWidth: 2, borderColor: currentColors.surface, zIndex: 999
                                                 }}>
-                                                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>{badgeCount}</Text>
+                                                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>{badgeCount}</Text>
                                                 </View>
                                             )}
                                         </View>
-                                        <Text style={[styles.tabLabel, { color: iconColor }]}>{item.label}</Text>
+                                        <Text style={[
+                                            styles.tabLabel, 
+                                            { 
+                                                color: iconColor, 
+                                                fontWeight: isActive ? '700' : '500', // Aktifse daha kalın font
+                                                marginTop: 4 
+                                            }
+                                        ]}>
+                                            {item.label}
+                                        </Text>
                                     </View>
                                 </TouchableOpacity>
                             );
@@ -5902,7 +6039,7 @@ export default function OmmioApp() {
                                             style={[styles.freqPill, newHabitFreq === freq && styles.freqPillActive]}
                                         >
                                             <Text style={[styles.freqText, newHabitFreq === freq && styles.freqTextActive]}>
-                                                {t('freq')}
+                                                {t(freq)}
                                             </Text>
                                         </TouchableOpacity>
                                     ))}
@@ -6176,36 +6313,88 @@ export default function OmmioApp() {
                                             <Text style={styles.sectionLabel}>{t('description_label')}</Text>
                                             <TextInput value={detailDesc} onChangeText={setDetailDesc} multiline numberOfLines={4} placeholder={t('add_note_placeholder')} placeholderTextColor={currentColors.subText} style={[styles.inputField, { height: 120, textAlignVertical: 'top', paddingTop: 12 }]} />
                                         </View>
-                                        {selectedTask?.attachments && selectedTask.attachments.length > 0 && (
-                                            <View>
-                                                <Text style={styles.sectionLabel}>{t('atch')}</Text>
-                                                <View style={{ gap: 8 }}>
-                                                    {selectedTask.attachments.map((file: any, index: number) => (
+                                        {/* --- MODERN DOSYA GÖRÜNTÜLEYİCİ --- */}
+                                    {selectedTask?.attachments && selectedTask.attachments.length > 0 && (
+                                        <View>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                                                <Text style={styles.sectionLabel}>{t('atch')} ({selectedTask.attachments.length})</Text>
+                                                <Paperclip size={14} color={currentColors.subText} />
+                                            </View>
+                                            
+                                            <View style={{ gap: 10 }}>
+                                                {selectedTask.attachments.map((file: any, index: number) => {
+                                                    // Dosya türünü basitçe kontrol et
+                                                    const isImage = file.type?.includes('image') || file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                                                    
+                                                    return (
                                                         <TouchableOpacity
                                                             key={index}
                                                             onPress={() => {
-                                                                // WebBrowser ile aç (PDF, Resim vb. görüntülenir)
                                                                 if (file.url) WebBrowser.openBrowserAsync(file.url);
                                                             }}
+                                                            activeOpacity={0.7}
                                                             style={{
-                                                                flexDirection: 'row', alignItems: 'center',
-                                                                backgroundColor: isDark ? '#334155' : '#f1f5f9',
-                                                                padding: 12, borderRadius: 12, gap: 10
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                                                borderRadius: 16,
+                                                                padding: 8,
+                                                                borderWidth: 1,
+                                                                borderColor: isDark ? '#334155' : '#e2e8f0',
+                                                                shadowColor: "#000",
+                                                                shadowOffset: { width: 0, height: 2 },
+                                                                shadowOpacity: 0.05,
+                                                                shadowRadius: 4,
+                                                                elevation: 2
                                                             }}
                                                         >
-                                                            <View style={{ backgroundColor: '#fff', padding: 6, borderRadius: 8 }}>
-                                                                <FileText size={20} color={COLORS.primary} />
+                                                            {/* 1. DOSYA ÖNİZLEME / İKON ALANI */}
+                                                            <View style={{
+                                                                width: 50,
+                                                                height: 50,
+                                                                borderRadius: 12,
+                                                                backgroundColor: isDark ? '#0f172a' : '#f1f5f9',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                marginRight: 12,
+                                                                overflow: 'hidden',
+                                                                borderWidth: 1,
+                                                                borderColor: isDark ? '#334155' : '#e2e8f0'
+                                                            }}>
+                                                                {isImage ? (
+                                                                    <Image 
+                                                                        source={{ uri: file.url }} 
+                                                                        style={{ width: '100%', height: '100%', resizeMode: 'cover' }} 
+                                                                    />
+                                                                ) : (
+                                                                    <FileText size={24} color={COLORS.primary} />
+                                                                )}
                                                             </View>
-                                                            <View style={{ flex: 1 }}>
-                                                                <Text numberOfLines={1} style={{ color: currentColors.text, fontWeight: '600' }}>{file.name}</Text>
-                                                                <Text style={{ fontSize: 10, color: currentColors.subText }}>{t('doc_pic')}</Text>
+
+                                                            {/* 2. DOSYA BİLGİLERİ */}
+                                                            <View style={{ flex: 1, gap: 2 }}>
+                                                                <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600', color: currentColors.text }}>
+                                                                    {file.name}
+                                                                </Text>
+                                                                <Text style={{ fontSize: 11, color: currentColors.subText }}>
+                                                                    {isImage ? t('image_file') : t('document_file') } • {t('tap_to_open')}
+                                                                </Text>
                                                             </View>
-                                                            <Download size={20} color={currentColors.subText} />
+
+                                                            {/* 3. İNDİR/AÇ İKONU */}
+                                                            <View style={{ 
+                                                                padding: 8, 
+                                                                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc', 
+                                                                borderRadius: 10 
+                                                            }}>
+                                                                <Download size={18} color={COLORS.primary} />
+                                                            </View>
                                                         </TouchableOpacity>
-                                                    ))}
-                                                </View>
+                                                    );
+                                                })}
                                             </View>
-                                        )}
+                                        </View>
+                                    )}
                                         <View>
                                             <Text style={styles.sectionLabel}>{t('due_date_label')}</Text>
                                             <View style={{ flexDirection: 'row' }}>
@@ -6811,8 +7000,8 @@ export default function OmmioApp() {
 
                         {/* --- MODERN ALT ARAMA ÇUBUĞU (AJANDA) --- */}
                         <KeyboardAvoidingView
-                            behavior={Platform.OS === "ios" ? "padding" : undefined}
-                            keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+                            behavior={Platform.OS === "ios" ? "padding" : "height"}
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
                             style={{
                                 position: 'absolute',
                                 bottom: 30,
@@ -6856,7 +7045,7 @@ export default function OmmioApp() {
                     </View>
                 </Modal>
 
-                {/* --- L. ALIŞKANLIK ANALİZ MODALI --- */}
+               {/* --- L. GELİŞMİŞ ALIŞKANLIK ANALİZ MODALI (MODERN & TABLI) --- */}
                 <Modal visible={isHabitStatsModalOpen} animationType="slide" presentationStyle="pageSheet">
                     <View style={{ flex: 1, backgroundColor: currentColors.bg }}>
 
@@ -6864,141 +7053,301 @@ export default function OmmioApp() {
                         <View style={{ padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View>
                                 <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('analysis')}</Text>
-                                <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('prfm_hbt')}</Text>
+                                <Text style={{ fontSize: 12, color: currentColors.subText }}>Performans ve İstatistikler</Text>
                             </View>
                             <TouchableOpacity onPress={() => setIsHabitStatsModalOpen(false)} style={{ padding: 5 }}>
                                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 50 }}>
+                        {/* SEKME (TAB) SEÇİCİ */}
+                        <View style={{ flexDirection: 'row', margin: 20, backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 12, padding: 4 }}>
+                            <TouchableOpacity 
+                                onPress={() => setAnalysisTab('weekly')}
+                                style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, backgroundColor: analysisTab === 'weekly' ? (isDark ? '#1e293b' : '#fff') : 'transparent', shadowColor: "#000", shadowOpacity: analysisTab === 'weekly' ? 0.1 : 0, elevation: analysisTab === 'weekly' ? 2 : 0 }}
+                            >
+                                <Text style={{ fontWeight: 'bold', color: analysisTab === 'weekly' ? currentColors.text : currentColors.subText }}>Haftalık</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={() => setAnalysisTab('monthly')}
+                                style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, backgroundColor: analysisTab === 'monthly' ? (isDark ? '#1e293b' : '#fff') : 'transparent', shadowColor: "#000", shadowOpacity: analysisTab === 'monthly' ? 0.1 : 0, elevation: analysisTab === 'monthly' ? 2 : 0 }}
+                            >
+                                <Text style={{ fontWeight: 'bold', color: analysisTab === 'monthly' ? currentColors.text : currentColors.subText }}>Aylık</Text>
+                            </TouchableOpacity>
+                        </View>
 
-                            {/* 1. HESAPLAMA MANTIĞI (Render içinde yapıyoruz ki güncel olsun) */}
-                            {(() => {
-                                // A. Toplam Tamamlanma Sayısına Göre Sırala
+                        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 50 }}>
+
+                            {/* --- HAFTALIK GÖRÜNÜM (MEVCUT ÖZELLİKLER) --- */}
+                            {analysisTab === 'weekly' && (() => {
+                                // Hesaplamalar
                                 const sortedHabits = [...habits].sort((a, b) => b.completedDates.length - a.completedDates.length);
                                 const bestHabit = sortedHabits.length > 0 ? sortedHabits[0] : null;
                                 const worstHabit = sortedHabits.length > 0 ? sortedHabits[sortedHabits.length - 1] : null;
 
-                                // B. Son 7 Günlük Aktiviteyi Hesapla
+                                // Son 7 Günlük Veri
                                 const last7Days = [];
                                 const today = new Date();
-                                let maxActivity = 0; // Grafik ölçeği için
-
+                                let maxActivity = 0;
                                 for (let i = 6; i >= 0; i--) {
                                     const d = new Date();
                                     d.setDate(today.getDate() - i);
                                     const isoDate = getISODate(d);
-
-                                    // O gün tamamlanan toplam alışkanlık sayısı
                                     const count = habits.reduce((acc, h) => acc + (h.completedDates.includes(isoDate) ? 1 : 0), 0);
                                     if (count > maxActivity) maxActivity = count;
-
-                                    last7Days.push({
-                                        label: getDaysOfWeek(lang)[d.getDay() === 0 ? 6 : d.getDay() - 1].label[0], // P, S, Ç gibi tek harf
-                                        count: count,
-                                        fullDate: isoDate
-                                    });
+                                    last7Days.push({ label: getDaysOfWeek(lang)[d.getDay() === 0 ? 6 : d.getDay() - 1].label[0], count, isToday: i === 0 });
                                 }
 
                                 return (
                                     <View style={{ gap: 20 }}>
-
-                                        {/* --- 2. GRAFİK (SON 7 GÜN) --- */}
-                                        <View style={{ backgroundColor: currentColors.surface, padding: 20, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.05, elevation: 3 }}>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                                                <View style={{ padding: 8, backgroundColor: '#eff6ff', borderRadius: 10 }}>
-                                                    <TrendingUp size={20} color="#3b82f6" />
-                                                </View>
-                                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{t('last_svn')}</Text>
-                                            </View>
-
+                                        {/* Son 7 Gün Grafiği */}
+                                        <View style={{ backgroundColor: currentColors.surface, padding: 20, borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text, marginBottom: 15 }}>Son 7 Gün Aktivitesi</Text>
                                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 150 }}>
                                                 {last7Days.map((day, index) => {
-                                                    // Bar yüksekliği (Max 100%)
                                                     const heightPct = maxActivity > 0 ? (day.count / maxActivity) * 100 : 0;
-                                                    const isToday = index === 6;
-
                                                     return (
                                                         <View key={index} style={{ alignItems: 'center', flex: 1 }}>
-                                                            {/* Bar Sayısı (Üstte) */}
-                                                            <Text style={{ fontSize: 10, color: currentColors.subText, marginBottom: 5 }}>{day.count > 0 ? day.count : ''}</Text>
-
-                                                            {/* Bar Çubuğu */}
-                                                            <View style={{
-                                                                width: 12,
-                                                                height: `${heightPct || 5}%`, // En az %5 görünsün 
-                                                                backgroundColor: isToday ? COLORS.primary : (day.count > 0 ? '#cbd5e1' : '#f1f5f9'),
-                                                                borderRadius: 6,
-                                                                minHeight: 12
-                                                            }} />
-
-                                                            {/* Gün Harfi */}
-                                                            <Text style={{ marginTop: 8, fontSize: 12, fontWeight: isToday ? 'bold' : '500', color: isToday ? COLORS.primary : currentColors.subText }}>
-                                                                {day.label}
-                                                            </Text>
+                                                            <View style={{ width: 12, height: `${Math.max(heightPct, 5)}%`, backgroundColor: day.isToday ? COLORS.primary : (day.count > 0 ? '#cbd5e1' : (isDark ? '#334155' : '#f1f5f9')), borderRadius: 6 }} />
+                                                            <Text style={{ marginTop: 8, fontSize: 12, fontWeight: day.isToday ? 'bold' : '500', color: day.isToday ? COLORS.primary : currentColors.subText }}>{day.label}</Text>
                                                         </View>
                                                     );
                                                 })}
                                             </View>
                                         </View>
 
-                                        {/* --- 3. ŞAMPİYON ALIŞKANLIK --- */}
-                                        {bestHabit && bestHabit.completedDates.length > 0 && (
-                                            <View style={{ backgroundColor: '#f0fdf4', padding: 20, borderRadius: 24, borderWidth: 1, borderColor: '#bbf7d0' }}>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                                    <View style={{ padding: 10, backgroundColor: '#dcfce7', borderRadius: 12 }}>
-                                                        <Award size={24} color="#16a34a" />
-                                                    </View>
-                                                    <View>
-                                                        <Text style={{ fontSize: 13, color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('istikrar')}</Text>
-                                                        <Text style={{ fontSize: 18, color: '#14532d', fontWeight: '900' }}>{bestHabit.title.startsWith('habit_') ? t(bestHabit.title) : bestHabit.title}</Text>
-                                                    </View>
+                                        {/* Şampiyon & Geliştirilmeli Kartları */}
+                                        <View style={{ flexDirection: 'row', gap: 15 }}>
+                                            {bestHabit && bestHabit.completedDates.length > 0 && (
+                                                <View style={{ flex: 1, backgroundColor: '#dcfce7', padding: 15, borderRadius: 20, borderWidth: 1, borderColor: '#bbf7d0' }}>
+                                                    <Award size={24} color="#16a34a" style={{ marginBottom: 10 }} />
+                                                    <Text style={{ color: '#166534', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' }}>{t('istikrar')}</Text>
+                                                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#14532d' }} numberOfLines={1}>{bestHabit.title}</Text>
+                                                    <Text style={{ fontSize: 12, color: '#15803d', marginTop: 4 }}>{bestHabit.completedDates.length} {t('kez')}</Text>
                                                 </View>
-                                                <View style={{ marginTop: 15, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                                                    <Text style={{ fontSize: 32, fontWeight: '900', color: '#16a34a' }}>{bestHabit.completedDates.length}</Text>
-                                                    <Text style={{ fontSize: 14, color: '#15803d', fontWeight: '500', marginBottom: 5 }}>{t('times_done')}</Text>
+                                            )}
+                                            {worstHabit && worstHabit.id !== bestHabit?.id && (
+                                                <View style={{ flex: 1, backgroundColor: '#fff7ed', padding: 15, borderRadius: 20, borderWidth: 1, borderColor: '#ffedd5' }}>
+                                                    <AlertTriangle size={24} color="#ea580c" style={{ marginBottom: 10 }} />
+                                                    <Text style={{ color: '#c2410c', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' }}>{t('bekli')}</Text>
+                                                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#7c2d12' }} numberOfLines={1}>{worstHabit.title}</Text>
+                                                    <Text style={{ fontSize: 12, color: '#9a3412', marginTop: 4 }}>{t('sml_tsk')}</Text>
                                                 </View>
-                                            </View>
-                                        )}
+                                            )}
+                                        </View>
 
-                                        {/* --- 4. GELİŞTİRİLMESİ GEREKEN --- */}
-                                        {worstHabit && worstHabit.id !== bestHabit?.id && (
-                                            <View style={{ backgroundColor: '#fff7ed', padding: 20, borderRadius: 24, borderWidth: 1, borderColor: '#ffedd5' }}>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                                    <View style={{ padding: 10, backgroundColor: '#ffedd5', borderRadius: 12 }}>
-                                                        <AlertTriangle size={24} color="#ea580c" />
-                                                    </View>
-                                                    <View>
-                                                        <Text style={{ fontSize: 13, color: '#c2410c', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('bekli')}</Text>
-                                                        <Text style={{ fontSize: 18, color: '#7c2d12', fontWeight: '900' }}>{worstHabit.title.startsWith('habit_') ? t(worstHabit.title) : worstHabit.title}</Text>
-                                                    </View>
-                                                </View>
-                                                <Text style={{ marginTop: 10, color: '#9a3412', fontSize: 14 }}>
-                                                    {t('sml_tsk')}
-                                                </Text>
-                                            </View>
-                                        )}
-
-                                        {/* --- 5. DETAYLI LİSTE --- */}
+                                        {/* Detaylı Liste */}
                                         <View>
                                             <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>{t('detail_sira')}</Text>
                                             {sortedHabits.map((habit, index) => (
-                                                <View key={habit.id} style={{
-                                                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                                                    padding: 15, backgroundColor: currentColors.surface, marginBottom: 8, borderRadius: 16
-                                                }}>
+                                                <View key={habit.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: currentColors.surface, marginBottom: 8, borderRadius: 16 }}>
                                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                                         <Text style={{ fontSize: 14, color: currentColors.subText, fontWeight: 'bold', width: 20 }}>#{index + 1}</Text>
                                                         <Text style={{ fontSize: 15, color: currentColors.text, fontWeight: '600' }}>{habit.title.startsWith('habit_') ? t(habit.title) : habit.title}</Text>
                                                     </View>
                                                     <View style={{ backgroundColor: index === 0 ? '#dcfce7' : (isDark ? '#334155' : '#f1f5f9'), paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
-                                                        <Text style={{ fontWeight: 'bold', color: index === 0 ? '#166534' : currentColors.text, fontSize: 12 }}>
-                                                            {habit.completedDates.length} <Text style={{ fontSize: 10 }}>{t('kez')}</Text>
-                                                        </Text>
+                                                        <Text style={{ fontWeight: 'bold', color: index === 0 ? '#166534' : currentColors.text, fontSize: 12 }}>{habit.completedDates.length}</Text>
                                                     </View>
                                                 </View>
                                             ))}
+                                        </View>
+                                    </View>
+                                );
+                            })()}
+
+                            {/* --- AYLIK GÖRÜNÜM (YENİ ISI HARİTASI) --- */}
+                            {analysisTab === 'monthly' && (
+                                <View style={{ gap: 20 }}>
+                                    {habits.map((habit) => {
+                                        // Her alışkanlık için özel streak hesapla
+                                        const streak = calculateCurrentStreak(habit.completedDates);
+                                        const totalThisMonth = habit.completedDates.filter(d => d.startsWith(getISODate(new Date()).substring(0, 7))).length;
+
+                                        return (
+                                            <View key={habit.id} style={{ backgroundColor: currentColors.surface, padding: 15, borderRadius: 20, borderWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
+                                                
+                                                {/* Başlık ve Streak Rozeti */}
+                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                                                    <View>
+                                                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{habit.title.startsWith('habit_') ? t(habit.title) : habit.title}</Text>
+                                                        <Text style={{ fontSize: 12, color: currentColors.subText }}>Bu ay: {totalThisMonth} kez</Text>
+                                                    </View>
+                                                    
+                                                    {/* Zincir (Streak) Göstergesi */}
+                                                    <View style={{ alignItems: 'flex-end' }}>
+                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: streak > 0 ? '#fff7ed' : (isDark ? '#334155' : '#f1f5f9'), paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: streak > 0 ? '#ffedd5' : 'transparent' }}>
+                                                            <Flame size={16} color={streak > 0 ? "#f97316" : currentColors.subText} fill={streak > 0 ? "#f97316" : "none"} />
+                                                            <Text style={{ fontWeight: 'bold', color: streak > 0 ? '#c2410c' : currentColors.subText, fontSize: 14 }}>{streak} gün</Text>
+                                                        </View>
+                                                    </View>
+                                                </View>
+
+                                                {/* Aylık Grid (30 Günlük Isı Haritası) */}
+                                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                                                    {Array.from({ length: 28 }).map((_, i) => {
+                                                        const d = new Date();
+                                                        d.setDate(d.getDate() - (27 - i)); // 27 gün önceden başla
+                                                        const dateStr = getISODate(d);
+                                                        const isDone = habit.completedDates.includes(dateStr);
+                                                        
+                                                        return (
+                                                            <View key={i} style={{
+                                                                width: 26, height: 26,
+                                                                borderRadius: 6,
+                                                                backgroundColor: isDone ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9'),
+                                                                opacity: isDone ? 1 : 0.5,
+                                                                borderWidth: 1,
+                                                                borderColor: isDone ? 'transparent' : (isDark ? '#475569' : '#e2e8f0')
+                                                            }} />
+                                                        );
+                                                    })}
+                                                </View>
+                                                <Text style={{ fontSize: 10, color: currentColors.subText, marginTop: 10, textAlign: 'center' }}>Son 28 Günün Aktivitesi</Text>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            )}
+
+                        </ScrollView>
+                    </View>
+                </Modal>
+
+                {/* --- M. GELİŞMİŞ GRUP ANALİZ MODALI (YENİ) --- */}
+                <Modal visible={!!selectedGroupForAnalysis} animationType="slide" presentationStyle="pageSheet">
+                    <View style={{ flex: 1, backgroundColor: currentColors.bg }}>
+                        
+                        {/* Header */}
+                        <View style={{ padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }} numberOfLines={1}>
+                                    {selectedGroupForAnalysis?.title}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('group_stat')}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setSelectedGroupForAnalysis(null)} style={{ padding: 5, backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 12 }}>
+                                <X size={20} color={currentColors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 50 }}>
+                            {selectedGroupForAnalysis && (() => {
+                                // --- HESAPLAMALAR ---
+                                const group = selectedGroupForAnalysis;
+                                const completions = group.completions || {};
+                                
+                                // 1. Sıralama (Leaderboard)
+                                const leaderboard = group.memberDetails?.map(member => {
+                                    let count = 0;
+                                    Object.values(completions).forEach((dayList: any) => {
+                                        if (dayList.includes(member.uid)) count++;
+                                    });
+                                    return { ...member, count };
+                                }).sort((a, b) => b.count - a.count) || [];
+
+                                // 2. Son 7 Günlük Grup Performansı (Toplam)
+                                const last7Days = [];
+                                const today = new Date();
+                                let maxActivity = 0;
+
+                                for (let i = 6; i >= 0; i--) {
+                                    const d = new Date();
+                                    d.setDate(today.getDate() - i);
+                                    const isoDate = getISODate(d);
+                                    const dayLabel = getDaysOfWeek(lang)[d.getDay() === 0 ? 6 : d.getDay() - 1].label[0];
+                                    
+                                    // O gün gruptan kaç kişi yapmış?
+                                    const doneCount = (completions[isoDate] || []).length;
+                                    if (doneCount > maxActivity) maxActivity = doneCount;
+
+                                    last7Days.push({ label: dayLabel, count: doneCount, isToday: i === 0 });
+                                }
+                                // Max activity 0 ise grafiğin patlamaması için 1 yap
+                                maxActivity = maxActivity || 1;
+
+                                return (
+                                    <View style={{ gap: 20 }}>
+                                        
+                                        {/* --- GRAFİK: GRUP AKTİVİTESİ --- */}
+                                        <View style={{ backgroundColor: currentColors.surface, padding: 20, borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', shadowColor: "#000", shadowOpacity: 0.05, elevation: 3 }}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                                                <View style={{ padding: 8, backgroundColor: '#e0f2fe', borderRadius: 10 }}>
+                                                    <Users size={20} color="#0284c7" />
+                                                </View>
+                                                <View>
+                                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text }}>{t('group_act')}</Text>
+                                                    <Text style={{ fontSize: 11, color: currentColors.subText }}>{t('seven_days_act')}</Text>
+                                                </View>
+                                            </View>
+
+                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 120 }}>
+                                                {last7Days.map((day, index) => {
+                                                    const heightPct = (day.count / group.members.length) * 100; // Toplam üye sayısına göre oran
+                                                    return (
+                                                        <View key={index} style={{ alignItems: 'center', flex: 1 }}>
+                                                            <Text style={{ fontSize: 10, color: currentColors.subText, marginBottom: 5 }}>{day.count > 0 ? day.count : ''}</Text>
+                                                            <View style={{ 
+                                                                width: 14, 
+                                                                height: `${Math.max(heightPct, 5)}%`, 
+                                                                backgroundColor: day.isToday ? COLORS.primary : (day.count > 0 ? '#60a5fa' : (isDark ? '#334155' : '#f1f5f9')), 
+                                                                borderRadius: 6 
+                                                            }} />
+                                                            <Text style={{ marginTop: 8, fontSize: 12, fontWeight: day.isToday ? 'bold' : '500', color: day.isToday ? COLORS.primary : currentColors.subText }}>{day.label}</Text>
+                                                        </View>
+                                                    );
+                                                })}
+                                            </View>
+                                        </View>
+
+                                        {/* --- LİDERLİK TABLOSU (LEADERBOARD) --- */}
+                                        <View>
+                                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: currentColors.text, marginBottom: 10 }}>Liderlik Tablosu</Text>
+                                            {leaderboard.map((member, index) => {
+                                                const isMe = member.uid === user.uid;
+                                                const medalColor = index === 0 ? '#fbbf24' : (index === 1 ? '#9ca3af' : (index === 2 ? '#b45309' : 'transparent'));
+                                                
+                                                return (
+                                                    <View key={member.uid} style={{ 
+                                                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                                        padding: 15, marginBottom: 8, borderRadius: 16,
+                                                        backgroundColor: isMe ? (isDark ? 'rgba(99, 102, 241, 0.15)' : '#e0e7ff') : currentColors.surface,
+                                                        borderWidth: 1, borderColor: isMe ? COLORS.primary : (isDark ? '#334155' : '#f1f5f9')
+                                                    }}>
+                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                                            {/* Sıra Numarası / Madalya */}
+                                                            <View style={{ width: 24, alignItems: 'center' }}>
+                                                                {index < 3 ? (
+                                                                    <Trophy size={20} color={medalColor} fill={medalColor} />
+                                                                ) : (
+                                                                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: currentColors.subText }}>{index + 1}</Text>
+                                                                )}
+                                                            </View>
+
+                                                            {/* Avatar */}
+                                                            <Image 
+                                                                source={member.photoURL ? { uri: member.photoURL } : require('../../assets/Logo/Logo.png')} 
+                                                                style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#cbd5e1' }} 
+                                                            />
+                                                            
+                                                            <View>
+                                                                <Text style={{ fontSize: 15, fontWeight: '700', color: currentColors.text }}>
+                                                                    {isMe ? `${member.displayName} (Sen)` : member.displayName}
+                                                                </Text>
+                                                                <Text style={{ fontSize: 11, color: currentColors.subText }}>
+                                                                    {index === 0 ? t('group_leader') : t('group_member')}
+                                                                </Text>
+                                                            </View>
+                                                        </View>
+
+                                                        {/* Skor */}
+                                                        <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#f8fafc', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 }}>
+                                                            <Text style={{ fontWeight: 'bold', color: currentColors.text, fontSize: 14 }}>
+                                                                {member.count} <Text style={{ fontSize: 10, color: currentColors.subText }}>kez</Text>
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                );
+                                            })}
                                         </View>
 
                                     </View>
@@ -7006,85 +7355,6 @@ export default function OmmioApp() {
                             })()}
                         </ScrollView>
                     </View>
-                </Modal>
-
-                {/* --- M. GRUP OLUŞTURMA MODALI --- */}
-                <Modal visible={isGroupModalOpen} animationType="slide" presentationStyle="pageSheet">
-                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: currentColors.bg }}>
-                        <View style={{ flex: 1, padding: 20 }}>
-
-                            {/* Header */}
-                            <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>{t('new_ghbt')}</Text>
-                                <TouchableOpacity onPress={() => setIsGroupModalOpen(false)}>
-                                    <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('cancel')}</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            <ScrollView contentContainerStyle={{ gap: 20 }}>
-
-                                {/* İsim */}
-                                <View>
-                                    <Text style={styles.sectionLabel}>{t('gname')}</Text>
-                                    <TextInput
-                                        value={newGroupTitle}
-                                        onChangeText={setNewGroupTitle}
-                                        placeholder={t('example_hbbt')}
-                                        placeholderTextColor={currentColors.subText}
-                                        style={styles.inputField}
-                                    />
-                                </View>
-
-                                {/* Arkadaş Seçimi */}
-                                <View>
-                                    <Text style={styles.sectionLabel}>{t('feat_social_link')}</Text>
-                                    {contacts.length === 0 ? (
-                                        <Text style={{ color: currentColors.subText, fontStyle: 'italic' }}>{t('add_none_f')}</Text>
-                                    ) : (
-                                        <View style={{ gap: 10 }}>
-                                            {contacts.map(contact => {
-                                                const isSelected = selectedGroupMembers.includes(contact.uid);
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={contact.uid}
-                                                        onPress={() => {
-                                                            if (isSelected) setSelectedGroupMembers(prev => prev.filter(id => id !== contact.uid));
-                                                            else setSelectedGroupMembers(prev => [...prev, contact.uid]);
-                                                        }}
-                                                        style={{
-                                                            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                                                            padding: 12, backgroundColor: currentColors.surface, borderRadius: 12,
-                                                            borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#e2e8f0')
-                                                        }}
-                                                    >
-                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center' }}>
-                                                                {contact.photoURL ? (
-                                                                    <Image source={{ uri: contact.photoURL }} style={{ width: 36, height: 36, borderRadius: 18 }} />
-                                                                ) : (
-                                                                    <Text style={{ fontWeight: 'bold', color: '#fff' }}>{contact.username[0].toUpperCase()}</Text>
-                                                                )}
-                                                            </View>
-                                                            <Text style={{ color: currentColors.text, fontWeight: '600' }}>{contact.displayName || contact.username}</Text>
-                                                        </View>
-
-                                                        <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: isSelected ? COLORS.primary : '#cbd5e1', alignItems: 'center', justifyContent: 'center', backgroundColor: isSelected ? COLORS.primary : 'transparent' }}>
-                                                            {isSelected && <Check size={14} color="#fff" />}
-                                                        </View>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    )}
-                                </View>
-
-                                <TouchableOpacity onPress={handleCreateGroup} style={[styles.primaryButton, { marginTop: 20 }]}>
-                                    {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{t('set_grp')}</Text>}
-                                </TouchableOpacity>
-
-                            </ScrollView>
-                        </View>
-                    </KeyboardAvoidingView>
                 </Modal>
 
                 {/* --- N. TAMAMLANAN GÖREVLER (GEÇMİŞ) MODALI --- */}
@@ -7167,8 +7437,8 @@ export default function OmmioApp() {
 
                         {/* --- MODERN ALT ARAMA ÇUBUĞU (GEÇMİŞ) --- */}
                         <KeyboardAvoidingView
-                            behavior={Platform.OS === "ios" ? "padding" : undefined}
-                            keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+                            behavior={Platform.OS === "ios" ? "padding" : "height"} // Android için height, iOS için padding
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20} // iOS'ta Modal içinde klavye payı daha yüksek olmalı
                             style={{
                                 position: 'absolute',
                                 bottom: 30,
@@ -8368,16 +8638,17 @@ const getDynamicStyles = (currentColors: any, isDark: boolean) => StyleSheet.cre
     },
     tabBar: {
         flexDirection: 'row',
-        justifyContent: 'space-around', // Öğeleri eşit aralıkla yayar
+        justifyContent: 'space-around',
         alignItems: 'center',
-        paddingVertical: 10, // Alt ve üst boşluk
-        paddingBottom: 20, // iPhone safe area için ekstra boşluk (gerekirse)
+        paddingVertical: 12, // Yüksekliği biraz artırdık ferah dursun
+        paddingBottom: Platform.OS === 'ios' ? 25 : 12, // iPhone X ve üstü için alt boşluk
         borderTopWidth: 1,
-        elevation: 10, // Android gölgesi için
-        shadowColor: '#000', // iOS gölgesi için
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
+        // --- Gölgeyi Güçlendiriyoruz ---
+        elevation: 20, // Android için daha yüksek gölge
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 }, // Gölge yukarı doğru vursun
+        shadowOpacity: 0.1, 
+        shadowRadius: 8,
     },
     tabItem: {
         alignItems: 'center',
