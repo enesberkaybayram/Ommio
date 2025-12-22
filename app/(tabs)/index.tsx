@@ -2700,22 +2700,25 @@ export default function OmmioApp() {
     };
     // --- GRUP OLUŞTURMA KONTROLÜ (YENİ FONKSİYON) ---
     const handleOpenGroupModal = () => {
+        // 1. Kullanıcı yoksa işlem yapma
         if (!user) return;
 
-        // 1. Misafir Kontrolü
+        // 2. Misafir kullanıcısı ise engelle (Senin yazdığın checkGuest fonksiyonunu kullanır)
         if (checkGuest("Grup Oluşturma")) return;
 
-        // 2. Arkadaş Kontrolü
-        if (contacts.length === 0) {
-            showToast(t('warning_title'), "Grup oluşturmak için önce arkadaş eklemelisin!", 'warning');
+        // 3. Hiç arkadaşı yoksa uyar ve Sosyal sekmesine gönder
+        if (!contacts || contacts.length === 0) {
+            showToast(t('warning_title'), "Grup kurmak için önce arkadaş eklemelisin!", 'warning');
             
-            // Kullanıcıyı otomatik olarak Sosyal sekmesine gönder
-            setActiveTab('social');
-            pagerRef.current?.setPage(3); // 3 = Social tab index'i
+            // Sosyal sekmesini aç
+            setActiveTab('social'); 
+            if(pagerRef.current) {
+                pagerRef.current.setPage(3); // 3. sayfa (Social)
+            }
             return;
         }
 
-        // 3. Her şey yolundaysa Modalı Aç
+        // 4. Her şey tamamsa Modalı Aç
         setIsGroupModalOpen(true);
     };
 
@@ -4614,7 +4617,10 @@ export default function OmmioApp() {
                                                 {groupHabits.map(group => renderGroupHabitCard(group))}
                                             </View>
                                         ) : (
-                                            <TouchableOpacity onPress={() => setIsGroupModalOpen(true)} style={{ padding: 20, backgroundColor: currentColors.surface, borderRadius: 20, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: currentColors.subText }}>
+                                            <TouchableOpacity 
+                                                onPress={handleOpenGroupModal} // <-- Eski kod: setIsGroupModalOpen(true)
+                                                style={{ padding: 20, backgroundColor: currentColors.surface, borderRadius: 20, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: currentColors.subText }}
+                                            >
                                                 <Users size={32} color={currentColors.subText} style={{ marginBottom: 10 }} />
                                                 <Text style={{ color: currentColors.subText, textAlign: 'center' }}>{t('frnd_hbt')}</Text>
                                                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', marginTop: 5 }}>{t('crt_group')}</Text>
