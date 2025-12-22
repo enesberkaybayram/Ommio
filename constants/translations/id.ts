@@ -128,8 +128,9 @@ tasks_waiting: "Tugas menunggu",
 c_err: "Kesalahan koneksi.",
 log_again: "Demi keamanan, logout lalu login lagi.",
 out_in: "Jika email tidak masuk, coba logout lalu login lagi.",hide: "Sembunyikan",
-analysis_btn: "Analisis",
+analysis_btn: "Analisis",agenda:"Semua rencana",
 habit_gym:"Gym / Latihan 💪",habit_walk:"Jalan kaki (10–30 menit) 🚶‍♂️",habit_fresh_air:"Udara segar (5–10 menit di luar) 🌤️",habit_meditate:"Meditasi 🧘‍♂️",habit_water:"Air (2–3L) 💧",habit_vitamins:"Vitamin / Suplemen 💊",habit_read:"Membaca (10–30 menit) 📖",habit_edu_video:"Menonton video edukasi 🎥",habit_skill:"Latihan keterampilan (desain, coding, dll.) 🛠️",
+restore_purchases:"Pulihkan pembelian",restore_success:"Langganan premium Anda berhasil dipulihkan.",restore_not_found:"Tidak ditemukan langganan aktif.",restore_failed:"Pemulihan gagal:",guest_edit_warning:"Silakan masuk untuk mengedit.",
 
 
 

@@ -11,6 +11,7 @@ import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as SMS from 'expo-sms';
 import { useCallback } from 'react';
+import Purchases from 'react-native-purchases';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import WidgetCenter from 'react-native-widget-center';
 import { WidgetTaskHandler } from '../../widget-task-handler.android'; // Dosya yolunuza göre düzeltin
@@ -1846,10 +1847,10 @@ export default function OmmioApp() {
     // Bu fonksiyonu mevcut handleAuth yerine yapıştırın
     const handleAuth = async () => {
         // 1. Girdileri Temizle
-        const inputVal = email.trim(); // Hem e-posta hem kullanıcı adı olabilir
+        const inputVal = email.trim();
         const cleanPassword = password.trim();
 
-        // --- LOGIN İŞLEMİ ---
+        // --- LOGIN (GİRİŞ) İŞLEMİ ---
         if (authMode === 'login') {
             if (!inputVal || !cleanPassword) {
                 showToast(t('warning_title'), t('fill_all_fields'), 'warning');
@@ -1861,39 +1862,33 @@ export default function OmmioApp() {
             try {
                 let emailToLogin = inputVal;
 
-                // EĞER GİRİLEN DEĞER BİR E-POSTA DEĞİLSE (İçinde @ yoksa), KULLANICI ADIDIR
+                // Kullanıcı adı girildiyse E-postaya çevir
                 if (!inputVal.includes('@')) {
-                    // Kullanıcı adını temizle (küçük harf, boşluksuz)
                     const cleanUsername = inputVal.toLowerCase()
                         .replace(/\s+/g, '')
                         .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
                         .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
 
-                    // --- GÜVENLİ YÖNTEM ---
-                    // Query yerine doğrudan GET yapıyoruz.
-                    // 'usernames' koleksiyonunda ID'si bu kullanıcı adı olan belgeyi çek
+                    // Usernames tablosundan kontrol (Daha güvenli)
                     const usernameRef = doc(db, "usernames", cleanUsername);
                     const docSnap = await getDoc(usernameRef);
 
                     if (!docSnap.exists()) {
-                        throw new Error("USER_NOT_FOUND"); // Böyle bir kullanıcı adı yok
+                        throw new Error("USER_NOT_FOUND");
                     }
 
-                    // E-postasını al
                     emailToLogin = docSnap.data().email;
                 }
 
-                // Beni Hatırla Kontrolü
+                // Beni Hatırla
                 if (rememberMe) {
                     await AsyncStorage.setItem("ommio_remember_me", "true");
                 } else {
                     await AsyncStorage.setItem("ommio_remember_me", "false");
                 }
 
-                // Bulunan veya girilen E-posta ile giriş yap
                 await signInWithEmailAndPassword(auth, emailToLogin, cleanPassword);
-
-                // Başarılı olursa useEffect'teki auth listener otomatik yönlendirir, loading kapatmaya gerek yok.
+                // Başarılı giriş (useEffect yönlendirecek)
 
             } catch (e: any) {
                 setIsAuthLoading(false);
@@ -1901,23 +1896,21 @@ export default function OmmioApp() {
 
                 let errorMsg = "Giriş başarısız.";
                 if (e.message === "USER_NOT_FOUND") errorMsg = t('username_not_found');
-                else if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') errorMsg = "Şifre veya kullanıcı bilgisi hatalı.";
-                else if (e.code === 'auth/user-not-found') errorMsg = "Kullanıcı bulunamadı.";
-                else if (e.code === 'auth/too-many-requests') errorMsg = "Çok fazla deneme yaptınız, lütfen bekleyin.";
-
+                else if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') errorMsg = t('wrong_password_msg');
+                else if (e.code === 'auth/user-not-found') errorMsg = t('username_not_found');
+                else if (e.code === 'auth/too-many-requests') errorMsg = t('too_many_requests');
+                
                 showToast(t('error_title'), errorMsg, 'error');
             }
         }
         // --- KAYIT OLMA (SIGNUP) İŞLEMİ ---
-        // --- MEVCUT handleAuth İÇİNDEKİ else (SIGNUP) KISMINI BUNUNLA DEĞİŞTİR ---
         else {
-            // 1. Kullanıcı Adı Kontrolü
+            // 1. Validasyonlar
             if (!username.trim()) {
                 showToast(t('missing_info'), t('auth_username_required'), 'warning');
                 return;
             }
 
-            // 2. SIKI E-POSTA FORMAT KONTROLÜ (Regex)
             if (!isValidEmail(inputVal)) {
                 showToast(t('error_title'), t('valid_mail_aub'), 'warning');
                 return;
@@ -1925,6 +1918,12 @@ export default function OmmioApp() {
 
             if (!cleanPassword) {
                 showToast(t('missing_info'), t('enter_password'), 'warning');
+                return;
+            }
+            
+            // Şifre uzunluk kontrolü (Firebase'e gitmeden önce)
+            if (cleanPassword.length < 6) {
+                showToast(t('missing_info'), t('password_min_length') || "Şifre en az 6 karakter olmalıdır.", 'warning');
                 return;
             }
 
@@ -1936,10 +1935,12 @@ export default function OmmioApp() {
                     .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
                     .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
 
-                // Kullanıcı adı daha önce alınmış mı kontrol et
-                const q = query(collection(db, "public_users"), where("username", "==", cleanUsername));
-                const checkUser = await getDocs(q);
-                if (!checkUser.empty) {
+                // DÜZELTME: public_users yerine usernames tablosunu kontrol et
+                // Çünkü public_users okuma izni sadece giriş yapmış kullanıcılara açık olabilir.
+                const usernameRef = doc(db, "usernames", cleanUsername);
+                const usernameSnap = await getDoc(usernameRef);
+                
+                if (usernameSnap.exists()) {
                     setIsAuthLoading(false);
                     showToast(t('error_title'), t('profile_username_taken'), 'warning');
                     return;
@@ -1948,12 +1949,13 @@ export default function OmmioApp() {
                 // Kayıt İşlemi
                 const cred = await createUserWithEmailAndPassword(auth, inputVal, cleanPassword);
 
-                // --- YENİ EKLENEN KISIM: DOĞRULAMA MAİLİ GÖNDERME ---
+                // Doğrulama Maili
                 await sendEmailVerification(cred.user);
-                // -----------------------------------------------------
-
+                
+                // Profili Güncelle
                 await updateProfile(cred.user, { displayName: username });
 
+                // Veritabanı İşlemleri
                 const userData = {
                     uid: cred.user.uid,
                     username: cleanUsername,
@@ -1968,67 +1970,102 @@ export default function OmmioApp() {
                     ]
                 };
 
-                await setDoc(doc(db, "users", cred.user.uid), userData);
+                // Batch İşlemleri (Tek seferde yazma)
+                const batch = writeBatch(db);
 
-                await setDoc(doc(db, "public_users", cred.user.uid), {
+                // 1. Users
+                batch.set(doc(db, "users", cred.user.uid), userData);
+
+                // 2. Public Users
+                batch.set(doc(db, "public_users", cred.user.uid), {
                     uid: cred.user.uid,
                     username: cleanUsername,
                     originalUsername: username,
                     photoURL: null
                 });
 
-                await setDoc(doc(db, "usernames", cleanUsername), {
+                // 3. Usernames
+                batch.set(doc(db, "usernames", cleanUsername), {
                     email: inputVal
                 });
 
-
-                const batch = writeBatch(db); // Toplu yazma işlemi başlat (Performans için)
-
+                // 4. Varsayılan Alışkanlıklar
                 DEFAULT_HABITS.forEach((habit) => {
-                    // Yeni bir döküman referansı oluştur
                     const newHabitRef = doc(collection(db, "users", cred.user.uid, "habits"));
-                    
                     batch.set(newHabitRef, {
-                        title: habit.titleKey, // DİKKAT: Buraya çeviri anahtarını ('habit_gym') kaydediyoruz. Gösterirken t() fonksiyonuna sokacağız.
+                        title: habit.titleKey,
                         frequency: 'daily',
-                        selectedDays: [], // Daily olduğu için boş
+                        selectedDays: [],
                         endDate: null,
                         completedDates: [],
                         notificationTime: null,
                         notificationIds: [],
-                        categoryId: 'personal', // Varsayılan kategori (ID'sinin 'personal' olduğundan emin olun)
+                        categoryId: 'personal',
                         createdAt: serverTimestamp()
                     });
                 });
 
-                await batch.commit(); // Hepsini tek seferde veritabanına gönder
+                await batch.commit();
 
                 setIsAuthLoading(false);
 
-                // Kullanıcıya bilgi ver
-                showToast(t('success'),t('scs_verify'), 'success');
-
+                // Başarı Mesajı
+                showToast(t('success'), t('scs_verify'), 'success');
 
             } catch (e: any) {
                 setIsAuthLoading(false);
                 console.error("Signup Error:", e);
-                let errorMsg = t('login_failed');
+                
+                let errorMsg = "Kayıt işlemi başarısız oldu.";
 
-                if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                    errorMsg = t('wrong_password_msg') ;
-                } else if (e.message === "USER_NOT_FOUND" || e.code === 'auth/user-not-found') {
-                    errorMsg = t('username_not_found');
-                } else if (e.code === 'auth/too-many-requests') {
-                    errorMsg = t('too_many_requests') ;
+                // DÜZELTME: Hata kodlarını detaylandır
+                if (e.code === 'auth/email-already-in-use') {
+                    errorMsg = t('email_in_use') || "Bu e-posta adresi zaten kullanımda.";
+                } else if (e.code === 'auth/weak-password') {
+                    errorMsg = t('weak_password') || "Şifre çok zayıf.";
                 } else if (e.code === 'auth/invalid-email') {
-                    errorMsg = t('invalid_email') ;
+                    errorMsg = t('invalid_email') || "Geçersiz e-posta adresi.";
+                } else if (e.code === 'permission-denied') {
+                    errorMsg = "Veritabanı erişim izni reddedildi.";
                 }
 
                 showToast(t('error_title'), errorMsg, 'error');
             }
         }
-    }
+    };
+    // --- SATIN ALIMLARI GERİ YÜKLE FONKSİYONU ---
+        const handleRestorePurchases = async () => {
+            setIsAuthLoading(true);
+            try {
+                // RevenueCat'ten geri yükleme isteği yap
+                const customerInfo = await Purchases.restorePurchases();
 
+                // 'Premium' yetkisi var mı kontrol et (RevenueCat panelindeki Entitlement ID'niz 'Premium' olmalı)
+                if (customerInfo.entitlements.active['Premium']) {
+                    
+                    // 1. State'i güncelle
+                    setIsPremium(true);
+
+                    // 2. Firebase'i güncelle (Kalıcılık için)
+                    if (user) {
+                        await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
+                    }
+
+                    // 3. Widget'ı güncelle
+                    updateWidgetData(tasks, habits, true);
+
+                    showToast(t('success'), t('restore_success'), 'success');
+                } else {
+                    showToast(t('info_title'), t('restore_not_found'), 'warning');
+                }
+
+            } catch (e: any) {
+                console.error("Restore Error:", e);
+                showToast(t('error_title'), t('restore_failed') + e.message, 'error');
+            } finally {
+                setIsAuthLoading(false);
+            }
+        };
     const handleLogout = async () => {
     try {
         // 1. ÖNCE WIDGET'I TEMİZLE (Boş veri gönder)
@@ -3987,10 +4024,11 @@ export default function OmmioApp() {
                                 <Text style={{
                                     fontSize: 15,
                                     fontWeight: '700',
-                                    color: isCalendarExpanded ? '#fff' : currentColors.text
+                                    color: isCalendarExpanded ? '#fff' : currentColors.text,
+                                    textAlign: 'center', // 👈 YAZIYI ORTALAR
+                                     minWidth: 90
                                 }}>
-                                    {selectedDate.getDate()} {getGreeting(lang) === 'tr' ? ' ' : '/'} {selectedDate.getMonth() + 1} {selectedDate.getFullYear()}
-                                </Text>
+                                {String(selectedDate.getDate()).padStart(2, '0')}/{String(selectedDate.getMonth() + 1).padStart(2, '0')}/{selectedDate.getFullYear()}                                </Text>
                                 {isCalendarExpanded ?
                                     <ChevronUp size={16} color="#fff" /> :
                                     <ChevronDown size={16} color={currentColors.subText} />
@@ -4763,7 +4801,7 @@ export default function OmmioApp() {
                                                 <Users size={40} color={COLORS.primary} />
                                             </View>
                                             <Text style={{ textAlign: 'center', fontWeight: '800', fontSize: 20, color: currentColors.text, marginBottom: 10 }}>
-                                                {t('social1')}
+                                                {t('social_tab')}
                                             </Text>
                                             <Text style={{ textAlign: 'center', color: currentColors.subText, marginBottom: 25, fontSize: 14, lineHeight: 20, maxWidth: 280 }}>
                                                 {t('register_af')}
@@ -5118,18 +5156,62 @@ export default function OmmioApp() {
                                                 </View>
                                             </TouchableOpacity>
 
-                                            {/* Şifre İşlemleri */}
-                                            <TouchableOpacity onPress={() => setIsPasswordModalOpen(true)} style={[styles.settingBtn, { marginBottom: 12, justifyContent: 'space-between', backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderWidth: 0 }]}>
-                                                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                                                    <View style={{ padding: 8, borderRadius: 10, backgroundColor: COLORS.primary + '15' }}><Lock size={20} color={COLORS.primary} /></View>
-                                                    <View>
-                                                        <Text style={{ color: currentColors.text, fontSize: 15, fontWeight: '500' }}>
-                                                            {user.providerData.some((p: any) => p.providerId === 'password') ? t('change_password') : t('create_password')}
-                                                        </Text>
+                                            {/* Şifre İşlemleri - SADECE Misafir Değilse Göster */}
+                                            {!(user.isAnonymous || user.isGuest) && (
+                                                <TouchableOpacity
+                                                    onPress={() => setIsPasswordModalOpen(true)}
+                                                    style={[styles.settingBtn, { marginBottom: 12, justifyContent: 'space-between', backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderWidth: 0 }]}
+                                                >
+                                                    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                                                        <View style={{ padding: 8, borderRadius: 10, backgroundColor: COLORS.primary + '15' }}>
+                                                            <Lock size={20} color={COLORS.primary} />
+                                                        </View>
+                                                        <View>
+                                                            <Text style={{ color: currentColors.text, fontSize: 15, fontWeight: '500' }}>
+                                                                {/* Eğer şifre sağlayıcısı varsa 'Değiştir', yoksa 'Oluştur' yazar */}
+                                                                {user.providerData.some((p: any) => p.providerId === 'password') ? t('change_password') : t('create_password')}
+                                                            </Text>
+                                                        </View>
                                                     </View>
+                                                    <ChevronRight size={18} color={currentColors.subText} />
+                                                </TouchableOpacity>
+                                            )}
+                                            {/* --- SATIN ALIMLARI GERİ YÜKLE BUTONU --- */}
+                                        <TouchableOpacity 
+                                            onPress={handleRestorePurchases} 
+                                            style={[styles.settingBtn, { 
+                                                marginBottom: 12, 
+                                                justifyContent: 'space-between', 
+                                                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', 
+                                                borderWidth: 0,
+                                                // Yüksekliği diğerleriyle eşitlemek için gerekirse minHeight ekleyebiliriz ama 
+                                                // aşağıdaki yapı zaten standart boyuta çekecektir.
+                                            }]}
+                                        >
+                                            {/* SOL GRUP: İkon ve Yazı */}
+                                            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flex: 1, paddingRight: 10 }}> 
+                                                <View style={{ padding: 8, borderRadius: 10, backgroundColor: COLORS.primary + '15' }}>
+                                                    <Repeat size={20} color={COLORS.primary} /> 
                                                 </View>
-                                                <ChevronRight size={18} color={currentColors.subText} />
-                                            </TouchableOpacity>
+                                                
+                                                {/* Yazı Alanı */}
+                                                <Text 
+                                                    numberOfLines={1}       // Yazıyı tek satıra zorla
+                                                    ellipsizeMode="tail"    // Sığmazsa sonuna "..." koy
+                                                    style={{ 
+                                                        color: currentColors.text, 
+                                                        fontSize: 15, 
+                                                        fontWeight: '500',
+                                                        flex: 1             // Alanın geri kalanını kaplasın ama taşmasın
+                                                    }} 
+                                                >
+                                                    {t('restore_purchases')}
+                                                </Text>
+                                            </View>
+
+                                            {/* SAĞ TARAF: Ok */}
+                                            <ChevronRight size={18} color={currentColors.subText} />
+                                        </TouchableOpacity>
                                         </View>
 
                                         {/* Görünüm (Theme) */}
@@ -5163,6 +5245,7 @@ export default function OmmioApp() {
                                                 })}
                                             </View>
                                         </View>
+                                        
 
                                         {/* Gizlilik Linki */}
                                         <TouchableOpacity onPress={() => { setIsSettingsOpen(false); router.push(`/${lang}/privacy`); }} style={{ borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', padding: 15 }}>
@@ -6609,8 +6692,8 @@ export default function OmmioApp() {
                                             {/* Mesaj İkonu ve Bildirim Baloncuğu */}
                                             <View style={{ marginLeft: 5 }}>
                                                 {/* Burada TaskChatButton'ı kullanamayız çünkü onPress'i farklı, 
-      o yüzden manuel bir kontrol ekliyoruz veya TaskChatButton'ı modifiye ediyoruz. 
-      En kolayı TaskChatButton'ı buraya da koymak ama onPress'i override etmek. */}
+                                                  o yüzden manuel bir kontrol ekliyoruz veya TaskChatButton'ı modifiye ediyoruz. 
+                                                  En kolayı TaskChatButton'ı buraya da koymak ama onPress'i override etmek. */}
                                                 <TaskChatButton
                                                     task={item}
                                                     user={user}
@@ -6655,7 +6738,7 @@ export default function OmmioApp() {
                         {/* Header */}
                         <View style={{ padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View>
-                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('agenda') || "Tüm Planlar"}</Text>
+                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: currentColors.text }}>{t('agenda')}</Text>
                                 <Text style={{ fontSize: 12, color: currentColors.subText }}>{t('tsk_soon')}</Text>
                             </View>
                             <TouchableOpacity onPress={() => setIsAllTasksModalOpen(false)} style={{ padding: 5 }}>
@@ -6663,32 +6746,16 @@ export default function OmmioApp() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* --- YENİ ARAMA ÇUBUĞU (YAKLAŞAN GÖREVLER) --- */}
-                        <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginHorizontal: 20, marginBottom: 15 }]}>
-                            <ListTodo size={20} color={currentColors.subText} style={{ marginRight: 10 }} />
-                            <TextInput
-                                value={searchTasks}
-                                onChangeText={setSearchTasks}
-                                placeholder={t('search_tasks')}
-                                placeholderTextColor={currentColors.subText}
-                                style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                            />
-                            {searchTasks.length > 0 && (
-                                <TouchableOpacity onPress={() => setSearchTasks('')} style={{ padding: 5 }}>
-                                    <X size={18} color={currentColors.subText} />
-                                </TouchableOpacity>
-                            )}
-                        </View>
-
-                        {/* Liste */}
+                        {/* Liste (Arama Çubuğu üstten kaldırıldı) */}
                         <FlatList
                             data={tasks
                                 .filter(t => !t.completed)
-                                .filter(t => t.text.toLowerCase().includes(searchTasks.toLowerCase())) // <--- BURASI GÜNCELLENDİ
+                                .filter(t => t.text.toLowerCase().includes(searchTasks.toLowerCase()))
                                 .sort((a, b) => a.date.localeCompare(b.date))
                             }
                             keyExtractor={(item) => item.id}
-                            contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
+                            contentContainerStyle={{ padding: 20, paddingBottom: 100 }} // Alt boşluk artırıldı
+                            keyboardShouldPersistTaps="handled"
                             ListEmptyComponent={
                                 <View style={{ alignItems: 'center', marginTop: 100, opacity: 0.6 }}>
                                     <CalendarDays size={50} color={currentColors.subText} />
@@ -6696,13 +6763,9 @@ export default function OmmioApp() {
                                 </View>
                             }
                             renderItem={({ item }) => {
-                                // Kategori rengini bul
                                 const cat = categories.find(c => c.id === item.categoryId);
                                 const catColor = CATEGORY_COLORS.find(c => c.id === cat?.color)?.hex || COLORS.primary;
-
-                                // Tarihi güzelleştir (Opsiyonel: Bugün/Yarın yazdırılabilir ama basitçe tarihi yazıyoruz)
-                                const dateParts = item.date.split('-'); // YYYY-MM-DD varsayıyoruz
-                                const formattedDate = `${dateParts[2]}.${dateParts[1]}.${dateParts[0]}`; // DD.MM.YYYY çevrimi
+                                const dateParts = item.date.split('-');
 
                                 return (
                                     <View style={{
@@ -6716,25 +6779,12 @@ export default function OmmioApp() {
                                         borderLeftColor: catColor,
                                         shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 5, elevation: 2
                                     }}>
-                                        {/* Tarih Kutusu (Sol) */}
-                                        <View style={{
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            paddingRight: 15,
-                                            borderRightWidth: 1,
-                                            borderRightColor: isDark ? '#334155' : '#f1f5f9',
-                                            marginRight: 15,
-                                            width: 60
-                                        }}>
+                                        <View style={{ alignItems: 'center', justifyContent: 'center', paddingRight: 15, borderRightWidth: 1, borderRightColor: isDark ? '#334155' : '#f1f5f9', marginRight: 15, width: 60 }}>
                                             <Text style={{ fontSize: 18, fontWeight: 'bold', color: currentColors.text }}>{dateParts[2]}</Text>
                                             <Text style={{ fontSize: 12, color: currentColors.subText }}>{dateParts[1]}/{dateParts[0]}</Text>
                                         </View>
-
-                                        {/* İçerik (Orta) */}
                                         <View style={{ flex: 1 }}>
-                                            <Text numberOfLines={2} style={{ fontSize: 16, fontWeight: '600', color: currentColors.text, marginBottom: 4 }}>
-                                                {item.text}
-                                            </Text>
+                                            <Text numberOfLines={2} style={{ fontSize: 16, fontWeight: '600', color: currentColors.text, marginBottom: 4 }}>{item.text}</Text>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                                     <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: catColor }} />
@@ -6742,27 +6792,67 @@ export default function OmmioApp() {
                                                 </View>
                                                 {item.dueDate && (
                                                     <Text style={{ fontSize: 10, color: COLORS.danger, fontWeight: 'bold' }}>
-                                                    {tFormat('due_label', { date: item.dueDate })}
+                                                        {tFormat('due_label', { date: item.dueDate })}
                                                     </Text>
                                                 )}
                                             </View>
                                         </View>
-
-                                        {/* Git Butonu (Sağ) */}
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setIsAllTasksModalOpen(false); // Modalı kapat
-                                                // Takvimi o tarihe götür
-                                                const targetDate = new Date(item.date);
-                                                setSelectedDate(targetDate);
-                                            }}
-                                        >
+                                        <TouchableOpacity onPress={() => {
+                                            setIsAllTasksModalOpen(false);
+                                            const targetDate = new Date(item.date);
+                                            setSelectedDate(targetDate);
+                                        }}>
                                             <ChevronRight size={20} color={currentColors.subText} />
                                         </TouchableOpacity>
                                     </View>
                                 );
                             }}
                         />
+
+                        {/* --- MODERN ALT ARAMA ÇUBUĞU (AJANDA) --- */}
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === "ios" ? "padding" : undefined}
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+                            style={{
+                                position: 'absolute',
+                                bottom: 30,
+                                width: '100%',
+                                alignItems: 'center',
+                                zIndex: 999,
+                            }}
+                        >
+                            <View style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                width: '90%',
+                                height: 50,
+                                backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                borderRadius: 25,
+                                paddingHorizontal: 15,
+                                shadowColor: "#000",
+                                shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.15,
+                                shadowRadius: 10,
+                                elevation: 5,
+                                borderWidth: 1,
+                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                            }}>
+                                <ListTodo size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                                <TextInput
+                                    value={searchTasks}
+                                    onChangeText={setSearchTasks}
+                                    placeholder={t('search_tasks')}
+                                    placeholderTextColor={currentColors.subText}
+                                    style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
+                                />
+                                {searchTasks.length > 0 && (
+                                    <TouchableOpacity onPress={() => setSearchTasks('')} style={{ padding: 5 }}>
+                                        <X size={18} color={currentColors.subText} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </KeyboardAvoidingView>
+
                     </View>
                 </Modal>
 
@@ -6862,7 +6952,7 @@ export default function OmmioApp() {
                                                     </View>
                                                     <View>
                                                         <Text style={{ fontSize: 13, color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('istikrar')}</Text>
-                                                        <Text style={{ fontSize: 18, color: '#14532d', fontWeight: '900' }}>{bestHabit.title}</Text>
+                                                        <Text style={{ fontSize: 18, color: '#14532d', fontWeight: '900' }}>{bestHabit.title.startsWith('habit_') ? t(bestHabit.title) : bestHabit.title}</Text>
                                                     </View>
                                                 </View>
                                                 <View style={{ marginTop: 15, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -6881,7 +6971,7 @@ export default function OmmioApp() {
                                                     </View>
                                                     <View>
                                                         <Text style={{ fontSize: 13, color: '#c2410c', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('bekli')}</Text>
-                                                        <Text style={{ fontSize: 18, color: '#7c2d12', fontWeight: '900' }}>{worstHabit.title}</Text>
+                                                        <Text style={{ fontSize: 18, color: '#7c2d12', fontWeight: '900' }}>{worstHabit.title.startsWith('habit_') ? t(worstHabit.title) : worstHabit.title}</Text>
                                                     </View>
                                                 </View>
                                                 <Text style={{ marginTop: 10, color: '#9a3412', fontSize: 14 }}>
@@ -7011,32 +7101,17 @@ export default function OmmioApp() {
                                 <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('close_btn')}</Text>
                             </TouchableOpacity>
                         </View>
-                        {/* --- YENİ ARAMA ÇUBUĞU (GEÇMİŞ GÖREVLER) --- */}
-                        <View style={[styles.inputField, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, marginHorizontal: 20, marginBottom: 15 }]}>
-                            <FileText size={20} color={currentColors.subText} style={{ marginRight: 10 }} />
-                            <TextInput
-                                value={searchHistory}
-                                onChangeText={setSearchHistory}
-                                placeholder={t('search_history')}
-                                placeholderTextColor={currentColors.subText}
-                                style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
-                            />
-                            {searchHistory.length > 0 && (
-                                <TouchableOpacity onPress={() => setSearchHistory('')} style={{ padding: 5 }}>
-                                    <X size={18} color={currentColors.subText} />
-                                </TouchableOpacity>
-                            )}
-                        </View>
 
-                        {/* Liste */}
+                        {/* Liste (Arama Çubuğu artık üstte değil) */}
                         <FlatList
                             data={tasks
                                 .filter(t => t.completed)
-                                .filter(t => t.text.toLowerCase().includes(searchHistory.toLowerCase())) // <--- BURASI GÜNCELLENDİ
+                                .filter(t => t.text.toLowerCase().includes(searchHistory.toLowerCase()))
                                 .sort((a, b) => b.date.localeCompare(a.date))
                             }
                             keyExtractor={(item) => item.id}
-                            contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
+                            contentContainerStyle={{ padding: 20, paddingBottom: 100 }} // Alt boşluk artırıldı (Bar için)
+                            keyboardShouldPersistTaps="handled"
                             ListEmptyComponent={
                                 <View style={{ alignItems: 'center', marginTop: 100, opacity: 0.6 }}>
                                     <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
@@ -7046,12 +7121,9 @@ export default function OmmioApp() {
                                 </View>
                             }
                             renderItem={({ item }) => {
-                                // Kategori rengi
                                 const cat = categories.find(c => c.id === item.categoryId);
                                 const catColor = CATEGORY_COLORS.find(c => c.id === cat?.color)?.hex || COLORS.success;
-
                                 const dateParts = item.date.split('-');
-                                const formattedDate = `${dateParts[2]}.${dateParts[1]}.${dateParts[0]}`;
 
                                 return (
                                     <View style={{
@@ -7062,38 +7134,20 @@ export default function OmmioApp() {
                                         marginBottom: 12,
                                         borderRadius: 16,
                                         borderLeftWidth: 4,
-                                        borderLeftColor: COLORS.success, // Yeşil çizgi
+                                        borderLeftColor: COLORS.success,
                                         shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 5, elevation: 2
                                     }}>
-                                        {/* Tarih (Sol) */}
-                                        <View style={{
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            paddingRight: 15,
-                                            borderRightWidth: 1,
-                                            borderRightColor: isDark ? '#334155' : '#f1f5f9',
-                                            marginRight: 15,
-                                            width: 60
-                                        }}>
+                                        <View style={{ alignItems: 'center', justifyContent: 'center', paddingRight: 15, borderRightWidth: 1, borderRightColor: isDark ? '#334155' : '#f1f5f9', marginRight: 15, width: 60 }}>
                                             <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.success }}>{dateParts[2]}</Text>
                                             <Text style={{ fontSize: 12, color: currentColors.subText }}>{dateParts[1]}/{dateParts[0]}</Text>
                                         </View>
-
-                                        {/* İçerik (Orta) */}
                                         <View style={{ flex: 1 }}>
-                                            <Text style={{ fontSize: 16, fontWeight: '600', color: currentColors.text, marginBottom: 4, textDecorationLine: 'line-through', opacity: 0.7 }}>
-                                                {item.text}
-                                            </Text>
-
-                                            {/* Alt Bilgiler */}
+                                            <Text style={{ fontSize: 16, fontWeight: '600', color: currentColors.text, marginBottom: 4, textDecorationLine: 'line-through', opacity: 0.7 }}>{item.text}</Text>
                                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                                                {/* Kategori */}
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: isDark ? '#334155' : '#f0fdf4', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
                                                     <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: catColor }} />
                                                     <Text style={{ fontSize: 10, color: currentColors.subText }}>{cat?.name || "Genel"}</Text>
                                                 </View>
-
-                                                {/* Kim atadı? (Başkasıysa) */}
                                                 {item.assignedBy && item.assignedBy !== user.uid && (
                                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff7ed', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
                                                         <User size={10} color="#ea580c" />
@@ -7101,26 +7155,60 @@ export default function OmmioApp() {
                                                     </View>
                                                 )}
                                             </View>
-
-                                            {/* Açıklama Varsa */}
-                                            {item.description ? (
-                                                <Text numberOfLines={2} style={{ fontSize: 12, color: currentColors.subText, marginTop: 6, fontStyle: 'italic' }}>
-                                                    "{item.description}"
-                                                </Text>
-                                            ) : null}
+                                            {item.description ? <Text numberOfLines={2} style={{ fontSize: 12, color: currentColors.subText, marginTop: 6, fontStyle: 'italic' }}>"{item.description}"</Text> : null}
                                         </View>
-
-                                        {/* Sil butonu (Opsiyonel: Geçmişten tamamen silmek için) */}
-                                        <TouchableOpacity
-                                            onPress={() => askConfirmation(t('delete'), t('task_delete_confirm'), () => deleteTask(item), true)}
-                                            style={{ padding: 5 }}
-                                        >
+                                        <TouchableOpacity onPress={() => askConfirmation(t('delete'), t('task_delete_confirm'), () => deleteTask(item), true)} style={{ padding: 5 }}>
                                             <Trash2 size={18} color={currentColors.subText} style={{ opacity: 0.5 }} />
                                         </TouchableOpacity>
                                     </View>
                                 );
                             }}
                         />
+
+                        {/* --- MODERN ALT ARAMA ÇUBUĞU (GEÇMİŞ) --- */}
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === "ios" ? "padding" : undefined}
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+                            style={{
+                                position: 'absolute',
+                                bottom: 30,
+                                width: '100%',
+                                alignItems: 'center',
+                                zIndex: 999,
+                            }}
+                        >
+                            <View style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                width: '90%',
+                                height: 50,
+                                backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                borderRadius: 25,
+                                paddingHorizontal: 15,
+                                shadowColor: "#000",
+                                shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.15,
+                                shadowRadius: 10,
+                                elevation: 5,
+                                borderWidth: 1,
+                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                            }}>
+                                <FileText size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                                <TextInput
+                                    value={searchHistory}
+                                    onChangeText={setSearchHistory}
+                                    placeholder={t('search_history')}
+                                    placeholderTextColor={currentColors.subText}
+                                    style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
+                                />
+                                {searchHistory.length > 0 && (
+                                    <TouchableOpacity onPress={() => setSearchHistory('')} style={{ padding: 5 }}>
+                                        <X size={18} color={currentColors.subText} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </KeyboardAvoidingView>
+
                     </View>
                 </Modal>
                 {/* --- EKSİK OLAN KISIM: PROFİL DÜZENLEME MODALI --- */}

@@ -127,8 +127,9 @@ tasks_waiting: "Taken wachten",
 c_err: "Verbindingsfout.",
 log_again: "Log voor je veiligheid uit en weer in.",
 out_in: "Als de mail niet komt, probeer uit- en weer in te loggen.",hide: "Verbergen",
-analysis_btn: "Analyse",
+analysis_btn: "Analyse",agenda:"Alle plannen",
 habit_gym:"Sportschool / Training 💪",habit_walk:"Wandelen (10–30 min) 🚶‍♂️",habit_fresh_air:"Frisse lucht (5–10 min buiten) 🌤️",habit_meditate:"Mediteren 🧘‍♂️",habit_water:"Water (2–3L) 💧",habit_vitamins:"Vitamines / Supplementen 💊",habit_read:"Lezen (10–30 min) 📖",habit_edu_video:"Educatieve video bekijken 🎥",habit_skill:"Vaardigheden oefenen (design, code, etc.) 🛠️",
+restore_purchases:"Aankopen herstellen",restore_success:"Je premium lidmaatschap is succesvol hersteld.",restore_not_found:"Geen actief abonnement gevonden.",restore_failed:"Herstellen mislukt:",guest_edit_warning:"Je moet inloggen om te bewerken.",
 
 
     

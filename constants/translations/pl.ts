@@ -129,8 +129,9 @@ tasks_waiting: "Zadania oczekują",
 c_err: "Błąd połączenia.",
 log_again: "Dla bezpieczeństwa wyloguj się i zaloguj ponownie.",
 out_in: "Jeśli mail nie przychodzi, spróbuj wylogować się i zalogować ponownie.",hide: "Ukryj",
-analysis_btn: "Analiza",
+analysis_btn: "Analiza",agenda:"Wszystkie plany",
 habit_gym:"Siłownia / Trening 💪",habit_walk:"Spacer (10–30 min) 🚶‍♂️",habit_fresh_air:"Świeże powietrze (5–10 min na zewnątrz) 🌤️",habit_meditate:"Medytacja 🧘‍♂️",habit_water:"Woda (2–3L) 💧",habit_vitamins:"Witaminy / Suplementy 💊",habit_read:"Czytanie (10–30 min) 📖",habit_edu_video:"Oglądanie filmu edukacyjnego 🎥",habit_skill:"Ćwiczenie umiejętności (design, kodowanie itd.) 🛠️",
+restore_purchases:"Przywróć zakupy",restore_success:"Twoje konto premium zostało pomyślnie przywrócone.",restore_not_found:"Nie znaleziono aktywnej subskrypcji.",restore_failed:"Przywracanie nie powiodło się:",guest_edit_warning:"Aby edytować, musisz się zalogować.",
 
 
 

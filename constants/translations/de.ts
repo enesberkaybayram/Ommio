@@ -128,9 +128,9 @@ tasks_waiting: "Aufgaben ausstehend",
 c_err: "Verbindungsfehler.",
 log_again: "Aus Sicherheitsgründen bitte abmelden und erneut anmelden.",
 out_in: "Wenn keine Mail kommt, abmelden und erneut anmelden.",hide: "Ausblenden",
-analysis_btn: "Analyse",
+analysis_btn: "Analyse",agenda:"Alle Pläne",
 habit_gym:"Fitness / Training 💪",habit_walk:"Spaziergang (10–30 Min) 🚶‍♂️",habit_fresh_air:"Frische Luft (5–10 Min draußen) 🌤️",habit_meditate:"Meditieren 🧘‍♂️",habit_water:"Wasser (2–3L) 💧",habit_vitamins:"Vitamine / Nahrungsergänzung 💊",habit_read:"Lesen (10–30 Min) 📖",habit_edu_video:"Lernvideo ansehen 🎥",habit_skill:"Fähigkeiten üben (Design, Coding usw.) 🛠️",
-
+restore_purchases:"Käufe wiederherstellen",restore_success:"Deine Premium-Mitgliedschaft wurde erfolgreich wiederhergestellt.",restore_not_found:"Kein aktives Abonnement gefunden.",restore_failed:"Wiederherstellung fehlgeschlagen:",guest_edit_warning:"Bitte melde dich an, um zu bearbeiten.",
     
     };
  

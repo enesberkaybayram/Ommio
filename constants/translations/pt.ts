@@ -129,8 +129,9 @@ tasks_waiting: "Tarefas pendentes",
 c_err: "Erro de conexão.",
 log_again: "Por segurança, saia e entre novamente.",
 out_in: "Se o e-mail não chegar, tente sair e entrar novamente.",hide: "Ocultar",
-analysis_btn: "Análise",
+analysis_btn: "Análise",agenda:"Todos os planos",
 habit_gym:"Academia / Treino 💪",habit_walk:"Caminhada (10–30 min) 🚶‍♂️",habit_fresh_air:"Ar fresco (5–10 min ao ar livre) 🌤️",habit_meditate:"Meditar 🧘‍♂️",habit_water:"Água (2–3L) 💧",habit_vitamins:"Vitaminas / Suplementos 💊",habit_read:"Ler (10–30 min) 📖",habit_edu_video:"Assistir vídeo educativo 🎥",habit_skill:"Praticar habilidades (design, código, etc.) 🛠️",
+restore_purchases:"Restaurar compras",restore_success:"Sua assinatura premium foi restaurada com sucesso.",restore_not_found:"Nenhuma assinatura ativa encontrada.",restore_failed:"Falha ao restaurar:",guest_edit_warning:"É necessário fazer login para editar.",
 
 
 

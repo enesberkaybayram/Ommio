@@ -129,7 +129,8 @@ tasks_waiting: "Tâches en attente",
 c_err: "Erreur de connexion.",
 log_again: "Pour votre sécurité, veuillez vous déconnecter puis vous reconnecter.",
 out_in: "Si l’e-mail n’arrive pas, essayez de vous déconnecter puis de vous reconnecter.",hide: "Masquer",
-analysis_btn: "Analyse",
+analysis_btn: "Analyse",agenda:"Tous les plans",
     habit_gym:"Salle de sport / Entraînement 💪",habit_walk:"Marche (10–30 min) 🚶‍♂️",habit_fresh_air:"Air frais (5–10 min dehors) 🌤️",habit_meditate:"Méditation 🧘‍♂️",habit_water:"Eau (2–3L) 💧",habit_vitamins:"Vitamines / Compléments 💊",habit_read:"Lecture (10–30 min) 📖",habit_edu_video:"Regarder une vidéo éducative 🎥",habit_skill:"Pratique de compétences (design, code, etc.) 🛠️",
-    
+restore_purchases:"Restaurer les achats",restore_success:"Votre abonnement premium a été restauré avec succès.",restore_not_found:"Aucun abonnement actif trouvé.",restore_failed:"La restauration a échoué :",guest_edit_warning:"Vous devez vous connecter pour modifier.",
+
     };

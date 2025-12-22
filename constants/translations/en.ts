@@ -126,9 +126,9 @@ tasks_waiting: "Tasks pending",
 c_err: "Connection error.",
 log_again: "For security, please log out and sign in again.",
 out_in: "If the email doesn't arrive, try signing out and back in.",hide: "Hide",
-analysis_btn: "Analysis",
+analysis_btn: "Analysis",agenda:"All Plans",
 habit_gym:"Gym / Workout 💪",habit_walk:"Walk (10–30 min) 🚶‍♂️",habit_fresh_air:"Fresh air (5–10 min outside) 🌤️",habit_meditate:"Meditate 🧘‍♂️",habit_water:"Water (2–3L) 💧",habit_vitamins:"Vitamins / Supplements 💊",habit_read:"Read (10–30 min) 📖",habit_edu_video:"Watch educational video 🎥",habit_skill:"Skill practice (design, coding, etc.) 🛠️",
-
+restore_purchases:"Restore Purchases",restore_success:"Your premium membership has been successfully restored.",restore_not_found:"No active subscription found.",restore_failed:"Restore failed:",guest_edit_warning:"You need to log in to edit.",
 
     };
  

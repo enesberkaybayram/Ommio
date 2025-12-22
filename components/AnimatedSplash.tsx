@@ -5,7 +5,7 @@ import { Animated, Easing, Platform, StatusBar, StyleSheet, Text, View } from 'r
 const LOGO_SOURCE = require('../assets/Logo/Icon.png'); 
 
 // RENGİNİZ (app.json ile AYNI olmalı: #6366F1)
-const APP_BG_COLOR = '#6366F1'; 
+const APP_BG_COLOR = '#4e64f3'; 
 
 interface Props {
   onAnimationFinish: () => void;

@@ -87,7 +87,14 @@
           ],
           "glass" : true,
           "image-name" : "Rectangle 1.png",
-          "name" : "Rectangle 1"
+          "name" : "Rectangle 1",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              17.192690920835958,
+              0
+            ]
+          }
         }
       ],
       "shadow" : {
