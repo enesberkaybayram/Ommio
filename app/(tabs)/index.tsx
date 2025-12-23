@@ -7218,8 +7218,99 @@ export default function OmmioApp() {
                         </ScrollView>
                     </View>
                 </Modal>
+                {/* --- M1. GRUP OLUŞTURMA MODALI (TAM UYUMLU VERSİYON) --- */}
+                <Modal 
+                    visible={isGroupModalOpen} 
+                    animationType="slide" 
+                    transparent={false} // Tam ekran olması için false yapıyoruz
+                    onRequestClose={() => setIsGroupModalOpen(false)}
+                >
+                    {/* SafeAreaView: iOS ve Web'de içeriğin yukarı kaçmasını engeller */}
+                    <SafeAreaView style={{ flex: 1, backgroundColor: currentColors.bg }}>
+                        <KeyboardAvoidingView 
+                            behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+                            style={{ flex: 1 }}
+                        >
+                            <View style={{ flex: 1, padding: 20 }}>
 
-                {/* --- M. GELİŞMİŞ GRUP ANALİZ MODALI (YENİ) --- */}
+                                {/* Header */}
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>{t('new_ghbt')}</Text>
+                                    <TouchableOpacity onPress={() => setIsGroupModalOpen(false)} style={{ padding: 5 }}>
+                                        <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 16 }}>{t('cancel')}</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                <ScrollView contentContainerStyle={{ gap: 20 }} showsVerticalScrollIndicator={false}>
+                                    {/* İsim */}
+                                    <View>
+                                        <Text style={styles.sectionLabel}>{t('gname')}</Text>
+                                        <TextInput
+                                            value={newGroupTitle}
+                                            onChangeText={setNewGroupTitle}
+                                            placeholder={t('example_hbbt')}
+                                            placeholderTextColor={currentColors.subText}
+                                            style={styles.inputField}
+                                        />
+                                    </View>
+
+                                    {/* Arkadaş Seçimi */}
+                                    <View>
+                                        <Text style={styles.sectionLabel}>{t('feat_social_link')}</Text>
+                                        {!contacts || contacts.length === 0 ? (
+                                            <View style={{ padding: 20, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', borderRadius: 12, alignItems: 'center' }}>
+                                                <Text style={{ color: currentColors.subText, fontStyle: 'italic', marginBottom: 10 }}>{t('add_none_f')}</Text>
+                                                <TouchableOpacity onPress={() => { setIsGroupModalOpen(false); onBottomTabPress('social'); }}>
+                                                    <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>Arkadaş Ekle</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        ) : (
+                                            <View style={{ gap: 10 }}>
+                                                {contacts.map(contact => {
+                                                    const isSelected = selectedGroupMembers.includes(contact.uid);
+                                                    return (
+                                                        <TouchableOpacity
+                                                            key={contact.uid}
+                                                            onPress={() => {
+                                                                if (isSelected) setSelectedGroupMembers(prev => prev.filter(id => id !== contact.uid));
+                                                                else setSelectedGroupMembers(prev => [...prev, contact.uid]);
+                                                            }}
+                                                            style={{
+                                                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                                                padding: 12, backgroundColor: currentColors.surface, borderRadius: 12,
+                                                                borderWidth: 1, borderColor: isSelected ? COLORS.primary : (isDark ? '#334155' : '#e2e8f0')
+                                                            }}
+                                                        >
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center' }}>
+                                                                    {contact.photoURL ? (
+                                                                        <Image source={{ uri: contact.photoURL }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                                                                    ) : (
+                                                                        <Text style={{ fontWeight: 'bold', color: '#fff' }}>{contact.username?.[0]?.toUpperCase()}</Text>
+                                                                    )}
+                                                                </View>
+                                                                <Text style={{ color: currentColors.text, fontWeight: '600' }}>{contact.displayName || contact.username}</Text>
+                                                            </View>
+                                                            <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: isSelected ? COLORS.primary : '#cbd5e1', alignItems: 'center', justifyContent: 'center', backgroundColor: isSelected ? COLORS.primary : 'transparent' }}>
+                                                                {isSelected && <Check size={14} color="#fff" />}
+                                                            </View>
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    <TouchableOpacity onPress={handleCreateGroup} style={[styles.primaryButton, { marginTop: 20, marginBottom: 40 }]}>
+                                        {isAuthLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{t('set_grp')}</Text>}
+                                    </TouchableOpacity>
+                                </ScrollView>
+                            </View>
+                        </KeyboardAvoidingView>
+                    </SafeAreaView>
+                </Modal>
+
+                {/* --- M2. GELİŞMİŞ GRUP ANALİZ MODALI (YENİ) --- */}
                 <Modal visible={!!selectedGroupForAnalysis} animationType="slide" presentationStyle="pageSheet">
                     <View style={{ flex: 1, backgroundColor: currentColors.bg }}>
                         
