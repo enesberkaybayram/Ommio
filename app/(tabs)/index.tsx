@@ -5816,7 +5816,7 @@ export default function OmmioApp() {
                             keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
                             style={{
                                 position: 'absolute',
-                                bottom: 30, // Alt menünün biraz üzerinde yüzüyor
+                                bottom: 110, // Alt menünün biraz üzerinde yüzüyor
                                 width: '100%',
                                 alignItems: 'center',
                                 zIndex: 50,
