@@ -7147,12 +7147,14 @@ export default function OmmioApp() {
                                 const last7Days = [];
                                 const today = new Date();
                                 let maxActivity = 0;
+                                const safeLang = lang || 'en';
                                 for (let i = 6; i >= 0; i--) {
                                     const d = new Date();
                                     d.setDate(today.getDate() - i);
                                     const isoDate = getISODate(d);
                                     const count = habits.reduce((acc, h) => acc + (h.completedDates.includes(isoDate) ? 1 : 0), 0);
                                     if (count > maxActivity) maxActivity = count;
+                                    const dayName = getDaysOfWeek(safeLang)[d.getDay() === 0 ? 6 : d.getDay() - 1]?.label[0] || "?";
                                     last7Days.push({ label: getDaysOfWeek(lang)[d.getDay() === 0 ? 6 : d.getDay() - 1].label[0], count, isToday: i === 0 });
                                 }
 

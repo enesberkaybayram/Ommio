@@ -52,9 +52,17 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
 
   // RevenueCat ve Başlangıç İşlemleri
-  useEffect(() => {
+useEffect(() => {
     const initApp = async () => {
-        // 1. RevenueCat Ayarları
+        // 1. Web Kontrolü (BU SATIR ÇOK ÖNEMLİ - ÇÖKMEYİ ENGELLER)
+        if (Platform.OS === 'web') {
+            console.log("Web ortamı algılandı, RevenueCat başlatılmadı.");
+            setIsReady(true);
+            await SplashScreen.hideAsync();
+            return; // Fonksiyondan çık, aşağıyı çalıştırma
+        }
+
+        // 2. RevenueCat Ayarları (Sadece Mobil için çalışır)
         Purchases.setLogLevel(LOG_LEVEL.DEBUG);
 
         if (Platform.OS === 'ios') {
@@ -65,7 +73,7 @@ export default function RootLayout() {
 
         try {
             const customerInfo = await Purchases.getCustomerInfo();
-            if (typeof customerInfo.entitlements.active['premium'] !== "undefined") {
+            if (typeof customerInfo.entitlements.active['Premium'] !== "undefined") {
                 setIsPremium(true); 
                 console.log("✅ Kullanıcı Premium");
             } else {
@@ -73,10 +81,10 @@ export default function RootLayout() {
                 console.log("❌ Kullanıcı Ücretsiz");
             }
         } catch (e) {
-            console.log("RevenueCat Hatası:", e);
+            console.log("RevenueCat Hatası (Önemsiz):", e);
         }
 
-        // 2. İşlemler bitti, uygulamayı aç
+        // 3. İşlemler bitti, uygulamayı aç
         setIsReady(true);
         await SplashScreen.hideAsync();
     };
