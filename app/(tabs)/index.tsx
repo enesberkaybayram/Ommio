@@ -808,36 +808,44 @@ export default function OmmioApp() {
     }, []);
 
     // --- ABONELİK DURUMUNU KONTROL ET (HER AÇILIŞTA) ---
+    // --- ABONELİK DURUMUNU KONTROL ET (HER AÇILIŞTA - WEB İÇİN GÜVENLİ) ---
     useEffect(() => {
         const checkSubscriptionStatus = async () => {
+            // 1. Web kontrolü: Web'de ise hemen durdur.
+            if (Platform.OS === 'web') return;
+
             try {
-                // RevenueCat'ten güncel durumu al
+                // RevenueCat henüz başlamadıysa hata vermemesi için try-catch
                 const customerInfo = await Purchases.getCustomerInfo();
                 
-                // "Premium" yetkisi hala aktif mi?
                 const isPro = typeof customerInfo.entitlements.active['Premium'] !== "undefined";
-                
                 setIsPremium(isPro);
 
-                // Eğer kullanıcı giriş yapmışsa veritabanını da senkronize et
                 if (user) {
-                    // Aktif ürünün adını al (örn: "rc_monthly", "rc_lifetime")
                     const activeEntitlement = customerInfo.entitlements.active['Premium'];
                     const productIdentifier = activeEntitlement ? activeEntitlement.productIdentifier : null;
 
                     await setDoc(doc(db, "users", user.uid), { 
                         isPremium: isPro,
-                        premiumPlan: productIdentifier || "free" // Hangi paket olduğunu kaydet
+                        premiumPlan: productIdentifier || "free"
                     }, { merge: true });
                 }
 
             } catch (e) {
-                console.log("Abonelik kontrol hatası:", e);
+                // Hata RevenueCat "kurulmadı" hatasıysa sessizce geç, değilse logla
+                // @ts-ignore
+                if (e.message && !e.message.includes("There is no singleton instance")) {
+                    console.log("Abonelik kontrol hatası:", e);
+                }
             }
         };
 
-        checkSubscriptionStatus();
-    }, [user]); // User değiştiğinde (login olunca) tekrar kontrol et
+        // Hafif bir gecikme ekleyerek RevenueCat'in configure edilmesine zaman tanıyalım
+        setTimeout(() => {
+            checkSubscriptionStatus();
+        }, 1000);
+        
+    }, [user]);
     
     
     // --- EKSİK OLAN PARÇA: SEÇİLİ SOHBETİN MESAJLARINI DİNLEME ---
@@ -7395,8 +7403,10 @@ export default function OmmioApp() {
                                     const d = new Date();
                                     d.setDate(today.getDate() - i);
                                     const isoDate = getISODate(d);
-                                    const dayLabel = getDaysOfWeek(lang)[d.getDay() === 0 ? 6 : d.getDay() - 1].label[0];
-                                    
+                                    // Dil değişkeni yoksa varsayılan olarak 'en' kullan
+                                    const safeLang = lang || 'en'; 
+                                    const dayLabel = getDaysOfWeek(safeLang)[d.getDay() === 0 ? 6 : d.getDay() - 1]?.label[0] || "";
+                                                                        
                                     // O gün gruptan kaç kişi yapmış?
                                     const doneCount = (completions[isoDate] || []).length;
                                     if (doneCount > maxActivity) maxActivity = doneCount;
