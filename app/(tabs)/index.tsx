@@ -2148,64 +2148,74 @@ export default function OmmioApp() {
             return streak;
         };
 
-        // --- SATIN ALIMLARI GERİ YÜKLE FONKSİYONU (GÜNCELLENMİŞ & PAKET TİPİ DESTEKLİ) ---
-        const handleRestorePurchases = async () => {
-            setIsAuthLoading(true);
-            try {
-                // RevenueCat'ten geri yükleme isteği yap
-                const customerInfo = await Purchases.restorePurchases();
+        // --- SATIN ALIMLARI GERİ YÜKLE (GÜVENLİ & CRASH-PROOF) ---
+    const handleRestorePurchases = async () => {
+        // 1. Web Ortamı Kontrolü (Web'de RevenueCat çalışmaz, çökmemesi için çıkıyoruz)
+        if (Platform.OS === 'web') {
+            showToast(t('info_title'), "Bu özellik web sürümünde kullanılamaz.", 'info');
+            return;
+        }
+
+        setIsAuthLoading(true);
+        console.log("Restore işlemi başlatılıyor...");
+
+        try {
+            // RevenueCat'ten bilgiyi al
+            const customerInfo = await Purchases.restorePurchases();
+            console.log("RevenueCat Bilgisi Alındı:", customerInfo);
+
+            // Güvenli erişim (Optional Chaining ?. kullanarak)
+            // Eğer entitlements veya active yoksa undefined döner, uygulama çökmez.
+            const activeEntitlement = customerInfo?.entitlements?.active?.['Premium'];
+
+            if (activeEntitlement) {
+                console.log("Aktif Üyelik Bulundu:", activeEntitlement.productIdentifier);
+
+                // 1. State'i güncelle
+                setIsPremium(true);
                 
-                // RevenueCat panelinde oluşturduğun Entitlement ID (Genelde 'Premium' olur)
-                const activeEntitlement = customerInfo.entitlements.active['Premium'];
+                // 2. Ürün kimliğini al
+                const productId = activeEntitlement.productIdentifier || "unknown_plan";
 
-                if (activeEntitlement) {
-                    // --- DURUM A: ABONELİK AKTİF ---
-                    
-                    // 1. State'i güncelle
-                    setIsPremium(true);
-                    
-                    // 2. Hangi ürün olduğunu al (örn: "ommio_monthly", "ommio_yearly", "ommio_lifetime")
-                    const productId = activeEntitlement.productIdentifier; 
-
-                    // 3. Firebase'i güncelle (Paket tipiyle birlikte)
-                    if (user) {
-                        await setDoc(doc(db, "users", user.uid), { 
-                            isPremium: true,
-                            premiumPlan: productId // <-- YENİ: Hangi paketi aldığını kaydediyoruz
-                        }, { merge: true });
-                    }
-
-                    // 4. Widget'ı güncelle
-                    updateWidgetData(tasks, habits, true);
-
-                    showToast(t('success'), t('restore_success'), 'success');
-                } else {
-                    // --- DURUM B: ABONELİK BULUNAMADI VEYA SÜRESİ DOLMUŞ ---
-                    
-                    // State'i free yap
-                    setIsPremium(false);
-
-                    // Veritabanını da güncelle (Eğer daha önce premium ise düzeltelim)
-                    if (user) {
-                        await setDoc(doc(db, "users", user.uid), { 
-                            isPremium: false, 
-                            premiumPlan: 'free' 
-                        }, { merge: true });
-                    }
-                    
-                    // Widget'ı güncelle (Free mod)
-                    updateWidgetData(tasks, habits, false);
-
-                    showToast(t('info_title'), t('restore_not_found'), 'warning');
+                // 3. Firebase'i güncelle
+                if (user) {
+                    await setDoc(doc(db, "users", user.uid), { 
+                        isPremium: true,
+                        premiumPlan: productId 
+                    }, { merge: true });
                 }
 
-            } catch (e: any) {
-                console.error("Restore Error:", e);
-                showToast(t('error_title'), t('restore_failed') + e.message, 'error');
-            } finally {
-                setIsAuthLoading(false);
+                // 4. Widget'ı güncelle
+                // Eğer updateWidgetData fonksiyonunda hata varsa burayı try-catch içine alabilirsin
+                try {
+                    updateWidgetData(tasks, habits, true);
+                } catch (wError) {
+                    console.log("Widget güncelleme hatası (Önemsiz):", wError);
+                }
+
+                showToast(t('success'), t('restore_success'), 'success');
+            } else {
+                console.log("Aktif üyelik bulunamadı.");
+                
+                // Üyelik yoksa free moda çek
+                setIsPremium(false);
+                if (user) {
+                    await setDoc(doc(db, "users", user.uid), { 
+                        isPremium: false, 
+                        premiumPlan: 'free' 
+                    }, { merge: true });
+                }
+                
+                showToast(t('info_title'), t('restore_not_found'), 'warning');
             }
-        };
+
+        } catch (e: any) {
+            console.error("Restore CRASH Hatası:", e);
+            showToast(t('error_title'), t('restore_failed') + (e.message || ""), 'error');
+        } finally {
+            setIsAuthLoading(false);
+        }
+    };
     const handleLogout = async () => {
         try {
             // 1. ÖNCE VERİTABANINDAN BİLDİRİM TOKEN'INI SİL
