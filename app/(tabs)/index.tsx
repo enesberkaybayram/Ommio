@@ -2501,26 +2501,40 @@ export default function OmmioApp() {
         }
     };
 
-    // --- DOSYA YÜKLEME (Firebase Storage) ---
-    // --- DOSYA YÜKLEME (GÜNCELLENMİŞ & DÜZELTİLMİŞ) ---
-    // --- DOSYA YÜKLEME (WEB VE MOBİL UYUMLU) ---
+    // --- DOSYA YÜKLEME (WEB & MAC UYUMLU - GÜNCELLENMİŞ) ---
     const uploadFiles = async (taskId: string) => {
         if (attachments.length === 0) return [];
 
         const uploadedUrls = [];
 
         for (const file of attachments) {
-            let blob: Blob | null = null;
+            let blob: any = null; // TypeScript hatası almamak için any
             try {
-                // 1. Dosyayı Blob'a çevir (Artık Web uyumlu)
-                blob = await uriToBlob(file.uri);
+                
+                // 1. BLOB / DOSYA ELDE ETME
+                if (Platform.OS === 'web') {
+                    // WEB ÖZEL: Expo Document Picker Web'de 'file' objesini direkt verir.
+                    // Bu obje zaten bir Blob'dur, fetch etmeye gerek yoktur.
+                    // @ts-ignore
+                    if (file.file) {
+                        // @ts-ignore
+                        blob = file.file;
+                    } else {
+                        // Eğer file objesi yoksa (bazı durumlarda), fetch ile deneriz
+                        const response = await fetch(file.uri);
+                        blob = await response.blob();
+                    }
+                } else {
+                    // MOBİL (Android/iOS): XMLHttpRequest ile okuruz
+                    blob = await uriToBlob(file.uri);
+                }
 
                 // 2. Referans Oluştur
                 const storageRef = ref(storage, `task_attachments/${taskId}/${file.name}`);
 
                 // 3. Yükle
-                // Web'de dosya tipi bazen kaybolabilir, file.mimeType yoksa varsayılan ata
-                const contentType = file.mimeType || file.type || 'application/octet-stream';
+                // Web'de mimeType bazen boş gelebilir, varsayılan atadık
+                const contentType = file.mimeType || 'application/octet-stream';
                 
                 await uploadBytes(storageRef, blob, {
                     contentType: contentType,
@@ -2535,14 +2549,15 @@ export default function OmmioApp() {
                     type: contentType
                 });
 
-                console.log("Dosya yüklendi:", file.name);
+                console.log("Dosya başarıyla yüklendi:", file.name);
 
             } catch (e: any) {
-                console.error("Yükleme hatası:", e);
-                showToast(t('error_title'), tFormat('file_upload_failed', { filename: file.name }) + " " + e.message, 'error');
-                // Hata olsa bile döngü devam etsin mi? 
-                // Genelde bir dosya başarısız olursa görevi durdurmak yerine o dosyayı atlamak daha iyidir.
-                // Eğer kesin durmasını istiyorsan buraya 'throw e;' ekleyebilirsin.
+                console.error("Yükleme Kritik Hatası:", e);
+                // Kullanıcıya hatayı gösterelim
+                showToast(t('error_title'), "Dosya yüklenemedi: " + e.message, 'error');
+                
+                // Hata oluşursa bu dosyayı atla ama işlemi durdurma (continue)
+                // Eğer dosya yüklenmeden görev oluşmasın istiyorsan: throw e;
             } finally {
                 // 5. Bellek Temizliği (Sadece Mobilde Gerekli)
                 if (blob && Platform.OS !== 'web') {
@@ -5836,7 +5851,7 @@ export default function OmmioApp() {
                             keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
                             style={{
                                 position: 'absolute',
-                                bottom: isPremium ? 110 : 175, // Alt menünün biraz üzerinde yüzüyor
+                                bottom: isPremium ? 110 : 185, // Alt menünün biraz üzerinde yüzüyor
                                 width: '100%',
                                 alignItems: 'center',
                                 zIndex: 50,
