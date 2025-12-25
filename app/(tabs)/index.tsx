@@ -2112,22 +2112,35 @@ export default function OmmioApp() {
         }
     };
     // --- BLOB OLUŞTURMA YARDIMCISI (ANDROID İÇİN ŞART) ---
-        const uriToBlob = (uri: string): Promise<Blob> => {
-            return new Promise((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.onload = function () {
-                    // Başarılı olduğunda blobu döndür
-                    resolve(xhr.response);
-                };
-                xhr.onerror = function (e) {
-                    console.log("XHR Error:", e);
-                    reject(new TypeError("Network request failed"));
-                };
-                xhr.responseType = "blob";
-                xhr.open("GET", uri, true);
-                xhr.send(null);
-            });
-        };
+        // --- BLOB OLUŞTURMA YARDIMCISI (WEB & MOBİL UYUMLU) ---
+    const uriToBlob = async (uri: string): Promise<Blob> => {
+        // 1. WEB İÇİN: Modern fetch API kullanılır
+        if (Platform.OS === 'web') {
+            try {
+                const response = await fetch(uri);
+                const blob = await response.blob();
+                return blob;
+            } catch (e) {
+                console.error("Web Blob Error:", e);
+                throw new Error("Web tarafında dosya dönüştürülemedi.");
+            }
+        }
+
+        // 2. MOBİL (Android/iOS) İÇİN: XMLHttpRequest kullanılır
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.onload = function () {
+                resolve(xhr.response);
+            };
+            xhr.onerror = function (e) {
+                console.log("XHR Error:", e);
+                reject(new TypeError("Network request failed"));
+            };
+            xhr.responseType = "blob";
+            xhr.open("GET", uri, true);
+            xhr.send(null);
+        });
+    };
     // --- STREAK (SERİ) HESAPLAMA ---
         const calculateCurrentStreak = (completedDates: string[]) => {
             if (!completedDates || completedDates.length === 0) return 0;
@@ -2490,6 +2503,7 @@ export default function OmmioApp() {
 
     // --- DOSYA YÜKLEME (Firebase Storage) ---
     // --- DOSYA YÜKLEME (GÜNCELLENMİŞ & DÜZELTİLMİŞ) ---
+    // --- DOSYA YÜKLEME (WEB VE MOBİL UYUMLU) ---
     const uploadFiles = async (taskId: string) => {
         if (attachments.length === 0) return [];
 
@@ -2498,15 +2512,18 @@ export default function OmmioApp() {
         for (const file of attachments) {
             let blob: Blob | null = null;
             try {
-                // 1. Dosyayı Blob'a çevir (Fetch yerine XHR kullanıyoruz)
+                // 1. Dosyayı Blob'a çevir (Artık Web uyumlu)
                 blob = await uriToBlob(file.uri);
 
                 // 2. Referans Oluştur
                 const storageRef = ref(storage, `task_attachments/${taskId}/${file.name}`);
 
-                // 3. Yükle (Metadata ile birlikte)
+                // 3. Yükle
+                // Web'de dosya tipi bazen kaybolabilir, file.mimeType yoksa varsayılan ata
+                const contentType = file.mimeType || file.type || 'application/octet-stream';
+                
                 await uploadBytes(storageRef, blob, {
-                    contentType: file.mimeType || 'application/octet-stream',
+                    contentType: contentType,
                 });
 
                 // 4. URL Al
@@ -2515,7 +2532,7 @@ export default function OmmioApp() {
                 uploadedUrls.push({
                     name: file.name,
                     url: downloadUrl,
-                    type: file.mimeType
+                    type: contentType
                 });
 
                 console.log("Dosya yüklendi:", file.name);
@@ -2523,11 +2540,14 @@ export default function OmmioApp() {
             } catch (e: any) {
                 console.error("Yükleme hatası:", e);
                 showToast(t('error_title'), tFormat('file_upload_failed', { filename: file.name }) + " " + e.message, 'error');
+                // Hata olsa bile döngü devam etsin mi? 
+                // Genelde bir dosya başarısız olursa görevi durdurmak yerine o dosyayı atlamak daha iyidir.
+                // Eğer kesin durmasını istiyorsan buraya 'throw e;' ekleyebilirsin.
             } finally {
-                // 5. Bellek Sızıntısını Önle (Çok Önemli)
-                if (blob) {
+                // 5. Bellek Temizliği (Sadece Mobilde Gerekli)
+                if (blob && Platform.OS !== 'web') {
                     // @ts-ignore
-                    blob.close(); 
+                    if (blob.close) blob.close(); 
                 }
             }
         }
@@ -5816,7 +5836,7 @@ export default function OmmioApp() {
                             keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
                             style={{
                                 position: 'absolute',
-                                bottom: 110, // Alt menünün biraz üzerinde yüzüyor
+                                bottom: isPremium ? 110 : 175, // Alt menünün biraz üzerinde yüzüyor
                                 width: '100%',
                                 alignItems: 'center',
                                 zIndex: 50,
