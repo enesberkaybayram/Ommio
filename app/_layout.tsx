@@ -1,11 +1,13 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
+import Head from 'expo-router/head';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 import 'react-native-reanimated';
+import { TRANSLATIONS } from '../constants/translations/index'; // YENİ IMPORT
 
 // Android Widget Handler
 import { registerWidgetTaskHandler } from 'react-native-android-widget';
@@ -85,10 +87,33 @@ export default function RootLayout() {
   if (!isReady) {
     return null; // Hazır olana kadar bekle
   }
+  const siteUrl = "https://ommio.app";
+
+  const t = (key: string) => {
+          // @ts-ignore
+          return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
+      };
 
   return (
     <UserContext.Provider value={{ isPremium, setIsPremium }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+
+        {/* 👇 2. YENİ EKLENEN HEAD KISMI (WEB İÇİN) */}
+        <Head>
+          <title>Ommio</title>
+          <meta property="og:title" content={t('onboard_step2_title')} />
+          <meta property="og:description" content= {t('onboard_step1_desc')} />
+          
+          {/* Link Paylaşım Görseli (Yatay olan) */}
+          <meta property="og:image" content={`${siteUrl}/social-preview.png`} />
+          <meta property="og:image:width" content="1200" />
+          <meta property="og:image:height" content="630" />
+          <meta name="twitter:card" content="summary_large_image" />
+
+          {/* Safari İkonu (Eğer kare görsel de hazırladıysanız burayı açabilirsiniz) */}
+          {/* <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" /> */}
+        </Head>
+        
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="paywall" options={{ presentation: 'modal', headerShown: false }} />

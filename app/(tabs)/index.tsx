@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as AuthSession from 'expo-auth-session';
 import { Prompt } from 'expo-auth-session';
-import { BlurView } from 'expo-blur';
 import * as Contacts from 'expo-contacts';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -67,6 +66,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    AppState,
     BackHandler,
     FlatList, Image,
     Keyboard,
@@ -783,6 +783,61 @@ export default function OmmioApp() {
             setTimeout(() => onBottomTabPress('list'), 100);
         }
     }, [params.tab]);
+
+    useEffect(() => {
+        // 1. Uygulama ilk açıldığında sıfırla
+        const resetBadge = async () => {
+            try {
+                await Notifications.setBadgeCountAsync(0);
+            } catch (e) {
+                console.log("Badge sıfırlama hatası:", e);
+            }
+        };
+        resetBadge();
+
+        // 2. Uygulama arka plandan öne gelince (Active olunca) tekrar sıfırla
+        const subscription = AppState.addEventListener('change', async (nextAppState) => {
+            if (nextAppState === 'active') {
+                await resetBadge();
+            }
+        });
+
+        return () => {
+            subscription.remove();
+        };
+    }, []);
+
+    // --- ABONELİK DURUMUNU KONTROL ET (HER AÇILIŞTA) ---
+    useEffect(() => {
+        const checkSubscriptionStatus = async () => {
+            try {
+                // RevenueCat'ten güncel durumu al
+                const customerInfo = await Purchases.getCustomerInfo();
+                
+                // "Premium" yetkisi hala aktif mi?
+                const isPro = typeof customerInfo.entitlements.active['Premium'] !== "undefined";
+                
+                setIsPremium(isPro);
+
+                // Eğer kullanıcı giriş yapmışsa veritabanını da senkronize et
+                if (user) {
+                    // Aktif ürünün adını al (örn: "rc_monthly", "rc_lifetime")
+                    const activeEntitlement = customerInfo.entitlements.active['Premium'];
+                    const productIdentifier = activeEntitlement ? activeEntitlement.productIdentifier : null;
+
+                    await setDoc(doc(db, "users", user.uid), { 
+                        isPremium: isPro,
+                        premiumPlan: productIdentifier || "free" // Hangi paket olduğunu kaydet
+                    }, { merge: true });
+                }
+
+            } catch (e) {
+                console.log("Abonelik kontrol hatası:", e);
+            }
+        };
+
+        checkSubscriptionStatus();
+    }, [user]); // User değiştiğinde (login olunca) tekrar kontrol et
     
     
     // --- EKSİK OLAN PARÇA: SEÇİLİ SOHBETİN MESAJLARINI DİNLEME ---
@@ -2038,6 +2093,23 @@ export default function OmmioApp() {
             }
         }
     };
+    // --- BLOB OLUŞTURMA YARDIMCISI (ANDROID İÇİN ŞART) ---
+        const uriToBlob = (uri: string): Promise<Blob> => {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.onload = function () {
+                    // Başarılı olduğunda blobu döndür
+                    resolve(xhr.response);
+                };
+                xhr.onerror = function (e) {
+                    console.log("XHR Error:", e);
+                    reject(new TypeError("Network request failed"));
+                };
+                xhr.responseType = "blob";
+                xhr.open("GET", uri, true);
+                xhr.send(null);
+            });
+        };
     // --- STREAK (SERİ) HESAPLAMA ---
         const calculateCurrentStreak = (completedDates: string[]) => {
             if (!completedDates || completedDates.length === 0) return 0;
@@ -2076,29 +2148,54 @@ export default function OmmioApp() {
             return streak;
         };
 
-    // --- SATIN ALIMLARI GERİ YÜKLE FONKSİYONU ---
+        // --- SATIN ALIMLARI GERİ YÜKLE FONKSİYONU (GÜNCELLENMİŞ & PAKET TİPİ DESTEKLİ) ---
         const handleRestorePurchases = async () => {
             setIsAuthLoading(true);
             try {
                 // RevenueCat'ten geri yükleme isteği yap
                 const customerInfo = await Purchases.restorePurchases();
+                
+                // RevenueCat panelinde oluşturduğun Entitlement ID (Genelde 'Premium' olur)
+                const activeEntitlement = customerInfo.entitlements.active['Premium'];
 
-                // 'Premium' yetkisi var mı kontrol et (RevenueCat panelindeki Entitlement ID'niz 'Premium' olmalı)
-                if (customerInfo.entitlements.active['Premium']) {
+                if (activeEntitlement) {
+                    // --- DURUM A: ABONELİK AKTİF ---
                     
                     // 1. State'i güncelle
                     setIsPremium(true);
+                    
+                    // 2. Hangi ürün olduğunu al (örn: "ommio_monthly", "ommio_yearly", "ommio_lifetime")
+                    const productId = activeEntitlement.productIdentifier; 
 
-                    // 2. Firebase'i güncelle (Kalıcılık için)
+                    // 3. Firebase'i güncelle (Paket tipiyle birlikte)
                     if (user) {
-                        await setDoc(doc(db, "users", user.uid), { isPremium: true }, { merge: true });
+                        await setDoc(doc(db, "users", user.uid), { 
+                            isPremium: true,
+                            premiumPlan: productId // <-- YENİ: Hangi paketi aldığını kaydediyoruz
+                        }, { merge: true });
                     }
 
-                    // 3. Widget'ı güncelle
+                    // 4. Widget'ı güncelle
                     updateWidgetData(tasks, habits, true);
 
                     showToast(t('success'), t('restore_success'), 'success');
                 } else {
+                    // --- DURUM B: ABONELİK BULUNAMADI VEYA SÜRESİ DOLMUŞ ---
+                    
+                    // State'i free yap
+                    setIsPremium(false);
+
+                    // Veritabanını da güncelle (Eğer daha önce premium ise düzeltelim)
+                    if (user) {
+                        await setDoc(doc(db, "users", user.uid), { 
+                            isPremium: false, 
+                            premiumPlan: 'free' 
+                        }, { merge: true });
+                    }
+                    
+                    // Widget'ı güncelle (Free mod)
+                    updateWidgetData(tasks, habits, false);
+
                     showToast(t('info_title'), t('restore_not_found'), 'warning');
                 }
 
@@ -2364,20 +2461,27 @@ export default function OmmioApp() {
     };
 
     // --- DOSYA YÜKLEME (Firebase Storage) ---
+    // --- DOSYA YÜKLEME (GÜNCELLENMİŞ & DÜZELTİLMİŞ) ---
     const uploadFiles = async (taskId: string) => {
         if (attachments.length === 0) return [];
 
         const uploadedUrls = [];
 
         for (const file of attachments) {
+            let blob: Blob | null = null;
             try {
-                const response = await fetch(file.uri);
-                const blob = await response.blob();
+                // 1. Dosyayı Blob'a çevir (Fetch yerine XHR kullanıyoruz)
+                blob = await uriToBlob(file.uri);
 
-                // Dosya yolu: task_attachments/taskId/dosyaAdi
+                // 2. Referans Oluştur
                 const storageRef = ref(storage, `task_attachments/${taskId}/${file.name}`);
 
-                await uploadBytes(storageRef, blob);
+                // 3. Yükle (Metadata ile birlikte)
+                await uploadBytes(storageRef, blob, {
+                    contentType: file.mimeType || 'application/octet-stream',
+                });
+
+                // 4. URL Al
                 const downloadUrl = await getDownloadURL(storageRef);
 
                 uploadedUrls.push({
@@ -2385,9 +2489,18 @@ export default function OmmioApp() {
                     url: downloadUrl,
                     type: file.mimeType
                 });
-            } catch (e) {
+
+                console.log("Dosya yüklendi:", file.name);
+
+            } catch (e: any) {
                 console.error("Yükleme hatası:", e);
-                showToast(t('error'), tFormat('file_upload_failed', { filename: file.name }), 'error');
+                showToast(t('error_title'), tFormat('file_upload_failed', { filename: file.name }) + " " + e.message, 'error');
+            } finally {
+                // 5. Bellek Sızıntısını Önle (Çok Önemli)
+                if (blob) {
+                    // @ts-ignore
+                    blob.close(); 
+                }
             }
         }
         return uploadedUrls;
@@ -2574,21 +2687,39 @@ export default function OmmioApp() {
                 };
 
                 // Kaydet
-                await addDoc(collection(db, "users", target.uid, "tasks"), newTaskData);
+                 const docRef = await addDoc(collection(db, "users", target.uid, "tasks"), newTaskData);
 
                 // Bildirim Gönder (Eğer başkasına atadıysam)
                 if (target.uid !== user.uid) {
                     try {
                         const targetDoc = await getDoc(doc(db, "public_users", target.uid));
-                        if (targetDoc.exists() && targetDoc.data().pushToken) {
-                            await sendPushNotification(
-                                targetDoc.data().pushToken,
-                                t('new_task_assigned'),
-                                `${user.displayName} sana bir görev atadı: ${inputValue} (${t('priority_' + priority)})`,
-                                { type: 'task' }
-                            );
+                        if (targetDoc.exists()) {
+                            const targetData = targetDoc.data();
+                            if (targetData.pushToken) {
+                                
+                                // 1. Başlık: "Yeni Görev" (Tüm dillerde çevrili)
+                                const notifTitle = t('task_assigned_title'); 
+
+                                // 2. İçerik: "Ahmet sana bir görev atadı: Raporu hazırla"
+                                // Parametreler: {{name}} = Gönderen, {{task}} = Görev Metni
+                                const notifBody = tFormat('task_assigned_body', { 
+                                    name: user.displayName || user.username,
+                                    task: inputValue
+                                });
+
+                                await sendPushNotification(
+                                    targetData.pushToken,
+                                    notifTitle,
+                                    notifBody,
+                                    { type: 'task', taskId: docRef.id } // Tıklayınca o göreve gitmesi için ID ekledik
+                                );
+                            }
                         }
-                    } catch (e) { }
+                    } catch (e) { 
+                        console.log("Bildirim gönderme hatası:", e);
+                    }
+                    
+                    // Reklam Sayacını Tetikle
                     checkAdTrigger('assigned');
                 }
             }));    
@@ -3291,14 +3422,14 @@ export default function OmmioApp() {
                             <ChevronLeft size={24} color={currentColors.text} />
                         </TouchableOpacity>
 
-                        {/* Profil Alanı */}
                         <View style={styles.avatarContainer}>
-                            {chatTarget?.photoURL ? (
+                        {chatTarget?.photoURL ? (
                                 <Image source={{ uri: chatTarget.photoURL }} style={styles.avatarImage} />
                             ) : (
                                 <View style={[styles.avatarPlaceholder, { backgroundColor: COLORS.secondary }]}>
+                                    {/* 👇 DEĞİŞİKLİK BURADA: Header için baş harf mantığı */}
                                     <Text style={styles.avatarText}>
-                                        {chatTarget?.username?.[0]?.toUpperCase()}
+                                        {(chatTarget?.displayName || chatTarget?.username || "?")[0].toUpperCase()}
                                     </Text>
                                 </View>
                             )}
@@ -3611,12 +3742,14 @@ export default function OmmioApp() {
 );
     const styles = useMemo(() => getDynamicStyles(currentColors, isDark), [currentColors, isDark]);
     // --- renderTask FONKSİYONUNU BUNUNLA DEĞİŞTİR ---
+    // --- GÖREV KARTI RENDER FONKSİYONU (GÜNCELLENMİŞ & DOSYA GÖSTERİMLİ) ---
     const renderTask = (task: Task) => {
         const catInfo = categories.find(c => c.id === task.categoryId) || categories[0];
         const catColor = CATEGORY_COLORS.find(c => c.id === catInfo.color) || CATEGORY_COLORS[0];
         const isAssignedByOther = task.assignedBy && task.assignedBy !== user.uid;
         const isExpanded = expandedTaskId === task.id;
-        const isMultiDay = task.showEveryDayUntilDue;
+        
+        // Öncelik Renkleri
         const priorityColor = task.priority === 'high' ? '#ef4444' : (task.priority === 'low' ? '#10b981' : '#f59e0b');
 
         return (
@@ -3632,30 +3765,60 @@ export default function OmmioApp() {
                     {/* Görev Metni ve Meta Veriler */}
                     <TouchableOpacity onPress={() => toggleExpand(task.id)} style={{ flex: 1 }}>
                         <Text style={[styles.taskText, { color: currentColors.text, textDecorationLine: task.completed ? 'line-through' : 'none' }]}>{task.text}</Text>
+                        
                         <View style={styles.taskMeta}>
-                            {/* Öncelik Bayrağı */}
+                            
+                            {/* 1. Öncelik Bayrağı */}
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                                 <Flag size={12} color={priorityColor} fill={priorityColor} />
                             </View>
 
-                            {/* Dosya İkonu (Varsa) */}
+                            {/* 👇👇👇 2. YENİ EKLENEN DOSYA GÖSTERGESİ 👇👇👇 */}
                             {task.attachments && task.attachments.length > 0 && (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#e0f2fe', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                                    <Paperclip size={10} color="#0284c7" />
-                                    <Text style={{ fontSize: 10, color: '#0284c7', fontWeight: 'bold' }}>{task.attachments.length}</Text>
+                                <View style={{ 
+                                    flexDirection: 'row', 
+                                    alignItems: 'center', 
+                                    gap: 3, 
+                                    backgroundColor: isDark ? 'rgba(14, 165, 233, 0.2)' : '#e0f2fe', // Açık Mavi Arka Plan
+                                    paddingHorizontal: 6, 
+                                    paddingVertical: 2, 
+                                    borderRadius: 6,
+                                    borderWidth: 1,
+                                    borderColor: isDark ? 'rgba(14, 165, 233, 0.3)' : 'transparent'
+                                }}>
+                                    <Paperclip size={10} color="#0ea5e9" />
+                                    <Text style={{ fontSize: 10, color: isDark ? '#38bdf8' : '#0284c7', fontWeight: 'bold' }}>
+                                        {task.attachments.length}
+                                    </Text>
                                 </View>
                             )}
+                            {/* 👆👆👆 DOSYA GÖSTERGESİ BİTİŞ 👆👆👆 */}
+
+                            {/* 3. Kategori Rozeti */}
                             <View style={[styles.miniBadge, { backgroundColor: isDark ? '#334155' : catColor.bg }]}>
                                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: catColor.hex }} />
                                 <Text style={{ fontSize: 10, color: isDark ? '#fff' : catColor.hex, fontWeight: 'bold' }}>{catInfo.name}</Text>
                             </View>
-                            {isAssignedByOther && <View style={[styles.miniBadge, { backgroundColor: '#fef3c7' }]}><User size={10} color={COLORS.warning} /><Text style={{ fontSize: 10, color: COLORS.warning, fontWeight: 'bold' }}>{task.assignedByName || 'Patron'}</Text></View>}
-                            {task.dueDate && <View style={styles.metaItem}><CalendarClock size={10} color={COLORS.danger} /><Text style={{ fontSize: 10, color: COLORS.danger }}>{task.dueDate}</Text></View>}
-                        </View>
 
+                            {/* 4. Atanan Kişi Bilgisi (Varsa) */}
+                            {isAssignedByOther && (
+                                <View style={[styles.miniBadge, { backgroundColor: '#fef3c7' }]}>
+                                    <User size={10} color={COLORS.warning} />
+                                    <Text style={{ fontSize: 10, color: COLORS.warning, fontWeight: 'bold' }}>{task.assignedByName || 'Patron'}</Text>
+                                </View>
+                            )}
+
+                            {/* 5. Son Tarih (Varsa) */}
+                            {task.dueDate && (
+                                <View style={styles.metaItem}>
+                                    <CalendarClock size={10} color={COLORS.danger} />
+                                    <Text style={{ fontSize: 10, color: COLORS.danger }}>{task.dueDate}</Text>
+                                </View>
+                            )}
+                        </View>
                     </TouchableOpacity>
 
-                    {/* --- AKILLI SOHBET BUTONU (Bildirimli) --- */}
+                    {/* --- AKILLI SOHBET BUTONU (Sağ Taraf) --- */}
                     <TaskChatButton
                         task={task}
                         user={user}
@@ -3665,7 +3828,7 @@ export default function OmmioApp() {
                         }}
                     />
 
-                    {/* Expand Butonu */}
+                    {/* Expand (Aç/Kapa) Oku */}
                     <TouchableOpacity onPress={() => toggleExpand(task.id)} style={{ padding: 5 }}>
                         {isExpanded ? <ChevronUp size={20} color={currentColors.subText} /> : <ChevronDown size={20} color={currentColors.subText} />}
                     </TouchableOpacity>
@@ -3674,7 +3837,31 @@ export default function OmmioApp() {
                 {/* Genişletilmiş Alan (Açıklama ve Butonlar) */}
                 {isExpanded && (
                     <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#f1f5f9' }}>
-                        {task.description ? (<View style={{ flexDirection: 'row', gap: 5, marginBottom: 10 }}><AlignLeft size={14} color={currentColors.subText} style={{ marginTop: 2 }} /><Text style={{ color: currentColors.text, fontSize: 14, flex: 1 }}>{task.description}</Text></View>) : (<Text style={{ color: currentColors.subText, fontSize: 12, fontStyle: 'italic', marginBottom: 10 }}>{t('task_no_desc')}</Text>)}
+                        {task.description ? (
+                            <View style={{ flexDirection: 'row', gap: 5, marginBottom: 10 }}>
+                                <AlignLeft size={14} color={currentColors.subText} style={{ marginTop: 2 }} />
+                                <Text style={{ color: currentColors.text, fontSize: 14, flex: 1 }}>{task.description}</Text>
+                            </View>
+                        ) : (
+                            <Text style={{ color: currentColors.subText, fontSize: 12, fontStyle: 'italic', marginBottom: 10 }}>{t('task_no_desc')}</Text>
+                        )}
+                        
+                        {/* Genişletilmiş Alanda Dosyaları Listeleme (Opsiyonel: Tıklayınca açılır) */}
+                        {task.attachments && task.attachments.length > 0 && (
+                            <View style={{ marginBottom: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                {task.attachments.map((file, idx) => (
+                                    <TouchableOpacity 
+                                        key={idx}
+                                        onPress={() => { if(file.url) WebBrowser.openBrowserAsync(file.url); }}
+                                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', padding: 6, borderRadius: 8, borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}
+                                    >
+                                        <Paperclip size={12} color={currentColors.subText} />
+                                        <Text numberOfLines={1} style={{ fontSize: 11, color: COLORS.primary, maxWidth: 150 }}>{file.name}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+
                         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 15, marginTop: 5 }}>
                             <TouchableOpacity onPress={() => { askConfirmation(t('delete_btn'), t('task_delete_confirm'), () => deleteTask(task), true); }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -5019,15 +5206,17 @@ export default function OmmioApp() {
                                                                     style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}
                                                                 >
 
-                                                                    {/* AVATAR ALANI */}
                                                                     <View style={{ position: 'relative', marginRight: 15 }}>
-                                                                        <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: currentColors.bg }}>
-                                                                            {contact.photoURL ? (
-                                                                                <Image source={{ uri: contact.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 26 }} />
-                                                                            ) : (
-                                                                                <Text style={{ fontWeight: '800', color: '#fff', fontSize: 20 }}>{contact.username[0].toUpperCase()}</Text>
-                                                                            )}
-                                                                        </View>
+                                                                    <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: currentColors.bg }}>
+                                                                        {contact.photoURL ? (
+                                                                            <Image source={{ uri: contact.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 26 }} />
+                                                                        ) : (
+                                                                            /* 👇 DEĞİŞİKLİK BURADA: Önce DisplayName, yoksa Username */
+                                                                            <Text style={{ fontWeight: '800', color: '#fff', fontSize: 20 }}>
+                                                                                {(contact.displayName || contact.username || "?")[0].toUpperCase()}
+                                                                            </Text>
+                                                                        )}
+                                                                    </View>
 
                                                                         {/* 👇 KIRMIZI KUTUCUK (Sadece Görev Mesajı Varsa) 👇 */}
                                                                         {taskUnread > 0 && (
@@ -5201,13 +5390,16 @@ export default function OmmioApp() {
                                             <View style={{
                                                 width: 110, height: 110, borderRadius: 55,
                                                 backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
-                                                borderWidth: 4, borderColor: currentColors.bg, // Fotoğrafın etrafına temiz bir çerçeve
+                                                borderWidth: 4, borderColor: currentColors.bg,
                                                 shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5
                                             }}>
                                                 {user.photoURL ? (
                                                     <Image source={{ uri: user.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 55 }} />
                                                 ) : (
-                                                    <User size={50} color="#fff" />
+                                                    /* 👇 DEĞİŞİKLİK BURADA: Profilde ikon yerine dev baş harf */
+                                                    <Text style={{ fontSize: 40, fontWeight: '900', color: '#fff' }}>
+                                                        {(user.displayName || user.username || "?")[0].toUpperCase()}
+                                                    </Text>
                                                 )}
                                             </View>
 
@@ -5575,10 +5767,10 @@ export default function OmmioApp() {
                     </View>
                 )}
 
-                {/* B. GÖREV EKLEME BARI (Sadece List Sekmesi) */}
+                {/* B. GÖREV EKLEME BARI (MODERNİZE EDİLMİŞ - YÜZEN PANEL) */}
                 {!isSettingsOpen && activeTab === 'list' && (
                     <>
-                        {/* Dışarı Tıklama Alanı (Overlay) */}
+                        {/* Dışarı Tıklama Alanı (Overlay) - Panel açıksa kapatmak için */}
                         {isInputExpanded && (
                             <TouchableWithoutFeedback
                                 onPress={() => {
@@ -5591,39 +5783,43 @@ export default function OmmioApp() {
                             </TouchableWithoutFeedback>
                         )}
 
-                        {/* Blur Input Bar */}
-                        <BlurView
-                            intensity={Platform.OS === 'ios' ? 80 : 100}
-                            tint={isDark ? 'dark' : 'light'}
-                            style={[
-                                styles.blurInputContainer,
-                                {
-                                    bottom: !isPremium ? 185 : 120,
-                                    backgroundColor: isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.65)',
-                                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
-                                }
-                            ]}
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === "ios" ? "padding" : "height"}
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
+                            style={{
+                                position: 'absolute',
+                                bottom: 30, // Alt menünün biraz üzerinde yüzüyor
+                                width: '100%',
+                                alignItems: 'center',
+                                zIndex: 50,
+                            }}
                         >
-                            {/* 1. GENİŞLETİLMİŞ SEÇENEKLER */}
+                            {/* 1. GENİŞLETİLMİŞ SEÇENEKLER PANELI (Input'un üzerinde belirir) */}
                             {isInputExpanded && (
-                                <View style={styles.expandedContent}>
-
-                                    {/* 1. BÖLÜM: ÇOKLU ATAMA (Multi-Assign) */}
+                                <View style={{
+                                    width: '90%',
+                                    marginBottom: 10,
+                                    backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                    borderRadius: 24,
+                                    padding: 15,
+                                    borderWidth: 1,
+                                    borderColor: isDark ? '#334155' : '#e2e8f0',
+                                    shadowColor: "#000",
+                                    shadowOffset: { width: 0, height: 4 },
+                                    shadowOpacity: 0.15,
+                                    shadowRadius: 10,
+                                    elevation: 10,
+                                }}>
+                                    {/* --- 1. Bölüm: Çoklu Atama --- */}
                                     <Text style={styles.sectionTitle}>{t('assign_to')} {assignTargets.length > 0 && `(${assignTargets.length})`}</Text>
-
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 10 }}>
-                                        {/* Seçenek: Ben (Varsayılan) */}
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 15 }}>
+                                        {/* Seçenek: Ben */}
                                         <TouchableOpacity
-                                            onPress={() => setAssignTargets([])} // Listeyi temizle = Sadece Ben
-                                            style={[
-                                                styles.assignChip,
-                                                assignTargets.length === 0
-                                                    ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary }
-                                                    : { backgroundColor: isDark ? '#334155' : '#fff', borderColor: isDark ? '#475569' : '#e2e8f0' }
-                                            ]}
+                                            onPress={() => setAssignTargets([])}
+                                            style={[styles.assignChip, assignTargets.length === 0 ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary } : { backgroundColor: isDark ? '#334155' : '#f1f5f9', borderColor: 'transparent' }]}
                                         >
-                                            <View style={[styles.avatarSmall, { backgroundColor: assignTargets.length === 0 ? 'rgba(255,255,255,0.2)' : (isDark ? '#475569' : '#f1f5f9') }]}>
-                                                {user.photoURL ? <Image source={{ uri: user.photoURL }} style={styles.avatarImage} /> : <User size={16} color={currentColors.subText} />}
+                                            <View style={[styles.avatarSmall, { backgroundColor: assignTargets.length === 0 ? 'rgba(255,255,255,0.2)' : '#e2e8f0' }]}>
+                                                {user.photoURL ? <Image source={{ uri: user.photoURL }} style={styles.avatarImage} /> : <User size={14} color={currentColors.subText} />}
                                             </View>
                                             <Text style={[styles.chipText, { color: assignTargets.length === 0 ? '#fff' : currentColors.text }]}>{t('me')}</Text>
                                         </TouchableOpacity>
@@ -5635,23 +5831,16 @@ export default function OmmioApp() {
                                                 <TouchableOpacity
                                                     key={contact.uid}
                                                     onPress={() => {
-                                                        if (isSelected) {
-                                                            // Varsa çıkar
-                                                            setAssignTargets(prev => prev.filter(t => t.uid !== contact.uid));
-                                                        } else {
-                                                            // Yoksa ekle
-                                                            setAssignTargets(prev => [...prev, contact]);
-                                                        }
+                                                        if (isSelected) setAssignTargets(prev => prev.filter(t => t.uid !== contact.uid));
+                                                        else setAssignTargets(prev => [...prev, contact]);
                                                     }}
-                                                    style={[
-                                                        styles.assignChip,
-                                                        isSelected
-                                                            ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary }
-                                                            : { backgroundColor: isDark ? '#334155' : '#fff', borderColor: isDark ? '#475569' : '#e2e8f0' }
-                                                    ]}
+                                                    style={[styles.assignChip, isSelected ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary } : { backgroundColor: isDark ? '#334155' : '#f1f5f9', borderColor: 'transparent' }]}
                                                 >
-                                                    <View style={[styles.avatarSmall]}>
-                                                        <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{contact.username[0].toUpperCase()}</Text>
+                                                    <View style={styles.avatarSmall}>
+                                                        {/* 👇 DEĞİŞİKLİK BURADA: Ufak yuvarlak içinde baş harf */}
+                                                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: currentColors.text }}>
+                                                            {(contact.displayName || contact.username || "?")[0].toUpperCase()}
+                                                        </Text>
                                                     </View>
                                                     <Text style={[styles.chipText, { color: isSelected ? '#fff' : currentColors.text }]}>
                                                         {contact.displayName || contact.username}
@@ -5662,307 +5851,149 @@ export default function OmmioApp() {
                                         })}
                                     </ScrollView>
 
-                                    {/* 2. BÖLÜM: ÖNCELİK (Priority) & DOSYA */}
+                                    {/* --- 2. Bölüm: Öncelik ve Dosya (Yan Yana) --- */}
                                     <View style={{ flexDirection: 'row', gap: 15, marginBottom: 15 }}>
-                                        {/* Öncelik Seçimi */}
+                                        {/* Öncelik */}
                                         <View style={{ flex: 1 }}>
                                             <Text style={styles.sectionTitle}>{t('priority')}</Text>
-                                            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 12, padding: 4 }}>
+                                            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderRadius: 12, padding: 4 }}>
                                                 {['low', 'medium', 'high'].map((p) => {
                                                     const isSelected = priority === p;
-                                                    let color = '#10b981'; // Low (Green)
-                                                    if (p === 'medium') color = '#f59e0b'; // Medium (Orange)
-                                                    if (p === 'high') color = '#ef4444'; // High (Red)
-
+                                                    let color = '#10b981'; if (p === 'medium') color = '#f59e0b'; if (p === 'high') color = '#ef4444';
                                                     return (
-                                                        <TouchableOpacity
-                                                            key={p}
-                                                            onPress={() => setPriority(p as any)}
-                                                            style={{
-                                                                flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8,
-                                                                backgroundColor: isSelected ? color : 'transparent'
-                                                            }}
-                                                        >
+                                                        <TouchableOpacity key={p} onPress={() => setPriority(p as any)} style={{ flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8, backgroundColor: isSelected ? color : 'transparent' }}>
                                                             <Flag size={16} color={isSelected ? '#fff' : color} fill={isSelected ? '#fff' : 'none'} />
                                                         </TouchableOpacity>
                                                     )
                                                 })}
                                             </View>
                                         </View>
-
-                                        {/* Dosya Ekleme */}
+                                        {/* Dosya */}
                                         <View style={{ flex: 1 }}>
                                             <Text style={styles.sectionTitle}>{t('ekler')} ({attachments.length})</Text>
-                                            <TouchableOpacity
-                                                onPress={pickDocument}
-                                                style={{
-                                                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                                    backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 12, paddingVertical: 8, height: 40,
-                                                    borderWidth: 1, borderColor: attachments.length > 0 ? COLORS.primary : 'transparent'
-                                                }}
-                                            >
+                                            <TouchableOpacity onPress={pickDocument} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderRadius: 12, paddingVertical: 8, height: 40, borderWidth: 1, borderColor: attachments.length > 0 ? COLORS.primary : 'transparent' }}>
                                                 <Paperclip size={18} color={attachments.length > 0 ? COLORS.primary : currentColors.subText} />
-                                                <Text style={{ fontSize: 12, fontWeight: '600', color: attachments.length > 0 ? COLORS.primary : currentColors.subText }}>
-                                                {attachments.length > 0
-                                                    ? tFormat('files_count', { count: attachments.length })
-                                                    : t('add_file')}
-                                                </Text>
+                                                <Text style={{ fontSize: 12, fontWeight: '600', color: attachments.length > 0 ? COLORS.primary : currentColors.subText }}>{attachments.length > 0 ? attachments.length : t('add_file')}</Text>
                                             </TouchableOpacity>
                                         </View>
                                     </View>
 
-                                    {/* Bölüm: Açıklama */}
-                                    <View style={{ marginBottom: 10 }}>
-                                        <Text style={styles.sectionTitle}>{t('description')}</Text>
+                                    {/* --- 3. Bölüm: Açıklama, Tarihler ve Kategori --- */}
+                                    <View style={{ gap: 10 }}>
+                                        {/* Açıklama */}
                                         <TextInput
-                                            value={inputDesc}
-                                            onChangeText={setInputDesc}
-                                            placeholder="..."
-                                            placeholderTextColor={currentColors.subText}
-                                            style={[styles.smallInput, { backgroundColor: currentColors.bg, color: currentColors.text }]}
-                                            onSubmitEditing={addTask}
+                                            value={inputDesc} onChangeText={setInputDesc} placeholder={t('description') + "..."} placeholderTextColor={currentColors.subText}
+                                            style={{ backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderRadius: 12, padding: 10, color: currentColors.text, fontSize: 13, height: 40 }}
                                         />
-                                    </View>
-
-                                    {/* Bölüm: Tarihler (Görsel Olarak Düzeltilmiş) */}
-                                <View style={{ flexDirection: 'row', gap: 15, marginBottom: 15 }}>
-                                    
-                                    {/* 1. Başlangıç Tarihi */}
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={{ 
-                                            fontSize: 12, 
-                                            fontWeight: 'bold', 
-                                            color: currentColors.subText, 
-                                            marginBottom: 6, 
-                                            textTransform: 'uppercase' 
-                                        }}>
-                                            {t('start_date')}
-                                        </Text>
                                         
-                                        <View style={{ 
-                                            flexDirection: 'row', 
-                                            alignItems: 'center', 
-                                            backgroundColor: isDark ? '#1e293b' : '#f8fafc', // Input arka planı
-                                            borderRadius: 12, 
-                                            borderWidth: 1, 
-                                            borderColor: isDark ? '#334155' : '#e2e8f0',
-                                            overflow: 'hidden',
-                                            height: 48 // Sabit yükseklik ile hizalama garantisi
-                                        }}>
-                                            <TextInput
-                                                value={inputStartDate}
-                                                onChangeText={handleInputStartDateChange}
-                                                placeholder="GG-AA-YYYY"
-                                                placeholderTextColor={currentColors.subText}
-                                                maxLength={10}
-                                                keyboardType="numeric"
-                                                style={{ 
-                                                    flex: 1, 
-                                                    color: currentColors.text, 
-                                                    paddingHorizontal: 12,
-                                                    fontSize: 14,
-                                                    height: '100%' 
-                                                }}
-                                                onSubmitEditing={addTask} // Klavyeden "Git" deyince ekle
-                                            />
-                                            <TouchableOpacity 
-                                                onPress={() => openDatePicker('start')} 
-                                                style={{ 
-                                                    paddingHorizontal: 12, 
-                                                    height: '100%', 
-                                                    justifyContent: 'center',
-                                                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0', // İkon arkası hafif farklı ton
-                                                    borderLeftWidth: 1,
-                                                    borderLeftColor: isDark ? '#334155' : '#cbd5e1'
-                                                }}
-                                            >
-                                                <CalendarIcon size={18} color={COLORS.primary} />
+                                        {/* Tarihler (Yan Yana) */}
+                                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                                            <TouchableOpacity onPress={() => openDatePicker('start')} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? '#0f172a' : '#f1f5f9', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                                                <CalendarIcon size={16} color={COLORS.primary} />
+                                                <Text style={{ color: currentColors.text, fontSize: 12 }}>{inputStartDate || t('start_date')}</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => openDatePicker('due')} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? '#0f172a' : '#f1f5f9', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                                                <CalendarIcon size={16} color={COLORS.danger} />
+                                                <Text style={{ color: currentColors.text, fontSize: 12 }}>{inputDueDate || t('due_date')}</Text>
                                             </TouchableOpacity>
                                         </View>
-                                    </View>
-
-                                    {/* 2. Bitiş Tarihi */}
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={{ 
-                                            fontSize: 12, 
-                                            fontWeight: 'bold', 
-                                            color: currentColors.subText, 
-                                            marginBottom: 6, 
-                                            textTransform: 'uppercase' 
-                                        }}>
-                                            {t('due_date')}
-                                        </Text>
                                         
-                                        <View style={{ 
-                                            flexDirection: 'row', 
-                                            alignItems: 'center', 
-                                            backgroundColor: isDark ? '#1e293b' : '#f8fafc',
-                                            borderRadius: 12, 
-                                            borderWidth: 1, 
-                                            borderColor: isDark ? '#334155' : '#e2e8f0',
-                                            overflow: 'hidden',
-                                            height: 48
-                                        }}>
-                                            <TextInput
-                                                value={inputDueDate}
-                                                onChangeText={handleInputDueDateChange}
-                                                placeholder="GG-AA-YYYY"
-                                                placeholderTextColor={currentColors.subText}
-                                                maxLength={10}
-                                                keyboardType="numeric"
-                                                style={{ 
-                                                    flex: 1, 
-                                                    color: currentColors.text, 
-                                                    paddingHorizontal: 12,
-                                                    fontSize: 14,
-                                                    height: '100%'
-                                                }}
-                                                onSubmitEditing={addTask}
-                                            />
-                                            <TouchableOpacity 
-                                                onPress={() => openDatePicker('due')} 
-                                                style={{ 
-                                                    paddingHorizontal: 12, 
-                                                    height: '100%', 
-                                                    justifyContent: 'center',
-                                                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0',
-                                                    borderLeftWidth: 1,
-                                                    borderLeftColor: isDark ? '#334155' : '#cbd5e1'
-                                                }}
-                                            >
-                                                <CalendarIcon size={18} color={COLORS.danger} />
-                                            </TouchableOpacity>
-                                        </View>
-                                    </View>
+                                        {/* Kategori Seçimi */}
+                                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 5 }}>
+                                            {categories.map(c => {
+                                                 const cc = CATEGORY_COLORS.find(col => col.id === c.color) || CATEGORY_COLORS[0];
+                                                 const isSelected = selectedCategory.id === c.id;
+                                                 return (
+                                                     <TouchableOpacity key={c.id} onPress={() => setSelectedCategory(c)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 10, backgroundColor: isSelected ? cc.hex : (isDark ? '#0f172a' : '#f1f5f9') }}>
+                                                         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isSelected ? '#fff' : cc.hex }} />
+                                                         <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? '#fff' : currentColors.text }}>{c.name}</Text>
+                                                     </TouchableOpacity>
+                                                 )
+                                            })}
+                                        </ScrollView>
 
-                                </View>
-
-                                    {/* Bölüm: Kategoriler veya Uyarı */}
-                                    <View style={[styles.divider, { borderColor: isDark ? '#334155' : '#f1f5f9' }]}>
-                                        {!assignTarget ? (
-                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                                                {categories.map(cat => {
-                                                    const cc = CATEGORY_COLORS.find(c => c.id === cat.color) || CATEGORY_COLORS[0];
-                                                    const isSelected = selectedCategory.id === cat.id;
-                                                    return (
-                                                        <TouchableOpacity
-                                                            key={cat.id}
-                                                            onPress={() => setSelectedCategory(cat)}
-                                                            style={[
-                                                                styles.categoryPill,
-                                                                {
-                                                                    borderColor: isDark ? '#334155' : '#e2e8f0',
-                                                                    backgroundColor: isSelected ? cc.hex : (isDark ? '#334155' : '#fff')
-                                                                },
-                                                                isSelected && { borderColor: 'transparent' }
-                                                            ]}
-                                                        >
-                                                            <View style={[styles.dot, { backgroundColor: cc.hex }]} />
-                                                            <Text style={[styles.categoryText, { color: currentColors.text }]}>{cat.name}</Text>
-                                                        </TouchableOpacity>
-                                                    );
-                                                })}
-                                            </ScrollView>
-                                        ) : (
-                                            <Text style={{ fontSize: 11, color: COLORS.warning, fontStyle: 'italic' }}>
-                                                {tFormat("task_assign_info", { name: assignTarget.username })}
-                                            </Text>
-                                        )}
-                                    </View>
-
-                                    {/* Bölüm: Alt Butonlar (Alarm, Bildirim, Recurring) */}
-                                    <View style={styles.bottomActions}>
-                                        <View style={{ flexDirection: 'row', gap: 5 }}>
-                                            <TouchableOpacity
-                                                onPress={() => setIsNotifOn(!isNotifOn)}
-                                                style={[styles.iconToggle, isNotifOn && styles.iconToggleActiveBlue]}
-                                            >
-                                                <Bell size={16} color={isNotifOn ? '#3b82f6' : currentColors.subText} />
-                                            </TouchableOpacity>
-
-                                            <TouchableOpacity
-                                                onPress={() => setIsAlarmOn(!isAlarmOn)}
-                                                style={[styles.iconToggle, isAlarmOn && styles.iconToggleActiveRed]}
-                                            >
-                                                <AlarmClock size={16} color={isAlarmOn ? '#ef4444' : currentColors.subText} />
-                                            </TouchableOpacity>
-
-                                            {inputDueDate && (
-                                                <TouchableOpacity
-                                                    onPress={() => setIsEveryDayOn(!isEveryDayOn)}
-                                                    style={[styles.iconToggle, isEveryDayOn && styles.iconToggleActiveGreen, { width: 'auto', paddingHorizontal: 8, gap: 5 }]}
-                                                >
-                                                    <CalendarDays size={16} color={isEveryDayOn ? '#10b981' : currentColors.subText} />
-                                                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: isEveryDayOn ? '#10b981' : currentColors.subText }}>
-                                                        {t('every_day')}
-                                                    </Text>
+                                        {/* Alt Satır: Bildirim Ayarları ve Kapatma */}
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, paddingTop: 10, borderTopWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                                             <View style={{flexDirection:'row', gap: 10, alignItems: 'center'}}>
+                                                <TouchableOpacity onPress={() => setIsNotifOn(!isNotifOn)} style={{ padding: 6, backgroundColor: isNotifOn ? '#eff6ff' : 'transparent', borderRadius: 8 }}>
+                                                    <Bell size={18} color={isNotifOn ? '#3b82f6' : currentColors.subText} />
                                                 </TouchableOpacity>
-                                            )}
-                                        </View>
+                                                <TouchableOpacity onPress={() => setIsAlarmOn(!isAlarmOn)} style={{ padding: 6, backgroundColor: isAlarmOn ? '#fef2f2' : 'transparent', borderRadius: 8 }}>
+                                                    <AlarmClock size={18} color={isAlarmOn ? '#ef4444' : currentColors.subText} />
+                                                </TouchableOpacity>
+                                                
+                                                {/* Tekrar Eden Görev */}
+                                                {inputDueDate && (
+                                                    <TouchableOpacity onPress={() => setIsEveryDayOn(!isEveryDayOn)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6, backgroundColor: isEveryDayOn ? '#f0fdf4' : 'transparent', borderRadius: 8 }}>
+                                                        <Repeat size={14} color={isEveryDayOn ? '#10b981' : currentColors.subText} />
+                                                        {isEveryDayOn && <Text style={{fontSize: 10, color: '#10b981', fontWeight: 'bold'}}>{t('every_day')}</Text>}
+                                                    </TouchableOpacity>
+                                                )}
+                                             </View>
 
-                                        <View style={{ flexDirection: 'row', gap: 5 }}>
-                                            {isNotifOn && (
-                                                <TextInput
-                                                    value={notifInput}
-                                                    onChangeText={handleNotifInputChange}
-                                                    placeholder="09:00"
-                                                    placeholderTextColor="#94a3b8"
-                                                    style={[styles.timeInput, { color: COLORS.primary, borderColor: COLORS.primary }]}
-                                                    maxLength={5}
-                                                    onSubmitEditing={addTask}
-                                                />
-                                            )}
-                                            {isAlarmOn && (
-                                                <TextInput
-                                                    value={alarmInput}
-                                                    onChangeText={handleAlarmInputChange}
-                                                    placeholder="07:00"
-                                                    placeholderTextColor="#94a3b8"
-                                                    style={[styles.timeInput, { color: COLORS.danger, borderColor: COLORS.danger }]}
-                                                    maxLength={5}
-                                                    onSubmitEditing={addTask}
-                                                />
-                                            )}
+                                             {/* Panel Kapatma Oku */}
+                                             <TouchableOpacity onPress={()=>{ LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsInputExpanded(false); }}>
+                                                 <ChevronDown size={20} color={currentColors.subText} />
+                                             </TouchableOpacity>
                                         </View>
                                     </View>
                                 </View>
                             )}
 
-                            {/* 2. ANA INPUT SATIRI */}
-                            <View style={styles.mainInputRow}>
+                            {/* 2. ANA INPUT SATIRI (Modern Pill Style) */}
+                            <View style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                width: '90%',
+                                height: 50,
+                                backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                borderRadius: 25,
+                                paddingHorizontal: 10,
+                                shadowColor: "#000",
+                                shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.15,
+                                shadowRadius: 10,
+                                elevation: 5,
+                                borderWidth: 1,
+                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                            }}>
+                                {/* Genişlet Butonu (Sol) */}
                                 <TouchableOpacity
                                     onPress={() => {
                                         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                                         setIsInputExpanded(!isInputExpanded);
                                     }}
-                                    style={styles.expandBtn}
+                                    style={{ padding: 8, marginRight: 5 }}
                                 >
-                                    {isInputExpanded ? <X size={20} color={currentColors.subText} /> : <Sliders size={20} color={currentColors.subText} />}
+                                    {isInputExpanded ? 
+                                        <X size={22} color={COLORS.primary} /> : 
+                                        <Sliders size={22} color={currentColors.subText} />
+                                    }
                                 </TouchableOpacity>
 
+                                {/* Input */}
                                 <TextInput
                                     value={inputValue}
                                     onChangeText={setInputValue}
                                     placeholder={t('addTask')}
                                     placeholderTextColor={currentColors.subText}
-                                    style={[styles.mainTextInput, { color: currentColors.text }]}
+                                    style={{ flex: 1, color: currentColors.text, fontSize: 15, height: '100%' }}
                                     onSubmitEditing={addTask}
                                 />
 
+                                {/* Ekle Butonu (Sağ) */}
                                 <TouchableOpacity
                                     onPress={addTask}
-                                    style={[
-                                        styles.sendBtn,
-                                        {
-                                            backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0')
-                                        }
-                                    ]}
+                                    style={{
+                                        backgroundColor: inputValue.trim() ? (assignTarget ? COLORS.warning : COLORS.primary) : (isDark ? '#334155' : '#e2e8f0'),
+                                        width: 36, height: 36, borderRadius: 18,
+                                        alignItems: 'center', justifyContent: 'center'
+                                    }}
                                 >
-                                    <Plus size={24} color={inputValue.trim() ? '#fff' : '#94a3b8'} />
+                                    <Plus size={20} color={inputValue.trim() ? '#fff' : '#94a3b8'} />
                                 </TouchableOpacity>
                             </View>
-
-                        </BlurView>
+                        </KeyboardAvoidingView>
                     </>
                 )}
                 {/* ================================================================================= */}
@@ -6439,7 +6470,10 @@ export default function OmmioApp() {
                                                                 alignItems: 'center', justifyContent: 'center',
                                                                 borderWidth: 1, borderColor: currentColors.bg
                                                             }}>
-                                                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#fff' }}>{item.senderName?.[0]?.toUpperCase()}</Text>
+                                                                {/* 👇 DEĞİŞİKLİK BURADA: Mesajdaki senderName'in baş harfi */}
+                                                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#fff' }}>
+                                                                    {(item.senderName || "?")[0].toUpperCase()}
+                                                                </Text>
                                                             </View>
                                                         )}
 
