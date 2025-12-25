@@ -564,12 +564,22 @@ export default function OmmioApp() {
 
 
 
-    const getDeviceLang = () => {
-        const loc = Localization.getLocales()[0]; // Cihazın birincil dili
-        const code = loc ? loc.languageCode : 'en';
-        // LANGUAGES dizisinde bu kod var mı kontrol et, yoksa 'en' döndür
-        return LANGUAGES.some(l => l.code === code) ? code : 'en';
-    };
+    // --- GÜVENLİ DİL ALGILAMA FONKSİYONU ---
+        const getDeviceLang = () => {
+            try {
+                const loc = Localization.getLocales();
+                // Eğer locale verisi varsa ve boş değilse
+                if (loc && loc.length > 0) {
+                    const code = loc[0].languageCode;
+                    // Bizim desteklediğimiz diller listesinde var mı kontrol et
+                    return LANGUAGES.some(l => l.code === code) ? code : 'en';
+                }
+            } catch (e) {
+                console.log("Dil algılama hatası:", e);
+            }
+            // Hata olursa veya bulunamazsa varsayılan İngilizce olsun
+            return 'en';
+        };
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
